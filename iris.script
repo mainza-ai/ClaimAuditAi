@@ -1,0 +1,37 @@
+    zn "%SYS"
+
+    // Unexpire passwords and set up passwordless mode to simplify dev use.
+    do ##class(Security.Users).UnExpireUserPasswords("*")
+
+    // Install ZPM Package Manager
+    set tURL = "https://pm.community.intersystems.com/packages/zpm/latest/installer"
+    set r = ##class(%Net.HttpRequest).%New()
+    set r.Server = "pm.community.intersystems.com"
+    set r.SSLConfiguration = "ISC.FeatureTracker.SSL.Config"
+    do r.Get("/packages/zpm/latest/installer")
+    do $system.OBJ.LoadStream(r.HttpResponse.Data,"c")
+
+    // Enable callin for Embedded Python
+    do ##class(Security.Services).Get("%Service_CallIn",.prop)
+    set prop("Enabled")=1
+    set prop("AutheEnabled")=48
+    do ##class(Security.Services).Modify("%Service_CallIn",.prop)
+
+    // Load installer manifest and configure INTEROP namespace
+    do $SYSTEM.OBJ.Load("/home/irisowner/dev/iris/installer.cls", "ck")
+    set sc = ##class(ClaimAudit.Installer).setup()
+
+    zpm "enable -community"
+
+    zn "INTEROP"
+
+    // Create /_vscode web app to support VS Code extension testing
+    zpm "install vscode-per-namespace-settings"
+
+    // Configure %UnitTest in INTEROP
+    set ^UnitTestRoot="/usr/irissys/.vscode/INTEROP/UnitTestRoot"
+
+    // Load ZPM ClaimAuditAI package
+    zpm "load /home/irisowner/dev/ -v":1:1
+    
+    halt

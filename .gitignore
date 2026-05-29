@@ -1,0 +1,30 @@
+# Local Environment & API Keys
+.env
+
+# User Research Documents (Secret/Internal)
+extracted_plan.txt
+development-docs/
+development-docs
+
+# System Files
+.DS_Store
+Thumbs.db
+
+# Research Templates (Temporary Clones)
+ai-hub-template/
+fhir-strategy-template/
+
+# Embedded Python Model Artifacts & Caches
+src/python/model_cache/
+src/python/autoencoder.pth
+src/python/stats.npz
+
+# Python Caches
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.venv/
+env/
+venv/

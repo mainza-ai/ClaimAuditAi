@@ -1,0 +1,46 @@
+{
+  "resourceType": "Claim",
+  "id": "claimaudit-anomalous-claim",
+  "status": "active",
+  "type": {
+    "coding": [
+      {
+        "system": "http://terminology.hl7.org/CodeSystem/claim-type",
+        "code": "institutional"
+      }
+    ]
+  },
+  "use": "claim",
+  "patient": {
+    "reference": "Patient/claimaudit-pat"
+  },
+  "created": "2026-05-29T14:54:20Z",
+  "provider": {
+    "reference": "Practitioner/claimaudit-prov"
+  },
+  "insurer": {
+    "reference": "Organization/claimaudit-payer"
+  },
+  "total": {
+    "value": 2500.0,
+    "currency": "USD"
+  },
+  "item": [
+    {
+      "sequence": 1,
+      "productOrService": {
+        "coding": [
+          {
+            "system": "http://www.ama-assn.org/go/cpt",
+            "code": "99291",
+            "display": "Critical care, evaluation and management of the unstable critically ill or critically injured patient; first 30-74 minutes"
+          }
+        ]
+      },
+      "unitPrice": {
+        "value": 2500.0,
+        "currency": "USD"
+      }
+    }
+  ]
+}

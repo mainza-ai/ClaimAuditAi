@@ -1,0 +1,54 @@
+{
+  "resourceType": "Bundle",
+  "type": "transaction",
+  "entry": [
+    {
+      "fullUrl": "urn:uuid:patient-1",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "claimaudit-pat",
+        "active": true,
+        "name": [
+          {
+            "use": "official",
+            "family": "Smith",
+            "given": [
+              "John"
+            ]
+          }
+        ],
+        "gender": "male",
+        "birthDate": "1981-05-29"
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Patient/claimaudit-pat"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:docref-1",
+      "resource": {
+        "resourceType": "DocumentReference",
+        "id": "claimaudit-docref",
+        "status": "current",
+        "subject": {
+          "reference": "Patient/claimaudit-pat"
+        },
+        "date": "2026-05-29T14:54:20Z",
+        "description": "Routine Outpatient Progress Note",
+        "content": [
+          {
+            "attachment": {
+              "contentType": "text/plain",
+              "data": "UGF0aWVudCB2aXNpdGVkIHRvZGF5IGZvciBhIHJvdXRpbmUgeWVhcmx5IHBoeXNpY2FsIGNoZWNrdXAuIFZpdGFsIHNpZ25zIGFyZSBub3JtYWwuIFBhdGllbnQgaGFzIG5vIGFjdXRlIGNvbXBsYWludHMuIEdlbmVyYWwgaGVhbHRoIGlzIGV4Y2VsbGVudC4gQWR2aXNlZCBzdGFuZGFyZCBkaWV0IGFuZCBleGVyY2lzZS4="
+            }
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "DocumentReference/claimaudit-docref"
+      }
+    }
+  ]
+}
