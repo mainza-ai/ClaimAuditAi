@@ -42,8 +42,7 @@ if torch:
                 nn.ReLU(),
                 nn.Linear(8, 16),
                 nn.ReLU(),
-                nn.Linear(16, input_dim),
-                nn.Sigmoid() # Scale outputs back to [0,1]
+                nn.Linear(16, input_dim) # Linear activation for real-valued reconstruction
             )
 
         def forward(self, x):
@@ -55,12 +54,9 @@ else:
         pass
 
 def normalize_features(features, mean, std):
-    """Normalize using standard Z-score scaling and clip to [0,1] for Sigmoid reconstruction."""
+    """Normalize using standard Z-score scaling."""
     epsilon = 1e-8
-    normalized = (features - mean) / (std + epsilon)
-    # Sigmoid range scaling
-    scaled = 1.0 / (1.0 + np.exp(-normalized))
-    return scaled
+    return (features - mean) / (std + epsilon)
 
 def train_autoencoder() -> str:
     """Load historical ExplanationOfBenefit projected claims and train the Autoencoder model natively."""

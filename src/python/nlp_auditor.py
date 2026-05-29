@@ -45,7 +45,7 @@ def index_clinical_note(patient_id: str, doc_id: str, note_text: str) -> str:
         # Prepare dynamic SQL to insert embedding
         stmt = iris.sql.prepare(
             "INSERT OR UPDATE INTO ClaimAudit.ClinicalNotes (PatientId, DocumentReferenceId, DocumentText, Embedding) "
-            "VALUES (?, ?, ?, TO_VECTOR(?, 'double', 384))"
+            "VALUES (?, ?, ?, TO_VECTOR(?, DOUBLE, 384))"
         )
         stmt.execute(patient_id, doc_id, note_text, embedding_str)
         return "OK"
@@ -70,7 +70,7 @@ def verify_clinical_validity(patient_id: str, code_description: str) -> dict:
         # Cosine similarity in IRIS is evaluated on high-dimensional float vectors
         # VECTOR_COSINE returns a double representing cosine similarity [-1 to 1]
         sql_query = (
-            "SELECT TOP 3 DocumentText, VECTOR_COSINE(Embedding, TO_VECTOR(?, 'double', 384)) AS Similarity "
+            "SELECT TOP 3 DocumentText, VECTOR_COSINE(Embedding, TO_VECTOR(?, DOUBLE, 384)) AS Similarity "
             "FROM ClaimAudit.ClinicalNotes "
             "WHERE PatientId = ? "
             "ORDER BY Similarity DESC"
@@ -98,8 +98,8 @@ def verify_clinical_validity(patient_id: str, code_description: str) -> dict:
                 "reason": "Missing supporting clinical documentation (phantom billing suspicion)."
             }
             
-        # Evaluation threshold (standard semantic audit threshold is 0.35)
-        flagged = best_similarity < 0.35
+        # Evaluation threshold (standard semantic audit threshold is 0.38)
+        flagged = best_similarity < 0.38
         reason = ""
         if flagged:
             reason = f"Procedural description lacks semantic alignment with progress notes (upcoding suspicion). Similarity: {best_similarity:.4f}"

@@ -8,6 +8,11 @@ try:
 except ImportError:
     iris = None
 
+def clean_non_bmp(text: str) -> str:
+    """Removes emojis and other characters outside the Basic Multilingual Plane (BMP)
+    to satisfy strict FHIR schema validations in IRIS."""
+    return "".join(c for c in text if ord(c) <= 0xFFFF)
+
 class ClaimAuditAgent:
     def __init__(self):
         # Retrieve LLM Provider configuration from environment variables
@@ -56,28 +61,32 @@ Please generate a professional, detailed, and highly explainable adjudication re
 1. Outline the exact reason codes and metrics.
 2. Formally justify why the claim is being pended ("HOLD").
 3. Provide structured, actionable next steps for the clinical audit queue.
+
+CRITICAL: Do NOT use any emojis or characters outside the Basic Multilingual Plane (characters must fit within the standard regex [\u0020-\uFFFF]) in your output.
 """
         try:
             completion = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "You are a professional payment integrity adjudication officer. Format your response in markdown."},
+                    {"role": "system", "content": "You are a professional payment integrity adjudication officer. Format your response in markdown. Do not include any emojis in your response."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.7,
-                max_tokens=2048
+                max_tokens=1024,
+                timeout=8.0
             )
-            return completion.choices[0].message.content
+            return clean_non_bmp(completion.choices[0].message.content)
         except Exception as e:
             sys.stderr.write(f"LLM Agent Error: {str(e)}\n")
-            # Fallback explanation if LLM fails
-            return f"""# ⚠️ Payment Integrity Adjudication HOLD Notification
+            # Fallback explanation if LLM fails (emojis strictly replaced by ASCII markers)
+            fallback = f"""# [WARNING] Payment Integrity Adjudication HOLD Notification
 This claim has been pended for manual review due to high threat index anomaly scores.
 
-### 🔍 Flagged Discrepancy Summaries:
+### [NLP] Flagged Discrepancy Summaries:
 {reasons_str}
 
-### 💼 Adjudication Actions:
+### [Adjudication] Adjudication Actions:
 - **Transaction Status**: HOLD (Queued for Audit)
 - **Assigned Queue**: Clinical Audit Review
 - **Next Steps**: Provider must submit comprehensive medical charts and physical progress logs to substantiate the billed procedural severity."""
+            return clean_non_bmp(fallback)

@@ -28,3 +28,9 @@ __pycache__/
 .venv/
 env/
 venv/
+
+# Scratch & Temporary Debug Logs
+claim_*.txt
+claim_response*.txt
+scratch/
+

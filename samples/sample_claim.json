@@ -21,6 +21,23 @@
   "insurer": {
     "reference": "Organization/claimaudit-payer"
   },
+  "priority": {
+    "coding": [
+      {
+        "system": "http://terminology.hl7.org/CodeSystem/processpriority",
+        "code": "normal"
+      }
+    ]
+  },
+  "insurance": [
+    {
+      "sequence": 1,
+      "focal": true,
+      "coverage": {
+        "reference": "Coverage/claimaudit-coverage"
+      }
+    }
+  ],
   "total": {
     "value": 2500.0,
     "currency": "USD"
