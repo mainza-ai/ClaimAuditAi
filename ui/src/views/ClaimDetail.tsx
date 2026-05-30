@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getClaimDetail, approveClaim, escalateClaim } from '../api/claims';
@@ -15,7 +15,8 @@ export function ClaimDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { setActiveClaim, togglePanel, isOpen } = useChatStore();
+  const togglePanel = useChatStore((s) => s.togglePanel);
+  const isOpen = useChatStore((s) => s.isOpen);
   const [copied, setCopied] = useState(false);
 
   const { data: rawClaim, isLoading } = useQuery({
@@ -30,12 +31,6 @@ export function ClaimDetail() {
         ...parseDisposition(rawClaim.disposition)
       }
     : null;
-
-  useEffect(() => {
-    if (claim && id) {
-      setActiveClaim(id);
-    }
-  }, [claim, id, setActiveClaim]);
 
   const handleCopyDisputeNotice = () => {
     if (!claim) return;
