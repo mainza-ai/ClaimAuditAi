@@ -60,31 +60,33 @@ export function GraphView() {
       
       // Relationship Edge
       elements.push({
-        data: {
-          id: `edge-${claim.id}`,
-          source: `patient-${claim.patientId}`,
-          target: `provider-${claim.providerId}`,
-          label: `Claim #${claim.id}: ${claim.cptCode.slice(0, 15)}...`,
-        },
+          data: {
+            id: `edge-${claim.id}`,
+            source: `patient-${claim.patientId}`,
+            target: `provider-${claim.providerId}`,
+            label: `${claim.cptCode.slice(0, 10)}`,
+          },
       });
     });
 
     const cy = cytoscape({
       container: containerRef.current,
       elements,
-      style: [
+        style: [
         {
           selector: 'node[type="patient"]',
           style: {
             'background-color': '#1d4ed8',
             'label': 'data(label)',
             'color': '#bfdbfe',
-            'font-size': '11px',
+            'font-size': '9px',
             'text-valign': 'bottom',
-            'text-margin-y': 6,
-            'width': '32px',
-            'height': '32px',
-            'font-family': 'monospace'
+            'text-margin-y': 4,
+            'width': '24px',
+            'height': '24px',
+            'font-family': 'monospace',
+            'text-wrap': 'ellipsis',
+            'text-max-width': '80px',
           },
         },
         {
@@ -93,34 +95,36 @@ export function GraphView() {
             'background-color': '#b91c1c',
             'label': 'data(label)',
             'color': '#fecaca',
-            'font-size': '11px',
+            'font-size': '9px',
             'text-valign': 'bottom',
-            'text-margin-y': 6,
-            'width': '32px',
-            'height': '32px',
-            'font-family': 'monospace'
+            'text-margin-y': 4,
+            'width': '24px',
+            'height': '24px',
+            'font-family': 'monospace',
+            'text-wrap': 'ellipsis',
+            'text-max-width': '80px',
           },
         },
         {
           selector: 'edge',
-          style: {
-            'width': 1.5,
+          style: ({
+            'width': 1,
             'line-color': '#4b5563',
             'target-arrow-color': '#4b5563',
             'target-arrow-shape': 'triangle',
             'curve-style': 'bezier',
             'label': 'data(label)',
-            'font-size': '9px',
-            'color': '#9ca3af',
+            'font-size': '7px',
+            'color': '#6b7280',
             'font-family': 'monospace',
             'text-background-opacity': 0.8,
             'text-background-color': '#030712',
-            'text-background-padding': '2px',
-            'text-background-shape': 'roundrectangle'
-          },
+            'text-background-padding': '1px',
+            'text-background-shape': 'roundrectangle',
+          }),
         },
       ],
-      layout: { name: layoutName, padding: 40 },
+      layout: { name: layoutName, padding: 60, spacingFactor: 1.5 } as any,
     });
 
     cy.on('tap', 'node', (evt) => {
@@ -133,7 +137,7 @@ export function GraphView() {
     });
 
     return () => cy.destroy();
-  }, [allClaims]);
+  }, [allClaims, layoutName]);
 
   return (
     <div className="space-y-4">

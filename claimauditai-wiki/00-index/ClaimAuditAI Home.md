@@ -46,10 +46,11 @@ ClaimAuditAI shifts the payment integrity paradigm from retrospective "pay-and-c
 - [[Environment Variables Reference]] — Master table of `.env` configurations.
 - [[Docker Configuration]] — Python module caching and volume mount settings.
 - [[FHIR Server Provisioning]] — Management Portal setup and `/interop/fhir/r4` routing.
-- [[Initialization Script]] — IRIS build sequences and autoencoder pre-training.
+- [[Initialization Script]] — Build-time (`iris.script`) and runtime (`init_iris.sh`) setup flows.
 
 ### 📂 07 - API Reference
 - [[Endpoint Reference]] — Interactive URL structure and authentication headers.
+- [[API Endpoints]] — Complete list of REST endpoints with response shapes.
 - [[ClaimResponse - HOLD vs Pass]] — Output shapes of pended versus disbursed claims.
 - [[OperationOutcome Structure]] — Error schemas and strict FHIR regex pattern matches.
 - [[MCP Handshake and Tool Discovery]] — Handshaking protocols for agent orchestration.
@@ -72,6 +73,10 @@ ClaimAuditAI shifts the payment integrity paradigm from retrospective "pay-and-c
 - [[MCP Handshake Failure]] — Checking JSON-RPC transport and local shell constraints.
 - [[Embedded Python Import Errors]] — Managing CSP jobs and worker class caching.
 - [[FHIR SQL Builder Projection Gaps]] — Auditing task logs and transformation schemas.
+- [[Blank UI Due to API Error Responses]] — Fixing `.filter()` crashes from API error JSON.
+- [[ObjectScript SQL Single-Quote Consumption]] — Solving `%Get` errors from stripped SQL quotes.
+- [[Seed Data Disposition Validation]] — Fixing emoji/CRLF validation failures in FHIR strings.
+- [[iris.script Indentation Pitfalls]] — Continuation line issues causing silent setup failures.
 
 ### 📂 10 - Platform Security
 - [[Security Overview]] — Safeguarding PHI and local configuration keys.

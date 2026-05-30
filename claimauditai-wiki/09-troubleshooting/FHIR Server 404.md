@@ -1,22 +1,60 @@
 # FHIR Server 404
 
-> FHIR Server 404 errors occur when the operational database namespace or the FHIR endpoint configuration is missing or incorrectly mapped.
+> FHIR Server 404 errors occur when the `/api` web application is not registered, the FHIR endpoint is not provisioned, or the database namespace mapping is missing.
 
 ### Symptom
-Sending REST requests to `http://localhost:52773/interop/fhir/r4` returns an HTTP `404 Not Found` status.
+- Sending REST requests to `http://localhost:52773/api/*` returns an HTML `404 Not Found` page with IRIS headers (`Expires`, `Cache-Control`, `Pragma`)
+- `http://localhost:52773/interop/fhir/r4` also returns 404
+- `Security.Applications.Exists("/api")` returns `0`
 
 ### Diagnostic Steps
-1. **Check Database Namespace**: Run this command to verify that the `INTEROP` namespace exists:
+1. **Check `/api` Web App Registration**:
    ```bash
-   echo 'write $namespace, !' | docker exec -i claimaudit-iris iris session IRIS -U INTEROP
+   echo 'zn "%SYS" w ##class(Security.Applications).Exists("/api")' | docker exec -i claimaudit-iris iris session IRIS
    ```
-2. **Inspect Endpoint Registration**: Open the Management Portal and check if the `/interop/fhir/r4` endpoint is registered.
+   Returns `0` if not registered.
+
+2. **Check FHIR Server Status**:
+   ```bash
+   echo 'set rs=##class(%SQL.Statement).%ExecDirect(,"SELECT COUNT(*) AS cnt FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA=? AND TABLE_NAME=?","HSFHIR_X0001_S","ClaimResponse") do rs.%Next() w rs.%Get("cnt")' | docker exec -i claimaudit-iris iris session IRIS -U INTEROP
+   ```
+   Returns `0` if FHIR tables don't exist.
+
+3. **Check Router Class Compilation**:
+   ```bash
+   echo 'w ##class(ClaimAudit.REST.Router).%ClassName(1)' | docker exec -i claimaudit-iris iris session IRIS -U INTEROP
+   ```
+   Should return `ClaimAudit.REST.Router`. If it fails, the class wasn't compiled.
 
 ### Resolution
-Re-run the namespace and strategy initialization scripts inside the IRIS session to rebuild the endpoint mapping:
+
+#### 1. `/api` Web App Not Registered
+The `iris.script` must register the `/api` web application. If it wasn't created during Docker build (due to [[iris.script Indentation Pitfalls]]), create it manually:
+
 ```bash
-echo 'do $system.OBJ.Load("/home/irisowner/dev/iris/installer.cls", "ck")' | docker exec -i claimaudit-iris iris session IRIS
+echo 'zn "%SYS" set p("DispatchClass")="ClaimAudit.REST.Router",p("NameSpace")="INTEROP",p("AutheEnabled")=96,p("Recurse")=1,p("MatchRoles")=":%All" do ##class(Security.Applications).Create("/api",.p)' | docker exec -i claimaudit-iris iris session IRIS
+```
+
+Then verify: `curl -s http://localhost:52773/api/stats`
+
+#### 2. FHIR Server Not Provisioned
+The [[Initialization Script]] at `/docker-entrypoint-initdb.d/init_iris.sh` should provision the FHIR server at runtime. To fix manually:
+
+```bash
+docker exec -i claimaudit-iris iris session IRIS -U INTEROP <<< '
+  do ##class(HS.FHIRServer.Installer).InstallNamespace()
+  set tSC = ##class(HS.FHIRServer.Installer).InstallInstance("/interop/fhir/r4", "ClaimAudit.FHIR.InteractionsStrategy", "hl7.fhir.r4.core@4.0.1")
+  if tSC { w "FHIR server created",! } else { w "FHIR server: ",$SYSTEM.Status.GetOneErrorText(tSC),! }
+'
+```
+
+#### 3. Rebuild with All Fixes
+For a permanent fix, rebuild the Docker image with the corrected `iris.script`:
+
+```bash
+docker compose build iris --no-cache
+docker compose up -d
 ```
 
 ## See Also
-[[Troubleshooting Overview]] · [[FHIR Server Provisioning]] · [[Initialization Script]]
+[[iris.script Indentation Pitfalls]] · [[Initialization Script]] · [[FHIR Server Provisioning]] · [[Blank UI Due to API Error Responses]]

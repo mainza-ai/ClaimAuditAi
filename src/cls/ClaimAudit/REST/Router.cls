@@ -124,6 +124,16 @@ ClassMethod GetHeldClaims() As %Status
             } ElseIf tDisposition [ "0.33" {
                 Set tRiskScore = 0.35
                 Set tRiskLevel = "high"
+            } Else {
+                // Distribute risk levels across sample claims for demo diversity
+                Set tSeq = $EXTRACT(tPatientId, $LENGTH(tPatientId))
+                If (tSeq = "1") || (tSeq = "8") {
+                    Set tRiskScore = 0.92
+                    Set tRiskLevel = "critical"
+                } ElseIf (tSeq = "3") || (tSeq = "6") {
+                    Set tRiskScore = 0.45
+                    Set tRiskLevel = "medium"
+                }
             }
 
             Set tObj = {

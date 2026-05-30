@@ -24,7 +24,8 @@ export function HoldQueue() {
       (selectedRisk === 'all' || c.riskLevel === selectedRisk) &&
       (c.id.toLowerCase().includes(search.toLowerCase()) ||
        c.cptCode?.toLowerCase().includes(search.toLowerCase()) ||
-       c.patientId?.toLowerCase().includes(search.toLowerCase()))
+       c.patientId?.toLowerCase().includes(search.toLowerCase()) ||
+       c.patientName?.toLowerCase().includes(search.toLowerCase()))
   );
 
   return (

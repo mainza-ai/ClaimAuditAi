@@ -9,6 +9,7 @@ import { ClaimDetail } from './views/ClaimDetail';
 import { GraphView } from './views/GraphView';
 import { Ledger } from './views/Ledger';
 import { useChatStore } from './store/chatStore';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -30,6 +31,7 @@ export default function App() {
           <div className={`flex flex-col flex-1 min-w-0 transition-all duration-300 ${isOpen ? 'mr-96' : ''}`}>
             <TopBar />
             <main className="flex-1 overflow-y-auto p-6">
+              <ErrorBoundary>
               <Routes>
                 <Route path="/" element={<Navigate to="/dashboard" replace />} />
                 <Route path="/dashboard" element={<Dashboard />} />
@@ -38,6 +40,7 @@ export default function App() {
                 <Route path="/graph" element={<GraphView />} />
                 <Route path="/ledger" element={<Ledger />} />
               </Routes>
+              </ErrorBoundary>
             </main>
           </div>
           <AuditAssistant />
