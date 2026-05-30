@@ -2,7 +2,7 @@ import { apiClient } from './client';
 import type { HeldClaim, ClaimDetail } from '../types/claim';
 
 export const getHeldClaims = () =>
-  apiClient.get<HeldClaim[]>('/claims/held').then((r) => r.data);
+  apiClient.get<HeldClaim[]>('/claims/held').then((r) => Array.isArray(r.data) ? r.data : []);
 
 export const getClaimDetail = (id: string) =>
   apiClient.get<ClaimDetail>(`/claims/${id}`).then((r) => r.data);
