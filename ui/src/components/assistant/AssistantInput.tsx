@@ -11,6 +11,9 @@ export function AssistantInput({
   placeholder: string;
 }) {
   const [value, setValue] = useState('');
+  const [inputFocused, setInputFocused] = useState(false);
+  const [inputHovered, setInputHovered] = useState(false);
+  const [btnHovered, setBtnHovered] = useState(false);
 
   function handleSend() {
     if (value.trim() && !disabled) {
@@ -35,13 +38,28 @@ export function AssistantInput({
         disabled={disabled}
         placeholder={placeholder}
         rows={1}
-        className="flex-1 resize-none bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500 disabled:opacity-40 max-h-32 overflow-y-auto"
-        style={{ minHeight: '38px' }}
+        className="flex-1 resize-none rounded-lg px-3 py-2 text-sm max-h-32 overflow-y-auto disabled:opacity-40 focus:outline-none"
+        style={{
+          backgroundColor: 'var(--bg-input)',
+          border: inputFocused ? '1px solid var(--border-focus)' : (inputHovered ? '1px solid var(--border-strong)' : '1px solid var(--border-default)'),
+          color: 'var(--text-primary)',
+          minHeight: '38px',
+        }}
+        onFocus={() => setInputFocused(true)}
+        onBlur={() => setInputFocused(false)}
+        onMouseEnter={() => setInputHovered(true)}
+        onMouseLeave={() => setInputHovered(false)}
       />
       <button
         onClick={handleSend}
         disabled={disabled || !value.trim()}
-        className="p-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg transition-colors shrink-0"
+        className="p-2.5 rounded-lg transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+        style={{
+          backgroundColor: btnHovered && !disabled && value.trim() ? 'var(--accent-hover)' : 'var(--accent-primary)',
+          color: 'var(--text-inverse)',
+        }}
+        onMouseEnter={() => setBtnHovered(true)}
+        onMouseLeave={() => setBtnHovered(false)}
       >
         <Send size={16} />
       </button>

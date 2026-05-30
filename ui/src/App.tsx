@@ -26,11 +26,28 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <div className="flex h-screen bg-gray-950 text-gray-100 overflow-hidden">
+        <div
+          style={{
+            display: 'flex',
+            height: '100vh',
+            backgroundColor: 'var(--bg-page)',
+            color: 'var(--text-primary)',
+            overflow: 'hidden',
+          }}
+        >
           <Sidebar />
-          <div className={`flex flex-col flex-1 min-w-0 transition-all duration-300 ${isOpen ? 'mr-96' : ''}`}>
+          <div className={`flex flex-col flex-1 min-w-0 transition-all duration-300 ${isOpen ? 'mr-96' : ''}`}
+            style={{ backgroundColor: 'var(--bg-page)' }}
+          >
             <TopBar />
-            <main className="flex-1 overflow-y-auto p-6">
+            <main
+              style={{
+                flex: 1,
+                overflowY: 'auto',
+                padding: 24,
+                backgroundColor: 'var(--bg-page)',
+              }}
+            >
               <ErrorBoundary>
               <Routes>
                 <Route path="/" element={<Navigate to="/dashboard" replace />} />

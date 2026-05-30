@@ -1,10 +1,9 @@
-import clsx from 'clsx';
 import type { HeldClaim } from '../../types/claim';
 
-const LEVEL_STYLES = {
-  critical: 'bg-red-600/20 text-red-400 border-red-700',
-  high:     'bg-orange-600/20 text-orange-400 border-orange-700',
-  medium:   'bg-yellow-600/20 text-yellow-400 border-yellow-700',
+const LEVEL_STYLES: Record<string, { color: string; backgroundColor: string; borderColor: string }> = {
+  critical: { color: 'var(--color-danger)', backgroundColor: 'var(--color-danger-bg)', borderColor: 'var(--color-danger-border)' },
+  high:     { color: 'var(--color-warning)', backgroundColor: 'var(--color-warning-bg)', borderColor: 'var(--color-warning-border)' },
+  medium:   { color: 'var(--color-warning)', backgroundColor: 'var(--color-warning-bg)', borderColor: 'var(--color-warning-border)' },
 };
 
 export function RiskBadge({
@@ -14,12 +13,16 @@ export function RiskBadge({
   level: HeldClaim['riskLevel'];
   score: number;
 }) {
+  const styles = LEVEL_STYLES[level];
+
   return (
     <span
-      className={clsx(
-        'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-semibold font-mono uppercase tracking-wide',
-        LEVEL_STYLES[level]
-      )}
+      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-semibold font-mono uppercase tracking-wide"
+      style={{
+        color: styles.color,
+        backgroundColor: styles.backgroundColor,
+        borderColor: styles.borderColor,
+      }}
     >
       {level} · {score.toFixed(2)}
     </span>

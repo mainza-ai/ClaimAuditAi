@@ -1,11 +1,10 @@
 import type { LucideIcon } from 'lucide-react';
-import clsx from 'clsx';
 
-const ACCENT_STYLES = {
-  red:   'text-red-400 border-red-950/40 bg-red-950/10',
-  green: 'text-green-400 border-green-950/40 bg-green-950/10',
-  blue:  'text-blue-400 border-blue-950/40 bg-blue-950/10',
-  amber: 'text-amber-400 border-amber-950/40 bg-amber-950/10',
+const ACCENT_STYLES: Record<string, { color: string; borderColor: string; backgroundColor: string }> = {
+  red:   { color: 'var(--color-danger)', borderColor: 'var(--color-danger-border)', backgroundColor: 'var(--color-danger-bg)' },
+  green: { color: 'var(--color-success)', borderColor: 'var(--color-success-border)', backgroundColor: 'var(--color-success-bg)' },
+  blue:  { color: 'var(--accent-primary)', borderColor: 'var(--border-focus)', backgroundColor: 'var(--accent-subtle)' },
+  amber: { color: 'var(--color-warning)', borderColor: 'var(--color-warning-border)', backgroundColor: 'var(--color-warning-bg)' },
 };
 
 export function StatCard({
@@ -19,13 +18,21 @@ export function StatCard({
   icon: LucideIcon;
   accent?: keyof typeof ACCENT_STYLES;
 }) {
+  const styles = ACCENT_STYLES[accent];
+
   return (
-    <div className={clsx('border rounded-lg p-4 transition-all hover:border-gray-700', ACCENT_STYLES[accent])}>
+    <div
+      className="border rounded-lg p-4 transition-all"
+      style={{
+        borderColor: styles.borderColor,
+        backgroundColor: styles.backgroundColor,
+      }}
+    >
       <div className="flex items-center justify-between mb-3">
-        <span className="text-xs text-gray-500 uppercase font-mono tracking-wider">{label}</span>
-        <Icon size={16} className={clsx(ACCENT_STYLES[accent])} />
+        <span className="text-xs uppercase font-mono tracking-wider" style={{ color: 'var(--text-secondary)' }}>{label}</span>
+        <Icon size={16} style={{ color: styles.color }} />
       </div>
-      <p className="text-2xl font-bold font-mono">
+      <p className="text-2xl font-bold font-mono" style={{ color: 'var(--text-primary)' }}>
         {value}
       </p>
     </div>

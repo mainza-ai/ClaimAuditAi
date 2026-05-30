@@ -19,8 +19,15 @@ Legend
 const CustomTooltip = ({ active, payload, label }: any) => {
 if (active && payload && payload.length) {
 return (
-<div className="bg-gray-900 border border-gray-800 p-3 rounded-lg shadow-xl font-mono text-xs space-y-1">
-<p className="text-gray-400 font-bold mb-1">{label}</p>
+<div
+  className="p-3 rounded-lg font-mono text-xs space-y-1"
+  style={{
+    backgroundColor: 'var(--bg-card)',
+    border: '1px solid var(--border-default)',
+    boxShadow: 'var(--shadow-modal)',
+  }}
+>
+<p className="font-bold mb-1" style={{ color: 'var(--text-secondary)' }}>{label}</p>
 {payload.map((p: any) => (
 <p key={p.name} style={{ color: p.color }}>
 {p.name}: {p.name.includes('$') || p.name.toLowerCase().includes('leakage') || p.name.toLowerCase().includes('dollars') ? `$${Number(p.value).toLocaleString()}` : p.value}
@@ -62,19 +69,29 @@ const hasError = statsError || heldError;
 return (
 <div className="space-y-6">
       <div className="flex items-center justify-between">
-<h1 className="text-xl font-bold text-gray-100 tracking-wider">System Overview</h1>
+<h1 className="text-xl font-bold tracking-wider" style={{ color: 'var(--text-primary)' }}>System Overview</h1>
 <div className="flex items-center gap-2">
-<span className="text-xs font-mono text-gray-500 bg-gray-900 px-2.5 py-1 rounded border border-gray-800">
+<span
+  className="text-xs font-mono px-2.5 py-1 rounded border"
+  style={{ color: 'var(--text-tertiary)', backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-default)' }}
+>
 Refreshes every 15s
 </span>
 {(statsFetching || heldFetching) && (
-<RefreshCw size={14} className="text-blue-400 animate-spin" />
+<RefreshCw size={14} style={{ color: 'var(--accent-primary)' }} className="animate-spin" />
 )}
 </div>
 </div>
 
 {hasError && (
-<div className="bg-red-950/20 border border-red-800/40 rounded-lg px-4 py-3 text-xs text-red-400 font-mono">
+<div
+  className="rounded-lg px-4 py-3 text-xs font-mono"
+  style={{
+    backgroundColor: 'var(--color-danger-bg)',
+    border: '1px solid var(--color-danger-border)',
+    color: 'var(--color-danger)',
+  }}
+>
 Unable to connect to the API. Check that the IRIS container is running and the /api web app is registered.
 </div>
 )}
@@ -122,8 +139,11 @@ accent={hasData && stats.modelStatus === 'healthy' ? 'green' : 'red'}
 {/* Recharts Trend Section */}
 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 {/* Chart 1: Throughput */}
-<div className="bg-gray-900 border border-gray-800 rounded-lg p-5">
-<h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4 font-mono">
+<div
+  className="rounded-lg p-5"
+  style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-default)' }}
+>
+<h3 className="text-sm font-semibold uppercase tracking-wider mb-4 font-mono" style={{ color: 'var(--text-secondary)' }}>
 Integrity Throughput (Weekly Volume)
 </h3>
 <div className="h-64">
@@ -150,7 +170,10 @@ Integrity Throughput (Weekly Volume)
 </AreaChart>
 </ResponsiveContainer>
 ) : (
-<div className="h-full flex items-center justify-center text-gray-600 text-sm font-mono border border-dashed border-gray-800 rounded-lg">
+<div
+  className="h-full flex items-center justify-center text-sm font-mono rounded-lg border border-dashed"
+  style={{ color: 'var(--text-tertiary)', borderColor: 'var(--border-default)' }}
+>
 No trend data available. Seed sample data to populate charts.
 </div>
 )}
@@ -158,8 +181,11 @@ No trend data available. Seed sample data to populate charts.
 </div>
 
 {/* Chart 2: Financial Savings */}
-<div className="bg-gray-900 border border-gray-800 rounded-lg p-5">
-<h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4 font-mono">
+<div
+  className="rounded-lg p-5"
+  style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-default)' }}
+>
+<h3 className="text-sm font-semibold uppercase tracking-wider mb-4 font-mono" style={{ color: 'var(--text-secondary)' }}>
 Avoided Claims Leakage (Dollars Saved)
 </h3>
 <div className="h-64">
@@ -181,7 +207,10 @@ Avoided Claims Leakage (Dollars Saved)
 </AreaChart>
 </ResponsiveContainer>
 ) : (
-<div className="h-full flex items-center justify-center text-gray-600 text-sm font-mono border border-dashed border-gray-800 rounded-lg">
+<div
+  className="h-full flex items-center justify-center text-sm font-mono rounded-lg border border-dashed"
+  style={{ color: 'var(--text-tertiary)', borderColor: 'var(--border-default)' }}
+>
 No trend data available. Seed sample data to populate charts.
 </div>
 )}
@@ -190,8 +219,11 @@ No trend data available. Seed sample data to populate charts.
 </div>
 
 {/* Recent holds feed */}
-<section className="bg-gray-900 border border-gray-800 rounded-lg p-5">
-<h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4 font-mono">
+<section
+  className="rounded-lg p-5"
+  style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-default)' }}
+>
+<h2 className="text-sm font-semibold uppercase tracking-wider mb-4 font-mono" style={{ color: 'var(--text-secondary)' }}>
 Recent holds queue
 </h2>
 <div className="space-y-2.5">
@@ -199,8 +231,11 @@ Recent holds queue
 <ClaimRow key={claim.id} claim={claim} />
 ))}
 {!allHeld.length && !heldLoading && (
-<div className="text-gray-500 text-sm py-12 text-center border border-dashed border-gray-800 rounded-lg">
-No claims on hold. Click <span className="text-violet-400 font-bold">Seed Sample Data</span> in the top bar to load FHIR sample bundles.
+<div
+  className="text-sm py-12 text-center rounded-lg border border-dashed"
+  style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-default)' }}
+>
+No claims on hold. Click <span style={{ color: 'var(--accent-primary)', fontWeight: 700 }}>Seed Sample Data</span> in the top bar to load FHIR sample bundles.
 </div>
 )}
 </div>

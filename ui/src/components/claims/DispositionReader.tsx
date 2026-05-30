@@ -2,17 +2,39 @@ import ReactMarkdown from 'react-markdown';
 
 export function DispositionReader({ markdown }: { markdown: string }) {
   if (!markdown) {
-    return <p className="text-gray-500 text-sm">No adjudication report available.</p>;
+    return <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>No adjudication report available.</p>;
   }
 
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 prose prose-invert prose-sm max-w-none
-      prose-headings:text-gray-200 prose-headings:font-medium prose-headings:mb-3
-      prose-p:text-gray-400 prose-p:leading-relaxed prose-p:mb-4
-      prose-li:text-gray-400
-      prose-strong:text-gray-200
-      prose-code:text-blue-300 prose-code:bg-gray-800 prose-code:px-1 prose-code:rounded">
-      <ReactMarkdown>{markdown}</ReactMarkdown>
+    <div
+      className="rounded-lg p-5 prose prose-sm max-w-none"
+      style={{
+        backgroundColor: 'var(--bg-card)',
+        border: '1px solid var(--border-default)',
+      }}
+    >
+      <style>{`
+        .disposition-prose h1, .disposition-prose h2, .disposition-prose h3,
+        .disposition-prose h4, .disposition-prose h5, .disposition-prose h6 {
+          color: var(--text-primary) !important;
+        }
+        .disposition-prose p {
+          color: var(--text-secondary) !important;
+        }
+        .disposition-prose li {
+          color: var(--text-secondary) !important;
+        }
+        .disposition-prose strong {
+          color: var(--text-primary) !important;
+        }
+        .disposition-prose code {
+          color: var(--accent-primary) !important;
+          background-color: var(--bg-hover) !important;
+        }
+      `}</style>
+      <div className="disposition-prose">
+        <ReactMarkdown>{markdown}</ReactMarkdown>
+      </div>
     </div>
   );
 }

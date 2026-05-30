@@ -2,25 +2,194 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --bg-page:          #F5F7F9;
+  --bg-card:          #FFFFFF;
+  --bg-sidebar:       #FFFFFF;
+  --bg-topbar:        #FFFFFF;
+  --bg-input:         #FFFFFF;
+  --bg-hover:         #F0F4F8;
+  --bg-active-nav:    #EBF4FF;
+
+  --border-default:   #E3E8EE;
+  --border-strong:    #CBD5E1;
+  --border-focus:     #0067B8;
+
+  --text-primary:     #1A1A1A;
+  --text-secondary:   #5A6472;
+  --text-tertiary:    #9AA5B4;
+  --text-inverse:     #FFFFFF;
+  --text-link:        #0067B8;
+
+  --accent-primary:   #0067B8;
+  --accent-hover:     #0057A0;
+  --accent-subtle:    #EBF4FF;
+  --accent-text:      #0067B8;
+
+  --color-danger:     #C0392B;
+  --color-danger-bg:  #FEF2F2;
+  --color-danger-border: #FCA5A5;
+  --color-warning:    #D4711B;
+  --color-warning-bg: #FFF7ED;
+  --color-warning-border: #FCD34D;
+  --color-success:    #1B7A3E;
+  --color-success-bg: #F0FDF4;
+  --color-success-border: #86EFAC;
+
+  --tier1-color:      #0067B8;
+  --tier1-bg:         #EBF4FF;
+  --tier1-border:     #BFDBFE;
+  --tier2-color:      #D4711B;
+  --tier2-bg:         #FFF7ED;
+  --tier2-border:     #FED7AA;
+  --tier3-color:      #C0392B;
+  --tier3-bg:         #FEF2F2;
+  --tier3-border:     #FCA5A5;
+
+  --shadow-card:      0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-modal:     0 10px 25px rgba(0,0,0,0.10);
+
+  --font-body:        'DM Sans', system-ui, -apple-system, sans-serif;
+  --font-mono:        'JetBrains Mono', 'IBM Plex Mono', monospace;
+}
+
+.dark {
+  --bg-page:          #030712;
+  --bg-card:          #111827;
+  --bg-sidebar:       #111827;
+  --bg-topbar:        #111827;
+  --bg-input:         #1F2937;
+  --bg-hover:         #1F2937;
+  --bg-active-nav:    rgba(220,38,38,0.15);
+
+  --border-default:   #1F2937;
+  --border-strong:    #374151;
+  --border-focus:     #3B82F6;
+
+  --text-primary:     #F3F4F6;
+  --text-secondary:   #9CA3AF;
+  --text-tertiary:    #6B7280;
+  --text-inverse:     #111827;
+  --text-link:        #60A5FA;
+
+  --accent-primary:   #DC2626;
+  --accent-hover:     #B91C1C;
+  --accent-subtle:    rgba(220,38,38,0.15);
+  --accent-text:      #F87171;
+
+  --color-danger:     #F87171;
+  --color-danger-bg:  rgba(220,38,38,0.15);
+  --color-danger-border: rgba(220,38,38,0.4);
+  --color-warning:    #FCD34D;
+  --color-warning-bg: rgba(217,119,6,0.15);
+  --color-warning-border: rgba(217,119,6,0.4);
+  --color-success:    #4ADE80;
+  --color-success-bg: rgba(22,163,74,0.15);
+  --color-success-border: rgba(22,163,74,0.4);
+
+  --tier1-color:      #60A5FA;
+  --tier1-bg:         rgba(59,130,246,0.1);
+  --tier1-border:     rgba(59,130,246,0.3);
+  --tier2-color:      #FCD34D;
+  --tier2-bg:         rgba(217,119,6,0.1);
+  --tier2-border:     rgba(217,119,6,0.3);
+  --tier3-color:      #F87171;
+  --tier3-bg:         rgba(220,38,38,0.1);
+  --tier3-border:     rgba(220,38,38,0.3);
+
+  --shadow-card:      none;
+  --shadow-modal:     0 10px 25px rgba(0,0,0,0.5);
+
+  --font-body:        'JetBrains Mono', 'IBM Plex Mono', monospace;
+  --font-mono:        'JetBrains Mono', 'IBM Plex Mono', monospace;
+}
+
 @layer base {
+  html {
+    @apply antialiased;
+  }
+
   body {
-    @apply bg-gray-950 text-gray-100;
-    font-family: 'JetBrains Mono', monospace;
+    background-color: var(--bg-page);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--text-tertiary);
   }
 }
 
-/* Modern responsive scrollbars complying with baseline standards */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: #374151;
-  border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #4b5563;
+@layer components {
+  .card {
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-default);
+    border-radius: 8px;
+    box-shadow: var(--shadow-card);
+  }
+
+  .input {
+    background-color: var(--bg-input);
+    border: 1px solid var(--border-default);
+    color: var(--text-primary);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-family: var(--font-body);
+    font-size: 14px;
+    outline: none;
+    width: 100%;
+    transition: border-color 0.15s ease;
+  }
+  .input:focus {
+    border-color: var(--border-focus);
+  }
+  .input::placeholder {
+    color: var(--text-tertiary);
+  }
+
+  .btn-primary {
+    background-color: var(--accent-primary);
+    color: var(--text-inverse);
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+  }
+  .btn-primary:hover:not(:disabled) {
+    background-color: var(--accent-hover);
+  }
+  .btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .btn-ghost {
+    background-color: transparent;
+    color: var(--text-secondary);
+    border: 1px solid var(--border-default);
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .btn-ghost:hover {
+    background-color: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .mono {
+    font-family: var(--font-mono);
+  }
 }

@@ -4,6 +4,7 @@ import { loadSampleData } from '../../api/claims';
 import { useRoleStore, type UserRole } from '../../store/roleStore';
 import clsx from 'clsx';
 import { Database, ChevronDown, Loader2 } from 'lucide-react';
+import { ThemeToggle } from './ThemeToggle';
 
 const ROLES: UserRole[] = ['Auditor', 'Director', 'Specialist', 'Tech Owner / Admin'];
 
@@ -25,10 +26,21 @@ export function TopBar() {
   });
 
   return (
-    <header className="h-14 border-b border-gray-800 bg-gray-900 px-6 flex items-center justify-between shrink-0">
+    <header
+      style={{
+        height: 56,
+        backgroundColor: 'var(--bg-topbar)',
+        borderBottom: '1px solid var(--border-default)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '0 24px',
+        flexShrink: 0,
+      }}
+    >
       <div className="flex items-center gap-2.5">
         <img src="/logo.png" alt="ClaimAuditAI" className="w-5 h-5 object-contain" />
-        <span className="text-sm font-semibold tracking-wider uppercase text-gray-200">
+        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
           ClaimAuditAI Adjudicator
         </span>
       </div>
@@ -94,10 +106,23 @@ export function TopBar() {
         </div>
 
         {/* Live status */}
-        <span className="text-xs text-green-400 font-mono px-2 py-0.5 rounded bg-green-500/10 border border-green-500/20 flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+        <span style={{
+          fontSize: 11,
+          color: 'var(--color-success)',
+          fontFamily: 'var(--font-mono)',
+          padding: '3px 10px',
+          borderRadius: 6,
+          backgroundColor: 'var(--color-success-bg)',
+          border: '1px solid var(--color-success-border)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+        }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: 'var(--color-success)' }} />
           IRIS Core Live
         </span>
+
+        <ThemeToggle />
       </div>
     </header>
   );

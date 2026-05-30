@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { LayoutDashboard, ShieldAlert, Network, MessageSquare, History } from 'lucide-react';
+import { useState } from 'react';
 import { useChatStore } from '../../store/chatStore';
 
 const navItems = [
@@ -12,11 +13,23 @@ const navItems = [
 export function Sidebar() {
   const togglePanel = useChatStore((s) => s.togglePanel);
   const isOpen = useChatStore((s) => s.isOpen);
+  const [logoHovered, setLogoHovered] = useState(false);
 
   return (
-    <aside className="w-16 bg-gray-900 border-r border-gray-800 flex flex-col items-center py-4 gap-2 shrink-0">
+    <aside
+      className="w-16 flex flex-col items-center py-4 gap-2 shrink-0"
+      style={{ backgroundColor: 'var(--bg-sidebar)', borderRight: '1px solid var(--border-default)' }}
+    >
       {/* Logo */}
-      <div className="w-10 h-10 flex items-center justify-center mb-4 overflow-hidden rounded-lg border border-gray-800 bg-gray-950 p-1 hover:border-gray-700 transition-colors">
+      <div
+        className="w-10 h-10 flex items-center justify-center mb-4 overflow-hidden rounded-lg p-1 transition-colors"
+        style={{
+          backgroundColor: 'var(--bg-page)',
+          border: logoHovered ? '1px solid var(--border-strong)' : '1px solid var(--border-default)',
+        }}
+        onMouseEnter={() => setLogoHovered(true)}
+        onMouseLeave={() => setLogoHovered(false)}
+      >
         <img src="/logo.png" alt="ClaimAuditAI" className="w-full h-full object-contain" />
       </div>
 
@@ -25,12 +38,12 @@ export function Sidebar() {
           key={to}
           to={to}
           title={label}
-          className={({ isActive }) =>
-            `w-10 h-10 rounded-lg flex items-center justify-center transition-all ` +
-            (isActive
-              ? 'bg-red-600/20 text-red-400 border border-red-700/50'
-              : 'text-gray-500 hover:text-gray-200 hover:bg-gray-800')
-          }
+          className="w-10 h-10 rounded-lg flex items-center justify-center transition-all"
+          style={({ isActive }) => ({
+            backgroundColor: isActive ? 'var(--bg-active-nav)' : 'transparent',
+            color: isActive ? 'var(--accent-text)' : 'var(--text-tertiary)',
+            border: isActive ? '1px solid var(--accent-primary)' : '1px solid transparent',
+          })}
         >
           <Icon size={20} />
         </NavLink>
@@ -40,10 +53,26 @@ export function Sidebar() {
 
       {/* Platform badges */}
       <div className="flex flex-col items-center gap-1.5 mb-3">
-        <span className="text-[8px] font-mono font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded leading-none" title="FHIR R4 Server Connected">
+        <span
+          className="text-[8px] font-mono font-bold px-1.5 py-0.5 rounded leading-none"
+          style={{
+            color: 'var(--color-success)',
+            backgroundColor: 'var(--color-success-bg)',
+            border: '1px solid var(--color-success-border)',
+          }}
+          title="FHIR R4 Server Connected"
+        >
           FHIR
         </span>
-        <span className="text-[8px] font-mono font-bold text-blue-400 bg-blue-500/10 border border-blue-500/20 px-1.5 py-0.5 rounded leading-none" title="InterSystems IRIS for Health">
+        <span
+          className="text-[8px] font-mono font-bold px-1.5 py-0.5 rounded leading-none"
+          style={{
+            color: 'var(--accent-primary)',
+            backgroundColor: 'var(--accent-subtle)',
+            border: '1px solid var(--border-focus)',
+          }}
+          title="InterSystems IRIS for Health"
+        >
           IRIS
         </span>
       </div>
@@ -52,11 +81,12 @@ export function Sidebar() {
       <button
         onClick={togglePanel}
         title="AI audit assistant"
-        className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all ` +
-          (isOpen
-            ? 'bg-blue-600/20 text-blue-400 border border-blue-700/50'
-            : 'text-gray-500 hover:text-gray-200 hover:bg-gray-800')
-        }
+        className="w-10 h-10 rounded-lg flex items-center justify-center transition-all"
+        style={{
+          backgroundColor: isOpen ? 'var(--accent-subtle)' : 'transparent',
+          color: isOpen ? 'var(--accent-primary)' : 'var(--text-tertiary)',
+          border: isOpen ? '1px solid var(--border-focus)' : '1px solid transparent',
+        }}
       >
         <MessageSquare size={20} />
       </button>

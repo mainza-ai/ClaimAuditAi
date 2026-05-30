@@ -5,17 +5,18 @@ import type { HeldClaim } from '../../types/claim';
 import { RiskBadge } from './RiskBadge';
 import { formatDistanceToNow } from 'date-fns';
 import { ChevronRight, Check, AlertTriangle } from 'lucide-react';
-import clsx from 'clsx';
+import { useState } from 'react';
 
-const RISK_BORDER = {
-  critical: 'border-l-4 border-l-red-500',
-  high:     'border-l-4 border-l-orange-500',
-  medium:   'border-l-4 border-l-yellow-500',
+const RISK_BORDER_LEFT: Record<string, string> = {
+  critical: '4px solid var(--color-danger)',
+  high:     '4px solid var(--color-warning)',
+  medium:   '4px solid var(--color-warning)',
 };
 
 export function ClaimRow({ claim }: { claim: HeldClaim }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [hovered, setHovered] = useState(false);
 
   const approve = useMutation({
     mutationFn: () => approveClaim(claim.id),
@@ -31,6 +32,7 @@ export function ClaimRow({ claim }: { claim: HeldClaim }) {
       queryClient.invalidateQueries({ queryKey: ['claims', 'held'] });
     },
   });
+
   return (
     <div
       role="button"
@@ -42,53 +44,68 @@ export function ClaimRow({ claim }: { claim: HeldClaim }) {
           navigate(`/claims/${claim.id}`);
         }
       }}
-      className={clsx(
-        "w-full flex items-center justify-between px-4 py-3 bg-gray-900 border border-gray-800 rounded-lg hover:border-gray-700 hover:bg-gray-800/60 cursor-pointer transition-all text-left group",
-        RISK_BORDER[claim.riskLevel]
-      )}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      className="w-full flex items-center justify-between px-4 py-3 rounded-lg cursor-pointer transition-all text-left"
+      style={{
+        backgroundColor: hovered ? 'var(--bg-hover)' : 'var(--bg-card)',
+        border: hovered ? '1px solid var(--border-strong)' : '1px solid var(--border-default)',
+        borderLeft: RISK_BORDER_LEFT[claim.riskLevel],
+      }}
     >
       <div className="flex items-center gap-4 min-w-0">
         <RiskBadge level={claim.riskLevel} score={claim.riskScore} />
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-gray-200 truncate">Claim Response {claim.id}</p>
-          <p className="text-xs text-gray-500 truncate mt-0.5">
+          <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>Claim Response {claim.id}</p>
+          <p className="text-xs truncate mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
             Patient {claim.patientId} · CPT {claim.cptCode} · ${claim.totalAmount?.toLocaleString()}
           </p>
         </div>
       </div>
       <div className="flex items-center gap-3 shrink-0 ml-4">
-        {/* Hover Quick Actions */}
-        <div className="hidden group-hover:flex items-center gap-1.5 mr-2">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              approve.mutate();
-            }}
-            disabled={approve.isPending}
-            title="Approve / Disburse funds"
-            className="p-1.5 rounded bg-green-500/10 hover:bg-green-500/30 text-green-400 border border-green-500/20 disabled:opacity-40 transition-all"
-          >
-            <Check size={14} />
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              escalate.mutate();
-            }}
-            disabled={escalate.isPending}
-            title="Escalate to director"
-            className="p-1.5 rounded bg-yellow-500/10 hover:bg-yellow-500/30 text-yellow-400 border border-yellow-500/20 disabled:opacity-40 transition-all"
-          >
-            <AlertTriangle size={14} />
-          </button>
-        </div>
+        {hovered && (
+          <div className="flex items-center gap-1.5 mr-2">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                approve.mutate();
+              }}
+              disabled={approve.isPending}
+              title="Approve / Disburse funds"
+              className="p-1.5 rounded disabled:opacity-40 transition-all"
+              style={{
+                backgroundColor: 'var(--color-success-bg)',
+                color: 'var(--color-success)',
+                border: '1px solid var(--color-success-border)',
+              }}
+            >
+              <Check size={14} />
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                escalate.mutate();
+              }}
+              disabled={escalate.isPending}
+              title="Escalate to director"
+              className="p-1.5 rounded disabled:opacity-40 transition-all"
+              style={{
+                backgroundColor: 'var(--color-warning-bg)',
+                color: 'var(--color-warning)',
+                border: '1px solid var(--color-warning-border)',
+              }}
+            >
+              <AlertTriangle size={14} />
+            </button>
+          </div>
+        )}
 
-        <span className="text-xs text-gray-500">
+        <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
           {claim.lastModified
             ? formatDistanceToNow(new Date(claim.lastModified), { addSuffix: true })
             : ''}
         </span>
-        <ChevronRight size={16} className="text-gray-600 group-hover:text-gray-400 transition-colors" />
+        <ChevronRight size={16} style={{ color: hovered ? 'var(--text-secondary)' : 'var(--text-tertiary)' }} />
       </div>
     </div>
   );
