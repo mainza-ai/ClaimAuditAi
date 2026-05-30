@@ -30,7 +30,7 @@ ClassMethod GetHeldClaims() As %Status
         Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
         Set tRS = ##class(%SQL.Statement).%ExecDirect(,
         "SELECT Key, patient, request, _lastUpdated, disposition FROM HSFHIR_X0001_S.ClaimResponse "_
-        "WHERE outcome = 'queued' ORDER BY _lastUpdated DESC")
+        "WHERE outcome = ? ORDER BY _lastUpdated DESC", "queued")
 
         Set tArr = []
         While tRS.%Next() {
@@ -264,13 +264,13 @@ ClassMethod GetClaimDetail(id As %String) As %Status
         Try {
             Set tTStatement = ##class(%SQL.Statement).%New()
             Set tTRS = ##class(%SQL.Statement).%ExecDirect(,
-            "SELECT Key FROM HSFHIR_X0001_S.Task WHERE focus = 'Claim/" _ tClaimId _ "'")
+            "SELECT Key FROM HSFHIR_X0001_S.Task WHERE focus = ?", "Claim/" _ tClaimId)
             If tTRS.%Next() {
                 Set tTaskId = $Piece(tTRS.%Get("Key"), "/", 2)
             }
 
             Set tCRS = ##class(%SQL.Statement).%ExecDirect(,
-            "SELECT Key FROM HSFHIR_X0001_S.CommunicationRequest WHERE about LIKE '%Claim/" _ tClaimId _ "%'")
+            "SELECT Key FROM HSFHIR_X0001_S.CommunicationRequest WHERE about LIKE ?", "%Claim/" _ tClaimId _ "%")
             If tCRS.%Next() {
                 Set tCommId = $Piece(tCRS.%Get("Key"), "/", 2)
             }
@@ -297,7 +297,7 @@ ClassMethod GetClaimDetail(id As %String) As %Status
         // Add note descriptions if any notes were matched
         Try {
             Set tNRS = ##class(%SQL.Statement).%ExecDirect(,
-            "SELECT DocumentText FROM ClaimAudit.ClinicalNotes WHERE PatientId = '" _ tPatientId _ "'")
+            "SELECT DocumentText FROM ClaimAudit.ClinicalNotes WHERE PatientId = ?", tPatientId)
             While tNRS.%Next() {
                 Do tDetail.linkedClinicalNotes.%Push(tNRS.%Get("DocumentText"))
             }
@@ -345,7 +345,7 @@ ClassMethod ApproveClaim(id As %String) As %Status
             // 2. Fetch and complete Task
             If tClaimId '= "" {
                 Set tTRS = ##class(%SQL.Statement).%ExecDirect(,
-                "SELECT Key FROM HSFHIR_X0001_S.Task WHERE focus = 'Claim/" _ tClaimId _ "'")
+                "SELECT Key FROM HSFHIR_X0001_S.Task WHERE focus = ?", "Claim/" _ tClaimId)
                 If tTRS.%Next() {
                     Set tTaskKey = tTRS.%Get("Key")
                     Set tTaskId = $Piece(tTaskKey, "/", 2)
@@ -403,7 +403,7 @@ ClassMethod EscalateClaim(id As %String) As %Status
             // 2. Fetch and escalate Task
             If tClaimId '= "" {
                 Set tTRS = ##class(%SQL.Statement).%ExecDirect(,
-                "SELECT Key FROM HSFHIR_X0001_S.Task WHERE focus = 'Claim/" _ tClaimId _ "'")
+                "SELECT Key FROM HSFHIR_X0001_S.Task WHERE focus = ?", "Claim/" _ tClaimId)
                 If tTRS.%Next() {
                     Set tTaskKey = tTRS.%Get("Key")
                     Set tTaskId = $Piece(tTaskKey, "/", 2)
@@ -445,13 +445,13 @@ ClassMethod GetStats() As %Status
     Try {
         // Count held claims
         Set tHeld = ##class(%SQL.Statement).%ExecDirect(,
-        "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.ClaimResponse WHERE outcome='queued'")
+        "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.ClaimResponse WHERE outcome=?", "queued")
         Do tHeld.%Next()
         Set tHeldCount = tHeld.%Get("cnt")
 
         // Count approved today
         Set tApproved = ##class(%SQL.Statement).%ExecDirect(,
-        "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.ClaimResponse WHERE outcome='complete'")
+        "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.ClaimResponse WHERE outcome=?", "complete")
         Do tApproved.%Next()
         Set tApprovedCount = tApproved.%Get("cnt")
 
@@ -649,27 +649,26 @@ ClassMethod GetTrends() As %Status
 
             // Total claims submitted on this date
             Set tTotalRS = ##class(%SQL.Statement).%ExecDirect(,
-            "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.Claim WHERE CAST(created AS DATE) = '" _ tDateStr _ "'")
+            "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.Claim WHERE CAST(created AS DATE) = ?", tDateStr)
             Do tTotalRS.%Next()
             Set tProcessed = tTotalRS.%Get("cnt")
 
             // Held claims on this date
             Set tHeldRS = ##class(%SQL.Statement).%ExecDirect(,
-            "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.ClaimResponse WHERE outcome='queued' AND CAST(_lastUpdated AS DATE) = '" _ tDateStr _ "'")
+            "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.ClaimResponse WHERE outcome=? AND CAST(_lastUpdated AS DATE) = ?", "queued", tDateStr)
             Do tHeldRS.%Next()
             Set tHeld = tHeldRS.%Get("cnt")
 
             // Approved claims on this date
             Set tApprovedRS = ##class(%SQL.Statement).%ExecDirect(,
-            "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.ClaimResponse WHERE outcome='complete' AND CAST(_lastUpdated AS DATE) = '" _ tDateStr _ "'")
+            "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.ClaimResponse WHERE outcome=? AND CAST(_lastUpdated AS DATE) = ?", "complete", tDateStr)
             Do tApprovedRS.%Next()
             Set tApproved = tApprovedRS.%Get("cnt")
 
             // Compute leakage prevented from held claims on this date
             Set tLeakageRS = ##class(%SQL.Statement).%ExecDirect(,
-            "SELECT COALESCE(SUM(Claim.total.value), 0) AS cnt FROM HSFHIR_X0001_S.ClaimResponse CR "_
-            "JOIN HSFHIR_X0001_S.Claim Claim ON Claim.Key = $PIECE(CR.request.reference, '/' ,2) "_
-            "WHERE CR.outcome='queued' AND CAST(CR._lastUpdated AS DATE) = '" _ tDateStr _ "'")
+            "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.ClaimResponse CR "_
+            "WHERE CR.outcome=? AND CAST(CR._lastUpdated AS DATE) = ?", "queued", tDateStr)
             Do tLeakageRS.%Next()
             Set tLeakage = tLeakageRS.%Get("cnt")
 
@@ -700,7 +699,7 @@ ClassMethod GetLedger() As %Status
         // Query completed tasks (approved) and stat-priority tasks (escalated)
         Set tRS = ##class(%SQL.Statement).%ExecDirect(,
         "SELECT Key, status, priority, focus, lastUpdated FROM HSFHIR_X0001_S.Task "_
-        "WHERE status IN ('completed','ready') ORDER BY lastUpdated DESC")
+        "WHERE status IN (?,?) ORDER BY lastUpdated DESC", "completed", "ready")
 
         While tRS.%Next() {
             Set tTaskKey = tRS.%Get("Key")
@@ -741,7 +740,7 @@ ClassMethod GetLedger() As %Status
             Set tReason = ""
             Try {
                 Set tCRRS = ##class(%SQL.Statement).%ExecDirect(,
-                "SELECT disposition FROM HSFHIR_X0001_S.ClaimResponse WHERE request = 'Claim/" _ tClaimId _ "'")
+                "SELECT disposition FROM HSFHIR_X0001_S.ClaimResponse WHERE request = ?", "Claim/" _ tClaimId)
                 If tCRRS.%Next() {
                     Set tDisp = tCRRS.%Get("disposition")
                     If tAction = "approved" {

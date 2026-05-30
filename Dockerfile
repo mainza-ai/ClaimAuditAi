@@ -26,6 +26,9 @@ RUN python3 -m venv "/home/irisowner/.venvs/mcp-tools" && \
 # Copy the rest of the codebase files for compilation
 COPY --chown=${ISC_PACKAGE_MGRUSER}:${ISC_PACKAGE_IRISGROUP} . /home/irisowner/dev
 
+# Copy runtime init script for docker-entrypoint (first-start only)
+COPY --chmod=755 --chown=${ISC_PACKAGE_MGRUSER}:${ISC_PACKAGE_IRISGROUP} init_iris.sh /docker-entrypoint-initdb.d/
+
 # Start IRIS, execute build script, and shut down
 RUN iris start IRIS && \
     iris session IRIS < iris.script && \

@@ -6,8 +6,9 @@
       <Version>1.0.0</Version>
       <Description>ClaimAuditAI Autonomous Payment Integrity Agent for FHIR</Description>
       <Packaging>module</Packaging>
-      <SourcesRoot>src</SourcesRoot>
-      <Resource Name="ClaimAudit.PKG"/>
+      <SourcesRoot>src/cls</SourcesRoot>
+      <Resource Name="ClaimAudit.REST.PKG"/>
+      <Resource Name="ClaimAudit.AI.PKG"/>
     </Module>
   </Document>
 </Export>

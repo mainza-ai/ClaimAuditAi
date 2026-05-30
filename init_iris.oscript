@@ -1,0 +1,28 @@
+zn "INTEROP"
+
+// Initialize FHIR metadata packages if not already loaded
+do ##class(HS.FHIRServer.Installer).InstallNamespace()
+
+// Create FHIR server endpoint at /interop/fhir/r4
+set tSC = ##class(HS.FHIRServer.Installer).InstallInstance("/interop/fhir/r4", "ClaimAudit.FHIR.InteractionsStrategy", "hl7.fhir.r4.core@4.0.1")
+if tSC {
+    write "FHIR server created", !
+} else {
+    write "FHIR server setup: ", $SYSTEM.Status.GetOneErrorText(tSC), !
+}
+
+// Run Engine.Setup() to create audit tables and train models (idempotent)
+do ##class(ClaimAudit.AI.Engine).Setup()
+
+// Register the REST Web Application
+zn "%SYS"
+set p("DispatchClass")="ClaimAudit.REST.Router", p("NameSpace")="INTEROP", p("AutheEnabled")=96, p("Recurse")=1, p("MatchRoles")=":%All"
+if '##class(Security.Applications).Exists("/api") {
+    do ##class(Security.Applications).Create("/api", .p)
+    write "/api web app created", !
+} else {
+    do ##class(Security.Applications).Modify("/api", .p)
+    write "/api web app modified", !
+}
+
+halt

@@ -31,28 +31,24 @@
     // Configure %UnitTest in INTEROP
     set ^UnitTestRoot="/usr/irissys/.vscode/INTEROP/UnitTestRoot"
 
-// Load ZPM ClaimAuditAI package
-zpm "load /home/irisowner/dev/ -v":1:1
-
-// Create FHIR Server endpoint if it does not exist
-set tFHIRKey = "/interop/fhir/r4"
-set tFHIRExists = ##class(HS.FHIRServer.Service).InstanceExists(tFHIRKey)
-if 'tFHIRExists {
- set tStrategy = ##class(ClaimAudit.FHIR.InteractionsStrategy).%New()
- set tSC = ##class(HS.FHIRServer.Service).InstanceSetup(tFHIRKey, "INTEROP", tStrategy)
- if $$$ISERR(tSC) { write "FHIR Server setup error: ", $SYSTEM.Status.GetOneErrorText(tSC), ! }
-}
-
-// Run Engine.Setup() to create audit tables and train models
-do ##class(ClaimAudit.AI.Engine).Setup()
+// Compile non-FHIR-dependent classes before ZPM
+do $SYSTEM.OBJ.Load("/home/irisowner/dev/src/cls/ClaimAudit/REST/Router.cls", "ck")
+do $SYSTEM.OBJ.Load("/home/irisowner/dev/src/cls/ClaimAudit/AI/Engine.cls", "ck")
+do $SYSTEM.OBJ.Load("/home/irisowner/dev/src/cls/ClaimAudit/AI/Agent.cls", "ck")
 
 // Register the REST Web Application
-    zn "%SYS"
-    set name="/api", p("DispatchClass")="ClaimAudit.REST.Router", p("NameSpace")="INTEROP", p("AutheEnabled")=96, p("Recurse")=1, p("MatchRoles")=":%All"
-    if '##class(Security.Applications).Exists(name) {
-        do ##class(Security.Applications).Create(name, .p)
-    } else {
-        do ##class(Security.Applications).Modify(name, .p)
-    }
-    
-    halt
+zn "%SYS"
+set name="/api", p("DispatchClass")="ClaimAudit.REST.Router", p("NameSpace")="INTEROP", p("AutheEnabled")=96, p("Recurse")=1, p("MatchRoles")=":%All"
+if '##class(Security.Applications).Exists(name) {
+    do ##class(Security.Applications).Create(name, .p)
+    write "/api web app created", !
+} else {
+    do ##class(Security.Applications).Modify(name, .p)
+    write "/api web app modified", !
+}
+
+// Load ZPM ClaimAuditAI package (must be LAST)
+zn "INTEROP"
+zpm "load /home/irisowner/dev/ -v":1:1
+
+halt
