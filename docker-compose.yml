@@ -15,3 +15,14 @@ services:
       - "8080:8080"
     volumes:
       - ./:/home/irisowner/dev
+
+  ui:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile.ui
+    container_name: claimaudit-ui
+    ports:
+      - "3000:80"
+    depends_on:
+      - iris
+    restart: always

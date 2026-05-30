@@ -20,7 +20,7 @@ If the combined threat score is $\ge 0.35$ (or if any single-tier engine flags a
 - **Core Orchestrator**: `%AI.Agent` configured via high-performance cloud or local LLM gateways.
 - **Tool Mapping**: `%AI.Tool` bindings representing vector similarity, outlier analysis, and graph checks.
 - **Threshold Limit**: Combined threat score $\ge 0.35$ triggers a hold status.
-- **Language Models**: Configured for `z-ai/glm-5.1` (Nvidia cloud gateway, default) or `llama3` (local Ollama option).
+- **Language Models**: Configured for `nvidia/nemotron-3-super-120b-a12b` (Nvidia cloud gateway, default) or `llama3` (local Ollama option).
 
 ## See Also
 [[Three-Tier AI Engine Overview]] · [[ClaimResponse - HOLD vs Pass]] · [[VECTOR_COSINE Query Pattern]]

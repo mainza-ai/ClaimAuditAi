@@ -19,9 +19,11 @@ class ClaimAuditAgent:
         self.provider = os.getenv("LLM_PROVIDER", "nvidia").lower()
         
         if self.provider == "nvidia":
-            api_key = os.getenv("NVIDIA_API_KEY", "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")
+            api_key = os.getenv("NVIDIA_API_KEY", "")
+        if not api_key:
+            raise ValueError("NVIDIA_API_KEY is not configured in your environment variables.")
             base_url = os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
-            self.model = os.getenv("NVIDIA_MODEL", "z-ai/glm-5.1")
+            self.model = os.getenv("NVIDIA_MODEL", "nvidia/nemotron-3-super-120b-a12b")
             self.client = OpenAI(base_url=base_url, api_key=api_key)
             
         elif self.provider == "ollama":
@@ -73,20 +75,9 @@ CRITICAL: Do NOT use any emojis or characters outside the Basic Multilingual Pla
                 ],
                 temperature=0.7,
                 max_tokens=1024,
-                timeout=8.0
+                timeout=60.0
             )
             return clean_non_bmp(completion.choices[0].message.content)
         except Exception as e:
             sys.stderr.write(f"LLM Agent Error: {str(e)}\n")
-            # Fallback explanation if LLM fails (emojis strictly replaced by ASCII markers)
-            fallback = f"""# [WARNING] Payment Integrity Adjudication HOLD Notification
-This claim has been pended for manual review due to high threat index anomaly scores.
-
-### [NLP] Flagged Discrepancy Summaries:
-{reasons_str}
-
-### [Adjudication] Adjudication Actions:
-- **Transaction Status**: HOLD (Queued for Audit)
-- **Assigned Queue**: Clinical Audit Review
-- **Next Steps**: Provider must submit comprehensive medical charts and physical progress logs to substantiate the billed procedural severity."""
-            return clean_non_bmp(fallback)
+            raise RuntimeError(f"LLM Agent Adjudication Error: {str(e)}")

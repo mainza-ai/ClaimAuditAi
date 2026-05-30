@@ -10,7 +10,7 @@ Before installing the platform, ensure your environment meets these hardware and
 - **Storage Space**: 15 GB of free solid-state drive space (for storing the container layers and machine learning models).
 
 ### API Gateway Credentials
-- **LLM Adjudication Gateway**: A valid **Nvidia Integrate API Key** to use the default high-performance cloud `z-ai/glm-5.1` model.
+- **LLM Adjudication Gateway**: A valid **Nvidia Integrate API Key** to use the default high-performance cloud `nvidia/nemotron-3-super-120b-a12b` model.
 - **Local Fallback Option**: A running local **Ollama** instance serving the `llama3` or `qwen` models.
 
 ## Key Details

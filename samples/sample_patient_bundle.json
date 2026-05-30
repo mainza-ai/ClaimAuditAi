@@ -3,27 +3,16 @@
   "type": "transaction",
   "entry": [
     {
-      "fullUrl": "urn:uuid:patient-1",
+      "fullUrl": "urn:uuid:pat-1",
       "resource": {
         "resourceType": "Patient",
         "id": "claimaudit-pat",
         "active": true,
-        "name": [
-          {
-            "use": "official",
-            "family": "Smith",
-            "given": [
-              "John"
-            ]
-          }
-        ],
+        "name": [{ "use": "official", "family": "Smith", "given": ["John"] }],
         "gender": "male",
         "birthDate": "1981-05-29"
       },
-      "request": {
-        "method": "PUT",
-        "url": "Patient/claimaudit-pat"
-      }
+      "request": { "method": "PUT", "url": "Patient/claimaudit-pat" }
     },
     {
       "fullUrl": "urn:uuid:docref-1",
@@ -31,24 +20,227 @@
         "resourceType": "DocumentReference",
         "id": "claimaudit-docref",
         "status": "current",
-        "subject": {
-          "reference": "Patient/claimaudit-pat"
-        },
+        "subject": { "reference": "Patient/claimaudit-pat" },
         "date": "2026-05-29T14:54:20Z",
         "description": "Routine Outpatient Progress Note",
-        "content": [
-          {
-            "attachment": {
-              "contentType": "text/plain",
-              "data": "UGF0aWVudCB2aXNpdGVkIHRvZGF5IGZvciBhIHJvdXRpbmUgeWVhcmx5IHBoeXNpY2FsIGNoZWNrdXAuIFZpdGFsIHNpZ25zIGFyZSBub3JtYWwuIFBhdGllbnQgaGFzIG5vIGFjdXRlIGNvbXBsYWludHMuIEdlbmVyYWwgaGVhbHRoIGlzIGV4Y2VsbGVudC4gQWR2aXNlZCBzdGFuZGFyZCBkaWV0IGFuZCBleGVyY2lzZS4="
-            }
+        "content": [{
+          "attachment": {
+            "contentType": "text/plain",
+            "data": "UGF0aWVudCB2aXNpdGVkIHRvZGF5IGZvciBhIHJvdXRpbmUgeWVhcmx5IHBoeXNpY2FsIGNoZWNrdXAuIFZpdGFsIHNpZ25zIGFyZSBub3JtYWwuIFBhdGllbnQgaGFzIG5vIGFjdXRlIGNvbXBsYWludHMuIEJsb29kIHByZXNzdXJlIGlzIHNsaWdodGx5IGVsZXZhdGVkIGF0IDEzNS84NTsgYWR2aXNlZCB0byBjb250aW51ZSBwcmltYXJ5IGh5cGVydGVuc2lvbiBtZWRpY2F0aW9ucy4="
           }
-        ]
+        }]
       },
-      "request": {
-        "method": "PUT",
-        "url": "DocumentReference/claimaudit-docref"
-      }
+      "request": { "method": "PUT", "url": "DocumentReference/claimaudit-docref" }
+    },
+    {
+      "fullUrl": "urn:uuid:pat-2",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "claimaudit-pat2",
+        "active": true,
+        "name": [{ "use": "official", "family": "Brown", "given": ["Alice"] }],
+        "gender": "female",
+        "birthDate": "1975-08-12"
+      },
+      "request": { "method": "PUT", "url": "Patient/claimaudit-pat2" }
+    },
+    {
+      "fullUrl": "urn:uuid:docref-2",
+      "resource": {
+        "resourceType": "DocumentReference",
+        "id": "claimaudit-docref2",
+        "status": "current",
+        "subject": { "reference": "Patient/claimaudit-pat2" },
+        "date": "2026-05-29T15:10:00Z",
+        "description": "COPD Progress Note",
+        "content": [{
+          "attachment": {
+            "contentType": "text/plain",
+            "data": "UGF0aWVudCBhcnJpdmVkIGZvciBmb2xsb3ctdXAgQ09QRCBpbmhhbGVyIGFkanVzdG1lbnQuIEV2YWx1YXRlZCBsdW5nIGNhcGFjaXR5OyBwYXRpZW50IGhhcyBtaW5vciBzaG9ydG5lc3Mgb2YgYnJlYXRoIG9uIGV4ZXJ0aW9uLiBQcmVzY3JpYmVkIHJlbmV3YWwgb2YgYWxidXRlcm9sIGluaGFsZXIuIE92ZXJhbGwgY2xpbmljYWwgc3RhdHVzIHN0YWJsZS4="
+          }
+        }]
+      },
+      "request": { "method": "PUT", "url": "DocumentReference/claimaudit-docref2" }
+    },
+    {
+      "fullUrl": "urn:uuid:pat-3",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "claimaudit-pat3",
+        "active": true,
+        "name": [{ "use": "official", "family": "Johnson", "given": ["Bob"] }],
+        "gender": "male",
+        "birthDate": "1968-11-04"
+      },
+      "request": { "method": "PUT", "url": "Patient/claimaudit-pat3" }
+    },
+    {
+      "fullUrl": "urn:uuid:docref-3",
+      "resource": {
+        "resourceType": "DocumentReference",
+        "id": "claimaudit-docref3",
+        "status": "current",
+        "subject": { "reference": "Patient/claimaudit-pat3" },
+        "date": "2026-05-28T09:30:00Z",
+        "description": "Coronary Artery Disease Note",
+        "content": [{
+          "attachment": {
+            "contentType": "text/plain",
+            "data": "RXN0YWJsaXNoZWQgcGF0aWVudCByZXR1cm5zIGZvciBtYW5hZ2VtZW50IG9mIGF0aGVyb3NjbGVyb3RpYyBjb3JvbmFyeSBhcnRlcnkgZGlzZWFzZS4gUmV2aWV3ZWQgcmVjZW50IGxpcGlkIHBhbmVsIGFuZCBhZGp1c3RlZCBjYXJ2ZWRpbG9sIGRvc2luZy4gUGF0aWVudCBkZW5pZXMgYWN0aXZlIGNoZXN0IHBhaW4gb3Igc2hvcnRuZXNzIG9mIGJyZWF0aC4gUGxhbjogY29udGludWUgY2FydmVkaWxvbCwgcmV0dXJuIGluIDMgbW9udGhzLg=="
+          }
+        }]
+      },
+      "request": { "method": "PUT", "url": "DocumentReference/claimaudit-docref3" }
+    },
+    {
+      "fullUrl": "urn:uuid:pat-4",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "claimaudit-pat4",
+        "active": true,
+        "name": [{ "use": "official", "family": "Davis", "given": ["Emma"] }],
+        "gender": "female",
+        "birthDate": "1990-03-22"
+      },
+      "request": { "method": "PUT", "url": "Patient/claimaudit-pat4" }
+    },
+    {
+      "fullUrl": "urn:uuid:docref-4",
+      "resource": {
+        "resourceType": "DocumentReference",
+        "id": "claimaudit-docref4",
+        "status": "current",
+        "subject": { "reference": "Patient/claimaudit-pat4" },
+        "date": "2026-05-27T10:45:00Z",
+        "description": "Diabetes Follow-Up Note",
+        "content": [{
+          "attachment": {
+            "contentType": "text/plain",
+            "data": "UGF0aWVudCBhcnJpdmVkIGZvciBjaGVja3VwIG9mIFR5cGUgMiBkaWFiZXRlcy4gQ2hlY2tlZCBBMUMgbGV2ZWxzLCB3aGljaCByZW1haW4gc3RhYmxlIGF0IDYuOC4gQWRqdXN0ZWQgbWV0Zm9ybWluIGRvc2FnZSB0byA1MDBtZyBCSUQuIEFkdmlzZWQgcGF0aWVudCBvbiBzdHJpY3QgZGlldGFyeSBhZGhlcmVuY2UuIFJldHVybiBpbiA2IG1vbnRocy4="
+          }
+        }]
+      },
+      "request": { "method": "PUT", "url": "DocumentReference/claimaudit-docref4" }
+    },
+    {
+      "fullUrl": "urn:uuid:pat-5",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "claimaudit-pat5",
+        "active": true,
+        "name": [{ "use": "official", "family": "Wilson", "given": ["Charlie"] }],
+        "gender": "male",
+        "birthDate": "1952-12-15"
+      },
+      "request": { "method": "PUT", "url": "Patient/claimaudit-pat5" }
+    },
+    {
+      "fullUrl": "urn:uuid:docref-5",
+      "resource": {
+        "resourceType": "DocumentReference",
+        "id": "claimaudit-docref5",
+        "status": "current",
+        "subject": { "reference": "Patient/claimaudit-pat5" },
+        "date": "2026-05-26T16:20:00Z",
+        "description": "ECG Chest Pain Note",
+        "content": [{
+          "attachment": {
+            "contentType": "text/plain",
+            "data": "UGF0aWVudCBwcmVzZW50ZWQgd2l0aCBhY3V0ZSBvbnNldCBjcnVzaGluZyBjaGVzdCBwYWluIHJhZGlhdGluZyB0byBsZWZ0IHNob3VsZGVyLiBQbGFjZWQgcGF0aWVudCBvbiBveHlnZW4gaW1tZWRpYXRlbHkuIFBlcmZvcm1lZCAxMi1sZWFkIEVDRyB3aGljaCBzaG93ZWQgcmVndWxhciBzaW51cyByaHl0aG0gd2l0aG91dCBTVCBlbGV2YXRpb24uIFRyYW5zZmVycmVkIHRvIGVtZXJnZW5jeSByb29tIGZvciBzYWZldHku"
+          }
+        }]
+      },
+      "request": { "method": "PUT", "url": "DocumentReference/claimaudit-docref5" }
+    },
+    {
+      "fullUrl": "urn:uuid:pat-6",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "claimaudit-pat6",
+        "active": true,
+        "name": [{ "use": "official", "family": "Miller", "given": ["Frank"] }],
+        "gender": "male",
+        "birthDate": "1985-07-30"
+      },
+      "request": { "method": "PUT", "url": "Patient/claimaudit-pat6" }
+    },
+    {
+      "fullUrl": "urn:uuid:docref-6",
+      "resource": {
+        "resourceType": "DocumentReference",
+        "id": "claimaudit-docref6",
+        "status": "current",
+        "subject": { "reference": "Patient/claimaudit-pat6" },
+        "date": "2026-05-25T11:15:00Z",
+        "description": "Emergency Chest Tube Note",
+        "content": [{
+          "attachment": {
+            "contentType": "text/plain",
+            "data": "UGF0aWVudCBhcnJpdmVkIHZpYSBFTVMgd2l0aCB0cmF1bWF0aWMgcG5ldW1vdGhvcmF4IGFmdGVyIG1vdG9yIHZlaGljbGUgYWNjaWRlbnQuIFBsYWNlZCBsZWZ0LXNpZGVkIGNoZXN0IHR1YmUgdW5kZXIgc3RlcmlsZSB0ZWNobmlxdWUgd2l0aCB3YXRlci1zZWFsIGRyYWluYWdlIHN5c3RlbS4gUGxhY2VkIG9uIG1vbml0b3Jpbmc7IGx1bmcgcmUtZXhwYW5zaW9uIGNvbmZpcm1lZCBieSBjaGVzdCBYLXJheS4="
+          }
+        }]
+      },
+      "request": { "method": "PUT", "url": "DocumentReference/claimaudit-docref6" }
+    },
+    {
+      "fullUrl": "urn:uuid:pat-7",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "claimaudit-pat7",
+        "active": true,
+        "name": [{ "use": "official", "family": "Taylor", "given": ["Grace"] }],
+        "gender": "female",
+        "birthDate": "1988-09-18"
+      },
+      "request": { "method": "PUT", "url": "Patient/claimaudit-pat7" }
+    },
+    {
+      "fullUrl": "urn:uuid:docref-7",
+      "resource": {
+        "resourceType": "DocumentReference",
+        "id": "claimaudit-docref7",
+        "status": "current",
+        "subject": { "reference": "Patient/claimaudit-pat7" },
+        "date": "2026-05-24T14:30:00Z",
+        "description": "Asthma Progress Note",
+        "content": [{
+          "attachment": {
+            "contentType": "text/plain",
+            "data": "QXN0aG1hdGljIHBhdGllbnQgcHJlc2VudHMgd2l0aCB3b3JzZW5pbmcgd2hlZXppbmcuIEFkbWluaXN0ZXJlZCBhbGJ1dGVyb2wgbmVidWxpemVyIHRyZWF0bWVudC4gUGVyZm9ybWVkIHNwaXJvbWV0cnkgdG8gbWVhc3VyZSB2aXRhbCBjYXBhY2l0eSBhbmQgbHVuZyB2b2x1bWUgY2hhbmdlcyBwb3N0LXRyZWF0bWVudC4gTHVuZyBmdW5jdGlvbiBpbXByb3ZlZDsgZGlzY2hhcmdlZCBob21lLg=="
+          }
+        }]
+      },
+      "request": { "method": "PUT", "url": "DocumentReference/claimaudit-docref7" }
+    },
+    {
+      "fullUrl": "urn:uuid:pat-8",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "claimaudit-pat8",
+        "active": true,
+        "name": [{ "use": "official", "family": "Clark", "given": ["Henry"] }],
+        "gender": "male",
+        "birthDate": "1970-02-25"
+      },
+      "request": { "method": "PUT", "url": "Patient/claimaudit-pat8" }
+    },
+    {
+      "fullUrl": "urn:uuid:docref-8",
+      "resource": {
+        "resourceType": "DocumentReference",
+        "id": "claimaudit-docref8",
+        "status": "current",
+        "subject": { "reference": "Patient/claimaudit-pat8" },
+        "date": "2026-05-23T09:00:00Z",
+        "description": "Low Back Pain Outpatient Note",
+        "content": [{
+          "attachment": {
+            "contentType": "text/plain",
+            "data": "TmV3IHBhdGllbnQgcHJlc2VudHMgd2l0aCBzZXZlcmUgdW5zcGVjaWZpZWQgbG93IGJhY2sgcGFpbiByYWRpYXRpbmcgZG93biBsZWZ0IGxvd2VyIGV4dHJlbWl0eS4gQ29uZHVjdGVkIGNvbXBsZXRlIG9ydGhwb2VkaWMgbHVtYmFyIGFzc2Vzc21lbnQuIExvd2VyIGV4dHJlbWl0eSByZWZsZXhlcyAxKy4gU2NoZWR1bGluZyBwYXRpZW50IGZvciBkaWFnbm9zdGljIGx1bWJhciBNUkkgYW5kIHN0YXJ0aW5nIHBoeXNpY2FsIHRoZXJhcHku"
+          }
+        }]
+      },
+      "request": { "method": "PUT", "url": "DocumentReference/claimaudit-docref8" }
     }
   ]
 }

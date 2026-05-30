@@ -34,3 +34,13 @@ claim_*.txt
 claim_response*.txt
 scratch/
 
+# UI dependencies
+ui/node_modules/
+ui/dist/
+
+# Obsidian
+claimauditai-wiki/.obsidian/
+
+# Assets (large files)
+assets/
+
