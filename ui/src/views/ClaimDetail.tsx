@@ -103,7 +103,7 @@ Authorized Integrity Audit Division — ClaimAuditAI`.trim();
     },
   });
 
-  const userCanApprove = CAN_APPROVE.includes(activeRole);
+  const userCanApprove = CAN_APPROVE.includes(activeRole) && !claim?.escalated;
   const userCanEscalate = CAN_ESCALATE.includes(activeRole);
 
   if (isLoading && !claim) {
@@ -217,12 +217,14 @@ Authorized Integrity Audit Division — ClaimAuditAI`.trim();
       </div>
 
       {/* Role indicator */}
-      <div className="flex items-center gap-2 text-[10px] text-gray-500 font-mono border border-gray-800 rounded-lg px-3 py-2">
+      <div className="flex items-center gap-2 text-[10px] font-mono rounded-lg px-3 py-2" style={{ color: 'var(--text-tertiary)', border: '1px solid var(--border-default)' }}>
         <Shield size={12} />
-        Signed in as <span className="font-bold text-gray-300 uppercase">{activeRole}</span>
-        {!userCanApprove && !userCanEscalate && (
-          <span className="text-yellow-500 ml-1">— this role cannot take action on claims</span>
-        )}
+        Signed in as <span className="font-bold uppercase" style={{ color: 'var(--text-primary)' }}>{activeRole}</span>
+        {claim.escalated ? (
+          <span className="ml-1" style={{ color: 'var(--color-warning)' }}>— this claim has been escalated to director</span>
+        ) : !userCanApprove && !userCanEscalate ? (
+          <span className="ml-1" style={{ color: 'var(--color-warning)' }}>— this role cannot take action on claims</span>
+        ) : null}
       </div>
 
       {/* Decision actions */}

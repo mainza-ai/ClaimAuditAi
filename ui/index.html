@@ -15,8 +15,7 @@
     <script>
       (function () {
         var stored = localStorage.getItem('claimauditai-theme');
-        var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        var theme = stored || (prefersDark ? 'dark' : 'light');
+        var theme = stored || 'light';
         if (theme === 'dark') {
           document.documentElement.classList.add('dark');
         } else {

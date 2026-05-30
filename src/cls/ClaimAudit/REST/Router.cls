@@ -136,6 +136,16 @@ ClassMethod GetHeldClaims() As %Status
                 }
             }
 
+            // Check if this claim was escalated to director
+            Set tEscalated = 0
+            If tClaimId '= "" {
+                Set tTRS = ##class(%SQL.Statement).%ExecDirect(,
+                "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.Task WHERE focus = ? AND priority = ?", "Claim/" _ tClaimId, "stat")
+                If tTRS.%Next() {
+                    If tTRS.%Get("cnt") > 0 Set tEscalated = 1
+                }
+            }
+
             Set tObj = {
                 "id": (tClaimResponseId),
                 "patientId": (tPatientId),
@@ -147,7 +157,8 @@ ClassMethod GetHeldClaims() As %Status
                 "submittedAt": (tSubmittedAt),
                 "lastModified": (tLastUpdated),
                 "riskScore": (tRiskScore),
-                "riskLevel": (tRiskLevel)
+                "riskLevel": (tRiskLevel),
+                "escalated": (tEscalated)
             }
             Do tArr.%Push(tObj)
         }
@@ -708,8 +719,8 @@ ClassMethod GetLedger() As %Status
 
         // Query completed tasks (approved) and stat-priority tasks (escalated)
         Set tRS = ##class(%SQL.Statement).%ExecDirect(,
-        "SELECT Key, status, priority, focus, lastUpdated FROM HSFHIR_X0001_S.Task "_
-        "WHERE status IN (?,?) ORDER BY lastUpdated DESC", "completed", "ready")
+        "SELECT Key, status, priority, focus, _lastUpdated FROM HSFHIR_X0001_S.Task "_
+        "WHERE status IN (?,?) ORDER BY _lastUpdated DESC", "completed", "ready")
 
         While tRS.%Next() {
             Set tTaskKey = tRS.%Get("Key")
@@ -717,7 +728,7 @@ ClassMethod GetLedger() As %Status
             Set tStatus = tRS.%Get("status")
             Set tPriority = tRS.%Get("priority")
             Set tFocus = tRS.%Get("focus")
-            Set tLastUpdated = tRS.%Get("lastUpdated")
+            Set tLastUpdated = tRS.%Get("_lastUpdated")
 
             Set tClaimId = $Piece(tFocus, "/", 2)
             Set tAction = "approved"

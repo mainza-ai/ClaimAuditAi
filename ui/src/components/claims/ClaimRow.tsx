@@ -63,7 +63,22 @@ export function ClaimRow({ claim }: { claim: HeldClaim }) {
         </div>
       </div>
       <div className="flex items-center gap-3 shrink-0 ml-4">
-        {hovered && (
+        {claim.escalated ? (
+          <span style={{
+            fontSize: 10,
+            fontFamily: 'var(--font-mono)',
+            fontWeight: 700,
+            textTransform: 'uppercase',
+            color: 'var(--color-warning)',
+            backgroundColor: 'var(--color-warning-bg)',
+            border: '1px solid var(--color-warning-border)',
+            padding: '2px 8px',
+            borderRadius: 4,
+          }}>
+            Escalated
+          </span>
+        ) : null}
+        {hovered && !claim.escalated && (
           <div className="flex items-center gap-1.5 mr-2">
             <button
               onClick={(e) => {

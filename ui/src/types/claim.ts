@@ -10,6 +10,7 @@ export interface HeldClaim {
   lastModified: string;
   riskScore: number;
   riskLevel: 'critical' | 'high' | 'medium';
+  escalated?: number;
 }
 
 export interface AuditTierResult {

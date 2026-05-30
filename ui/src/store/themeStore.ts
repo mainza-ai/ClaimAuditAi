@@ -21,7 +21,7 @@ function applyTheme(theme: Theme) {
 function getInitialTheme(): Theme {
   const stored = localStorage.getItem('claimauditai-theme') as Theme | null;
   if (stored === 'light' || stored === 'dark') return stored;
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  return 'light';
 }
 
 export const useThemeStore = create<ThemeState>((set, get) => ({
