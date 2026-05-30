@@ -10,7 +10,8 @@ const navItems = [
 ];
 
 export function Sidebar() {
-  const { togglePanel, isOpen } = useChatStore();
+  const togglePanel = useChatStore((s) => s.togglePanel);
+  const isOpen = useChatStore((s) => s.isOpen);
 
   return (
     <aside className="w-16 bg-gray-900 border-r border-gray-800 flex flex-col items-center py-4 gap-2 shrink-0">

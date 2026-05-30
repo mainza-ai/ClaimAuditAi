@@ -465,9 +465,9 @@ ClassMethod GetStats() As %Status
         Do tApproved.%Next()
         Set tApprovedCount = tApproved.%Get("cnt")
 
-        // Total claims intercepted
+        // Total claims intercepted (all ClaimResponses = total processed)
         Set tTotal = ##class(%SQL.Statement).%ExecDirect(,
-        "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.Claim")
+        "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.ClaimResponse")
         Do tTotal.%Next()
         Set tTotalCount = tTotal.%Get("cnt")
 

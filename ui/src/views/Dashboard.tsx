@@ -3,7 +3,7 @@ import { getStats, getTrends } from '../api/stats';
 import { getHeldClaims } from '../api/claims';
 import { StatCard } from '../components/stats/StatCard';
 import { ClaimRow } from '../components/claims/ClaimRow';
-import { ShieldAlert, CheckCircle, Activity, Cpu, DollarSign, TrendingUp } from 'lucide-react';
+import { ShieldAlert, CheckCircle, Activity, Cpu, DollarSign, TrendingUp, RefreshCw } from 'lucide-react';
 
 import {
 ResponsiveContainer,
@@ -33,12 +33,12 @@ return null;
 };
 
 export function Dashboard() {
-const { data: stats, isLoading: statsLoading } = useQuery({
+const { data: stats, isLoading: statsLoading, isError: statsError, isFetching: statsFetching } = useQuery({
 queryKey: ['stats'],
 queryFn: getStats,
 });
 
-const { data: held, isLoading: heldLoading } = useQuery({
+const { data: held, isLoading: heldLoading, isError: heldError, isFetching: heldFetching } = useQuery({
 queryKey: ['claims', 'held'],
 queryFn: getHeldClaims,
 });
@@ -57,15 +57,27 @@ const leakageRate = stats?.leakageRate ?? 0;
 const avoidedLeakage = totalCapitalHeld * leakageRate;
 
 const hasData = !!stats && !statsLoading;
+const hasError = statsError || heldError;
 
 return (
 <div className="space-y-6">
-<div className="flex items-center justify-between">
+      <div className="flex items-center justify-between">
 <h1 className="text-xl font-bold text-gray-100 tracking-wider">System Overview</h1>
+<div className="flex items-center gap-2">
 <span className="text-xs font-mono text-gray-500 bg-gray-900 px-2.5 py-1 rounded border border-gray-800">
 Refreshes every 15s
 </span>
+{(statsFetching || heldFetching) && (
+<RefreshCw size={14} className="text-blue-400 animate-spin" />
+)}
 </div>
+</div>
+
+{hasError && (
+<div className="bg-red-950/20 border border-red-800/40 rounded-lg px-4 py-3 text-xs text-red-400 font-mono">
+Unable to connect to the API. Check that the IRIS container is running and the /api web app is registered.
+</div>
+)}
 
 {/* Metrics */}
 <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">

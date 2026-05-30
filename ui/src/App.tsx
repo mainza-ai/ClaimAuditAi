@@ -21,7 +21,7 @@ const queryClient = new QueryClient({
 });
 
 export default function App() {
-  const { isOpen } = useChatStore();
+  const isOpen = useChatStore((s) => s.isOpen);
 
   return (
     <QueryClientProvider client={queryClient}>

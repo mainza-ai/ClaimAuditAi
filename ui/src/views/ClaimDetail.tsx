@@ -161,9 +161,16 @@ ClaimAuditAI Platform (InterSystems IRIS for Health)
         <h2 className="text-xs font-bold text-gray-500 uppercase tracking-widest font-mono">
           Layered payment integrity findings
         </h2>
-        {claim.tierResults?.map((tier) => (
-          <TierPanel key={tier.tier} result={tier} />
-        ))}
+        {claim.tierResults && claim.tierResults.length > 0 ? (
+          claim.tierResults.map((tier) => (
+            <TierPanel key={tier.tier} result={tier} />
+          ))
+        ) : (
+          <div className="border border-dashed border-gray-800 rounded-lg p-5 text-center text-gray-500 text-sm font-mono">
+            <p>No tier data available</p>
+            <p className="text-xs text-gray-600 mt-1">LLM adjudication summary was not generated. Check API key configuration.</p>
+          </div>
+        )}
       </div>
 
       {/* Full LLM report */}
@@ -171,7 +178,13 @@ ClaimAuditAI Platform (InterSystems IRIS for Health)
         <h2 className="text-xs font-bold text-gray-500 uppercase tracking-widest font-mono">
           Explainable Adjudication justification
         </h2>
-        <DispositionReader markdown={claim.disposition} />
+        {claim.disposition && !claim.disposition.includes('PYTHON EXCEPTION') ? (
+          <DispositionReader markdown={claim.disposition} />
+        ) : (
+          <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 text-sm text-gray-500 font-mono">
+            Full LLM adjudication report not available. The Python agent could not connect to the LLM provider — verify your API key (<code className="text-blue-400">NVIDIA_API_KEY</code>) in the <code className="text-blue-400">.env</code> file and restart the container.
+          </div>
+        )}
       </div>
 
       {/* Decision actions */}

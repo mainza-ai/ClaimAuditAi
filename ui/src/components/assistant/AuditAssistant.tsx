@@ -12,8 +12,13 @@ import type { ChatMessage, ClaimContext } from '../../types/chat';
 
 export function AuditAssistant() {
   const location = useLocation();
-  const { isOpen, togglePanel, getHistory, addMessage, setLoading, isLoading, clearHistory } =
-    useChatStore();
+  const isOpen = useChatStore((s) => s.isOpen);
+  const togglePanel = useChatStore((s) => s.togglePanel);
+  const getHistory = useChatStore((s) => s.getHistory);
+  const addMessage = useChatStore((s) => s.addMessage);
+  const setLoading = useChatStore((s) => s.setLoading);
+  const isLoading = useChatStore((s) => s.isLoading);
+  const clearHistory = useChatStore((s) => s.clearHistory);
 
   // In React Router, since AuditAssistant is rendered outside <Routes> in App.tsx, useParams() will be empty.
   // We parse the claim ID from location.pathname instead to have robust route context tracking.
