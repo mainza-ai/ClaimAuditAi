@@ -130,6 +130,7 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
             
             Set claimId = pFHIRResponse.Id
             If claimId = "" Set claimId = $Piece(pFHIRResponse.ETag, "/", 1)
+            If claimId = "" Set claimId = pFHIRRequest.Json.id
             
             Set claimJson = pFHIRRequest.Json
             

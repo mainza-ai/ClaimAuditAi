@@ -21,9 +21,9 @@ ClassMethod GenerateHoldSummary(patientId As %String, providerNpi As %String, bi
         Set summary = ""_pyAgent."generate_hold_summary"(patientId, providerNpi, billedAmount, codeCount, serviceDate, firstCodeDesc, pyReasons)
         
     } Catch ex {
-        Set summary = "# ⚠️ Payment Integrity Adjudication HOLD Notification" _ $Char(13, 10) _
-                      "This claim has been pended for manual review due to high threat index anomaly scores." _ $Char(13, 10) _ $Char(13, 10) _
-                      "### 🔍 Flagged Discrepancy Summaries:" _ $Char(13, 10) _
+        Set summary = "Payment Integrity Adjudication HOLD Notification. " _
+                      "This claim has been pended for manual review due to high threat index anomaly scores. " _
+                      "Flagged Discrepancy Summaries: " _
                       "Adjudication engine encountered an internal exception: " _ ex.DisplayString()
     }
     Quit summary

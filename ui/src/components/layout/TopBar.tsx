@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { loadSampleData } from '../../api/claims';
 import { useRoleStore, type UserRole } from '../../store/roleStore';
+import clsx from 'clsx';
 import { Database, ChevronDown, Loader2 } from 'lucide-react';
 
 const ROLES: UserRole[] = ['Auditor', 'Director', 'Specialist', 'Tech Owner / Admin'];
@@ -10,12 +11,16 @@ export function TopBar() {
   const queryClient = useQueryClient();
   const { activeRole, setActiveRole } = useRoleStore();
   const [roleOpen, setRoleOpen] = useState(false);
+  const [seedDone, setSeedDone] = useState(false);
 
   const seed = useMutation({
     mutationFn: loadSampleData,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['claims'] });
-      queryClient.invalidateQueries({ queryKey: ['stats'] });
+      setSeedDone(true);
+      setTimeout(() => setSeedDone(false), 3000);
+      queryClient.invalidateQueries({ queryKey: ['claims'], refetchType: 'active' });
+      queryClient.invalidateQueries({ queryKey: ['stats'], refetchType: 'active' });
+      queryClient.invalidateQueries({ queryKey: ['stats', 'trends'], refetchType: 'active' });
     },
   });
 
@@ -42,15 +47,22 @@ export function TopBar() {
         {/* Seed Sample Data button */}
         <button
           onClick={() => seed.mutate()}
-          disabled={seed.isPending}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-mono font-semibold bg-violet-600/15 text-violet-400 border border-violet-500/30 hover:bg-violet-600/25 hover:border-violet-500/50 transition-all disabled:opacity-50"
+          disabled={seed.isPending || seedDone}
+          className={clsx(
+            "flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-mono font-semibold transition-all disabled:opacity-50 border",
+            seedDone
+              ? "bg-green-600/15 text-green-400 border-green-500/30 shadow-[0_0_8px_rgba(34,197,94,0.2)]"
+              : "bg-violet-600/15 text-violet-400 border-violet-500/30 hover:bg-violet-600/25 hover:border-violet-500/50"
+          )}
         >
           {seed.isPending ? (
             <Loader2 size={13} className="animate-spin" />
+          ) : seedDone ? (
+            <Database size={13} />
           ) : (
             <Database size={13} />
           )}
-          {seed.isPending ? 'Seeding...' : 'Seed Sample Data'}
+          {seed.isPending ? 'Seeding...' : seedDone ? 'Seeded!' : 'Seed Sample Data'}
         </button>
 
         {/* Role selector */}
