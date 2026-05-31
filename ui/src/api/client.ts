@@ -9,7 +9,6 @@ export const apiClient = axios.create({
 });
 
 let accessToken: string | null = localStorage.getItem('claimauditai_token');
-let refreshPromise: Promise<string | null> | null = null;
 
 export function setAccessToken(token: string | null) {
   accessToken = token;
