@@ -77,6 +77,9 @@ ClaimAuditAI shifts the payment integrity paradigm from retrospective "pay-and-c
 - [[ObjectScript SQL Single-Quote Consumption]] — Solving `%Get` errors from stripped SQL quotes.
 - [[Seed Data Disposition Validation]] — Fixing emoji/CRLF validation failures in FHIR strings.
 - [[iris.script Indentation Pitfalls]] — Continuation line issues causing silent setup failures.
+- [[Claim Amounts Always $0]] — Claim resources not persisted by interceptor; total not stored in ClaimResponse.
+- [[ClaimResponse FHIR Validation]] — `total` field must use BackboneElement array, not Money object.
+- [[LLM Provider Connection Failures]] — NVIDIA_API_KEY invisible to Embedded Python; runtime settings via `.llm_settings.json`.
 
 ### 📂 10 - Platform Security
 - [[Security Overview]] — Safeguarding PHI and local configuration keys.

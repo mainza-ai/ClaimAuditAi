@@ -16,6 +16,10 @@ If your installation encounters errors, locate the symptom in the table below to
 | **API returns `<METHOD DOES NOT EXIST> %Get,%SQL.StatementResult`** | ObjectScript consumes single quotes inside SQL strings | [[ObjectScript SQL Single-Quote Consumption]] |
 | **Seed Sample Data button does nothing** | Emoji/CRLF chars in disposition violate FHIR string regex; empty claim reference | [[Seed Data Disposition Validation]] |
 | **iris.script commands not executing** | Indented lines treated as continuations, never run as commands | [[iris.script Indentation Pitfalls]] |
+| **Claim amounts always $0 in UI** | Claim resources not persisted by FHIR interceptor; total not stored in ClaimResponse | [[Claim Amounts Always $0]] |
+| **LLM adjudication fails / Python exception** | NVIDIA_API_KEY invisible to Embedded Python; missing .llm_settings.json | [[LLM Provider Connection Failures]] |
+| **Seed Sample Data times out after 60s** | Interceptor loads NLP model per-claim; total ~8 min for 8 claims | [[Seed Data Loading Timeout]] |
+| **ClaimResponse FHIR validation errors** | `total` field must be an array of BackboneElement, not a Money object | [[ClaimResponse FHIR Validation]] |
 
 ## Key Details
 - **Primary Diagnostic Command**: `docker logs --tail 100 claimaudit-iris`
