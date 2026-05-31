@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, ShieldAlert, Network, MessageSquare, History } from 'lucide-react';
+import { LayoutDashboard, ShieldAlert, Network, MessageSquare, History, Settings } from 'lucide-react';
 import { useState } from 'react';
 import { useChatStore } from '../../store/chatStore';
 
@@ -8,6 +8,7 @@ const navItems = [
   { to: '/queue',     icon: ShieldAlert,    label: 'Hold queue' },
   { to: '/graph',     icon: Network,        label: 'Network graph' },
   { to: '/ledger',    icon: History,        label: 'Audit ledger' },
+  { to: '/settings/llm', icon: Settings,    label: 'LLM Settings' },
 ];
 
 export function Sidebar() {

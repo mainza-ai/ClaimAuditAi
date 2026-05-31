@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { loadSampleData } from '../../api/claims';
 import { useRoleStore, type UserRole } from '../../store/roleStore';
+import { useUserStore } from '../../store/userStore';
 import clsx from 'clsx';
-import { Database, ChevronDown, Loader2 } from 'lucide-react';
+import { Database, ChevronDown, Loader2, User } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 
 const ROLES: UserRole[] = ['Auditor', 'Director', 'Specialist', 'Tech Owner / Admin'];
@@ -11,8 +12,18 @@ const ROLES: UserRole[] = ['Auditor', 'Director', 'Specialist', 'Tech Owner / Ad
 export function TopBar() {
   const queryClient = useQueryClient();
   const { activeRole, setActiveRole } = useRoleStore();
+  const { name: userName, setUser } = useUserStore();
   const [roleOpen, setRoleOpen] = useState(false);
   const [seedDone, setSeedDone] = useState(false);
+  const [userEditing, setUserEditing] = useState(false);
+  const [userNameInput, setUserNameInput] = useState(userName);
+
+  const handleUserSave = () => {
+    if (userNameInput.trim()) {
+      setUser(userNameInput.trim(), activeRole.toLowerCase() as any);
+    }
+    setUserEditing(false);
+  };
 
   const seed = useMutation({
     mutationFn: loadSampleData,
@@ -121,6 +132,37 @@ export function TopBar() {
           <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: 'var(--color-success)' }} />
           IRIS Core Live
         </span>
+
+        {/* User name */}
+        <div style={{ position: 'relative' }}>
+          {userEditing ? (
+            <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+              <input
+                type="text"
+                value={userNameInput}
+                onChange={e => setUserNameInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleUserSave()}
+                placeholder="Your name"
+                autoFocus
+                className="input"
+                style={{ padding: '4px 8px', fontSize: 12, width: 140 }}
+              />
+              <button onClick={handleUserSave} className="btn-primary" style={{ padding: '4px 8px', fontSize: 11 }}>Set</button>
+            </div>
+          ) : (
+            <button
+              onClick={() => { setUserNameInput(userName); setUserEditing(true); }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 6,
+                fontSize: 11, fontFamily: 'var(--font-mono)', border: '1px solid var(--border-default)',
+                backgroundColor: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer',
+              }}
+            >
+              <User size={12} />
+              <span style={{ color: 'var(--text-primary)' }}>{userName || 'Set name'}</span>
+            </button>
+          )}
+        </div>
 
         <ThemeToggle />
       </div>

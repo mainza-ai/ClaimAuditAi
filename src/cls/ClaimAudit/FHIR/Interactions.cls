@@ -172,6 +172,14 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
                 "disposition": (summary),
                 "request": { "reference": ("Claim/" _ claimId) }
             }
+            // Copy total from incoming Claim so it's retrievable without the Claim resource
+            If $IsObject(claimJson.total) {
+                Set tTotalObj = {
+                    "category": {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/adjudication", "code": "submitted"}]},
+                    "amount": (claimJson.total)
+                }
+                Set claimResponse.total = [tTotalObj]
+            }
             
             Set tRequestCR = ##class(HS.FHIRServer.API.Data.Request).%New()
             Set tRequestCR.RequestMethod = "POST"

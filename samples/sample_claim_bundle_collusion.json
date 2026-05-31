@@ -1,0 +1,130 @@
+{
+  "resourceType": "Bundle",
+  "type": "transaction",
+  "entry": [
+    {
+      "request": { "method": "POST", "url": "Claim" },
+      "resource": {
+        "resourceType": "Claim",
+        "id": "collusion-claim-001",
+        "status": "active",
+        "use": "claim",
+        "patient": { "reference": "Patient/patient-001" },
+        "created": "2026-01-15",
+        "provider": {
+          "reference": "Organization/provider-001",
+          "display": "Sunrise Medical Group, NPI 1234567890"
+        },
+        "priority": { "coding": [{ "code": "normal" }] },
+        "insurance": [{ "sequence": 1, "focal": true, "coverage": { "reference": "Coverage/coverage-001" } }],
+        "item": [
+          {
+            "sequence": 1,
+            "productOrService": {
+              "coding": [{ "system": "http://www.ama-assn.org/go/cpt", "code": "99214", "display": "Office or other outpatient visit, high complexity" }]
+            },
+            "servicedDate": "2026-01-15",
+            "unitPrice": { "value": 385.00, "currency": "USD" },
+            "quantity": { "value": 1 },
+            "net": { "value": 385.00, "currency": "USD" }
+          }
+        ],
+        "diagnosis": [
+          {
+            "sequence": 1,
+            "diagnosisCodeableConcept": {
+              "coding": [{ "system": "http://hl7.org/fhir/sid/icd-10", "code": "Z00.00", "display": "Encounter for general adult medical examination without abnormal findings" }]
+            }
+          }
+        ],
+        "total": { "value": 385.00, "currency": "USD" }
+      }
+    },
+    {
+      "request": { "method": "POST", "url": "Claim" },
+      "resource": {
+        "resourceType": "Claim",
+        "id": "collusion-claim-002",
+        "status": "active",
+        "use": "claim",
+        "patient": { "reference": "Patient/patient-001" },
+        "created": "2026-01-15",
+        "provider": {
+          "reference": "Organization/provider-002",
+          "display": "Northside Specialist Group, NPI 9876543210"
+        },
+        "priority": { "coding": [{ "code": "normal" }] },
+        "insurance": [{ "sequence": 1, "focal": true, "coverage": { "reference": "Coverage/coverage-001" } }],
+        "item": [
+          {
+            "sequence": 1,
+            "productOrService": {
+              "coding": [{ "system": "http://www.ama-assn.org/go/cpt", "code": "99215", "display": "Office or other outpatient visit, high complexity" }]
+            },
+            "servicedDate": "2026-01-15",
+            "unitPrice": { "value": 475.00, "currency": "USD" },
+            "quantity": { "value": 1 },
+            "net": { "value": 475.00, "currency": "USD" }
+          },
+          {
+            "sequence": 2,
+            "productOrService": {
+              "coding": [{ "system": "http://www.ama-assn.org/go/cpt", "code": "93000", "display": "Electrocardiogram, routine ECG with at least 12 leads" }]
+            },
+            "servicedDate": "2026-01-15",
+            "unitPrice": { "value": 125.00, "currency": "USD" },
+            "quantity": { "value": 1 },
+            "net": { "value": 125.00, "currency": "USD" }
+          }
+        ],
+        "diagnosis": [
+          {
+            "sequence": 1,
+            "diagnosisCodeableConcept": {
+              "coding": [{ "system": "http://hl7.org/fhir/sid/icd-10", "code": "I10", "display": "Essential (primary) hypertension" }]
+            }
+          }
+        ],
+        "total": { "value": 600.00, "currency": "USD" }
+      }
+    },
+    {
+      "request": { "method": "POST", "url": "Claim" },
+      "resource": {
+        "resourceType": "Claim",
+        "id": "collusion-claim-003",
+        "status": "active",
+        "use": "claim",
+        "patient": { "reference": "Patient/patient-001" },
+        "created": "2026-01-15",
+        "provider": {
+          "reference": "Organization/provider-001",
+          "display": "Sunrise Medical Group, NPI 1234567890"
+        },
+        "priority": { "coding": [{ "code": "normal" }] },
+        "insurance": [{ "sequence": 1, "focal": true, "coverage": { "reference": "Coverage/coverage-001" } }],
+        "item": [
+          {
+            "sequence": 1,
+            "productOrService": {
+              "coding": [{ "system": "http://www.ama-assn.org/go/cpt", "code": "99291", "display": "Critical care, evaluation and management of the critically ill patient" }]
+            },
+            "servicedDate": "2026-01-15",
+            "unitPrice": { "value": 2500.00, "currency": "USD" },
+            "quantity": { "value": 1 },
+            "net": { "value": 2500.00, "currency": "USD" }
+          }
+        ],
+        "diagnosis": [
+          {
+            "sequence": 1,
+            "diagnosisCodeableConcept": {
+              "coding": [{ "system": "http://hl7.org/fhir/sid/icd-10", "code": "Z00.00", "display": "Encounter for general adult medical examination without abnormal findings" }]
+            }
+          }
+        ],
+        "total": { "value": 2500.00, "currency": "USD" }
+      }
+    }
+  ]
+}

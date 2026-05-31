@@ -164,3 +164,81 @@ def check_collusion_network(patient_id: str, provider_npi: str, service_date: st
     except Exception as e:
         sys.stderr.write(f"Error in collusion network check: {str(e)}\n")
         return {"flagged": False, "findings": [], "reason": f"Graph analysis error: {str(e)}"}
+
+def export_graph_for_ui() -> str:
+    """
+    Build the full collusion network from FHIR data and export
+    as a JSON structure suitable for Cytoscape.js rendering.
+    Returns a JSON string with {nodes, edges, insights} structure.
+    """
+    import json
+
+    G = build_relational_graph()
+    nodes = []
+    edges = []
+    insights = []
+
+    seen_nodes = set()
+    for node, attrs in G.nodes(data=True):
+        ntype = attrs.get("type", "patient")
+        nid = f"{ntype}-{node}"
+        if nid not in seen_nodes:
+            seen_nodes.add(nid)
+            label = attrs.get("name", str(node))
+            entry = {"data": {"id": nid, "label": label, "type": ntype}}
+            if ntype == "provider" and attrs.get("address"):
+                entry["data"]["address"] = attrs["address"]
+            nodes.append(entry)
+
+    seen_edges = set()
+    for src, dst, data in G.edges(data=True):
+        src_type = G.nodes[src].get("type", "patient")
+        dst_type = G.nodes[dst].get("type", "provider")
+        eid = f"edge-{src}-{dst}"
+        if eid not in seen_edges:
+            seen_edges.add(eid)
+            edges.append({
+                "data": {
+                    "id": eid,
+                    "source": f"{src_type}-{src}",
+                    "target": f"{dst_type}-{dst}",
+                    "label": data.get("transaction", "claim"),
+                    "amount": data.get("amount", 0.0),
+                    "date": data.get("date", ""),
+                }
+            })
+
+    # Detect temporal impossibilities from edge data
+    patient_dates = {}
+    for src, dst, data in G.edges(data=True):
+        src_type = G.nodes[src].get("type", "patient")
+        if src_type == "patient":
+            pat = src
+            svc_date = data.get("date", "")
+            prov = dst
+            if pat not in patient_dates:
+                patient_dates[pat] = {}
+            if svc_date not in patient_dates[pat]:
+                patient_dates[pat][svc_date] = []
+            patient_dates[pat][svc_date].append(prov)
+
+    for patient, dates in patient_dates.items():
+        for date, providers in dates.items():
+            unique_provs = set(providers)
+            if len(unique_provs) > 1:
+                insights.append({
+                    "type": "temporal_impossibility",
+                    "severity": "critical",
+                    "message": f"Patient {patient} billed by {len(unique_provs)} different providers on {date}: {', '.join(unique_provs)}",
+                    "date": date,
+                    "patient": patient,
+                })
+
+    return json.dumps({
+        "nodes": nodes,
+        "edges": edges,
+        "insights": insights,
+        "nodeCount": len(nodes),
+        "edgeCount": len(edges),
+        "insightCount": len(insights),
+    })

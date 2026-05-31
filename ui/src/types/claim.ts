@@ -31,11 +31,14 @@ export interface ClaimDetail extends HeldClaim {
 }
 
 export interface SystemStats {
-held: number;
-approvedToday: number;
-interceptedTotal: number;
-modelStatus: 'healthy' | 'degraded' | 'offline';
-leakageRate?: number;
+  held: number;
+  approvedToday: number;
+  interceptedTotal: number;
+  totalValueHeld?: number;
+  modelStatus: 'healthy' | 'degraded' | 'offline';
+  leakageRate?: number;
+  riskDistribution?: { level: string; count: number }[];
+  dailyInterceptedCounts?: { date: string; count: number }[];
 }
 
 export interface TrendDay {

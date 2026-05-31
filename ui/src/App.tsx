@@ -8,6 +8,7 @@ import { HoldQueue } from './views/HoldQueue';
 import { ClaimDetail } from './views/ClaimDetail';
 import { GraphView } from './views/GraphView';
 import { Ledger } from './views/Ledger';
+import { LLMSettings } from './views/LLMSettings';
 import { useChatStore } from './store/chatStore';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
@@ -56,6 +57,7 @@ export default function App() {
                 <Route path="/claims/:id" element={<ClaimDetail />} />
                 <Route path="/graph" element={<GraphView />} />
                 <Route path="/ledger" element={<Ledger />} />
+                <Route path="/settings/llm" element={<LLMSettings />} />
               </Routes>
               </ErrorBoundary>
             </main>

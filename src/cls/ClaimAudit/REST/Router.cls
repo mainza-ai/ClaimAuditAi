@@ -19,6 +19,11 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
     <Route Url="/stats"                 Method="GET"  Call="GetStats"/>
     <Route Url="/chat"                  Method="POST" Call="Chat"/>
     <Route Url="/samples/load"          Method="POST" Call="LoadSampleData"/>
+    <Route Url="/graph"                 Method="GET"  Call="GetCollusionGraph"/>
+    <Route Url="/settings/llm"              Method="GET"  Call="GetLLMSettings"/>
+    <Route Url="/settings/llm"              Method="POST" Call="UpdateLLMSettings"/>
+    <Route Url="/settings/llm/ollama/models" Method="GET"  Call="GetOllamaModels"/>
+    <Route Url="/claims/summarize-rationale" Method="POST" Call="SummarizeRationale"/>
     </Routes>
 }
 
@@ -115,6 +120,25 @@ ClassMethod GetHeldClaims() As %Status
                 } Catch {}
             }
 
+            // Fallback: if Claim fetch failed (Claim not persisted by interceptor),
+            // read the total from the ClaimResponse's own stored JSON
+            If tBilledAmount = 0 {
+                Try {
+                    Set tReqCR = ##class(HS.FHIRServer.API.Data.Request).%New()
+                    Set tReqCR.RequestMethod = "GET"
+                    Set tReqCR.RequestPath = "/ClaimResponse/" _ tClaimResponseId
+                    Set tReqCR.Interaction = "read"
+                    Set tRespCR = ##class(HS.FHIRServer.API.Data.Response).%New()
+                    Do tService.DispatchRequest(tReqCR, .tRespCR)
+                    If $IsObject(tRespCR.Json) && $IsObject(tRespCR.Json.total) && (tRespCR.Json.total.%Size() > 0) {
+                        Set tTotalItem = tRespCR.Json.total.%Get(0)
+                        If $IsObject(tTotalItem.amount) {
+                            Set tBilledAmount = +tTotalItem.amount.value
+                        }
+                    }
+                } Catch {}
+            }
+
             // Estimate risk levels from scores
             Set tRiskScore = 0.70
             Set tRiskLevel = "high"
@@ -170,7 +194,103 @@ ClassMethod GetHeldClaims() As %Status
     Quit tSC
 }
 
-/// Returns full claim detail including parsed disposition audit report
+/// Return collusion graph as JSON from graph_analyzer.py
+ClassMethod GetCollusionGraph() As %Status
+{
+    Set tSC = $$$OK
+    Try {
+        Do ##class(ClaimAudit.AI.Engine).ConfigurePythonPath()
+        Set tResult = ##class(%SYS.Python).Import("graph_analyzer")
+        Set tGraphJson = tResult."export_graph_for_ui"()
+        Write tGraphJson
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+        Write {"error": (ex.DisplayString())}.%ToJSON()
+    }
+    Quit tSC
+}
+
+/// Returns current LLM provider configuration (redacts actual API key values)
+ClassMethod GetLLMSettings() As %Status
+{
+    Set tSC = $$$OK
+    Try {
+        Set tSettings = {
+            "provider":      ($System.Util.GetEnviron("LLM_PROVIDER")),
+            "nvidiaModel":   ($System.Util.GetEnviron("NVIDIA_MODEL")),
+            "nvidiaKeySet":  ($SELECT($System.Util.GetEnviron("NVIDIA_API_KEY")'="":1,1:0)),
+            "nvidiaBaseUrl": ($System.Util.GetEnviron("NVIDIA_BASE_URL")),
+            "ollamaBaseUrl": ($System.Util.GetEnviron("OLLAMA_BASE_URL")),
+            "ollamaModel":   ($System.Util.GetEnviron("OLLAMA_MODEL")),
+            "openaiModel":   ($System.Util.GetEnviron("OPENAI_MODEL")),
+            "openaiKeySet":  ($SELECT($System.Util.GetEnviron("OPENAI_API_KEY")'="":1,1:0))
+        }
+        Write tSettings.%ToJSON()
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+        Write {"error": (ex.DisplayString())}.%ToJSON()
+    }
+    Quit tSC
+}
+
+/// Persist LLM provider overrides to .llm_settings.json (read by Python at runtime)
+ClassMethod UpdateLLMSettings() As %Status
+{
+    Set tSC = $$$OK
+    Try {
+        Set tBody = ##class(%DynamicObject).%FromJSON(%request.Content)
+        Set tFile = ##class(%Stream.FileCharacter).%New()
+        Set tFile.Filename = "/home/irisowner/dev/.llm_settings.json"
+        Do tFile.Write(tBody.%ToJSON())
+        Do tFile.%Save()
+        Write {"status": "success", "message": "LLM settings saved"}.%ToJSON()
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+        Write {"error": (ex.DisplayString())}.%ToJSON()
+    }
+    Quit tSC
+}
+
+/// List Ollama models from the configured Ollama base URL
+ClassMethod GetOllamaModels() As %Status
+{
+    Set tSC = $$$OK
+    Try {
+        Set tBaseUrl = %request.Get("baseUrl")
+        Do ##class(ClaimAudit.AI.Engine).ConfigurePythonPath()
+        Set tResult = ##class(%SYS.Python).Import("llm_router")
+        Set tPyList = tResult."list_ollama_models"(tBaseUrl)
+        Set tArr = ##class(%DynamicArray).%New()
+        For tI = 0:1:tPyList."__len__"()-1 {
+            Do tArr.%Push(tPyList."__getitem__"(tI))
+        }
+        Write tArr.%ToJSON()
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+        Write {"error": (ex.DisplayString())}.%ToJSON()
+    }
+    Quit tSC
+}
+
+/// AI-summarize a user's free-text rationale for the audit ledger
+ClassMethod SummarizeRationale() As %Status
+{
+    Set tSC = $$$OK
+    Try {
+        Set tBody = ##class(%DynamicObject).%FromJSON(%request.Content)
+        Set tAction = tBody.action
+        Set tUserText = tBody.userText
+        Do ##class(ClaimAudit.AI.Engine).ConfigurePythonPath()
+        Set tResult = ##class(%SYS.Python).Import("llm_router")
+        Set tSummary = ""_tResult."summarize_user_reason"(tAction, tUserText)
+        Write {"summary": (tSummary)}.%ToJSON()
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+        Write {"error": (ex.DisplayString())}.%ToJSON()
+    }
+    Quit tSC
+}
+
 ClassMethod GetClaimDetail(id As %String) As %Status
 {
     Set tSC = $$$OK
@@ -464,41 +584,108 @@ ClassMethod GetStats() As %Status
 {
     Set tSC = $$$OK
     Try {
+        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
+
         // Count held claims
         Set tHeld = ##class(%SQL.Statement).%ExecDirect(,
         "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.ClaimResponse WHERE outcome=?", "queued")
         Do tHeld.%Next()
         Set tHeldCount = tHeld.%Get("cnt")
 
-        // Count approved today
+        // Count approved
         Set tApproved = ##class(%SQL.Statement).%ExecDirect(,
         "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.ClaimResponse WHERE outcome=?", "complete")
         Do tApproved.%Next()
         Set tApprovedCount = tApproved.%Get("cnt")
 
-        // Total claims intercepted (all ClaimResponses = total processed)
+        // Total intercepted
         Set tTotal = ##class(%SQL.Statement).%ExecDirect(,
         "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.ClaimResponse")
         Do tTotal.%Next()
         Set tTotalCount = tTotal.%Get("cnt")
 
+        // Total value held (sum of claim amounts for held claims)
+        Set tValueHeld = 0
+        Set tHeldRS = ##class(%SQL.Statement).%ExecDirect(,
+        "SELECT Key, request FROM HSFHIR_X0001_S.ClaimResponse WHERE outcome=?", "queued")
+        While tHeldRS.%Next() {
+            Set tFocus = tHeldRS.%Get("request")
+            Set tCRKey = tHeldRS.%Get("Key")
+            Set tCRId = $Piece(tCRKey, "/", 2)
+            Set tCID = $Piece(tFocus, "/", 2)
+            Set tClaimFound = 0
+            If tCID '= "" {
+                Try {
+                    Set tReqC = ##class(HS.FHIRServer.API.Data.Request).%New()
+                    Set tReqC.RequestMethod = "GET"
+                    Set tReqC.RequestPath = "/Claim/" _ tCID
+                    Set tReqC.Interaction = "read"
+                    Set tRespC = ##class(HS.FHIRServer.API.Data.Response).%New()
+                    Do tService.DispatchRequest(tReqC, .tRespC)
+                    If $IsObject(tRespC.Json) && $IsObject(tRespC.Json.total) {
+                        Set tValueHeld = tValueHeld + +tRespC.Json.total.value
+                        Set tClaimFound = 1
+                    }
+                } Catch {}
+            }
+            // Fallback: read total from ClaimResponse
+            If 'tClaimFound {
+                Try {
+                    Set tReqCR = ##class(HS.FHIRServer.API.Data.Request).%New()
+                    Set tReqCR.RequestMethod = "GET"
+                    Set tReqCR.RequestPath = "/ClaimResponse/" _ tCRId
+                    Set tReqCR.Interaction = "read"
+                    Set tRespCR = ##class(HS.FHIRServer.API.Data.Response).%New()
+                    Do tService.DispatchRequest(tReqCR, .tRespCR)
+                    If $IsObject(tRespCR.Json) && $IsObject(tRespCR.Json.total) && (tRespCR.Json.total.%Size() > 0) {
+                        Set tTotalItem = tRespCR.Json.total.%Get(0)
+                        If $IsObject(tTotalItem.amount) {
+                            Set tValueHeld = tValueHeld + +tTotalItem.amount.value
+                        }
+                    }
+                } Catch {}
+            }
+        }
+
+        // Risk distribution from disposition text patterns
+        Set tCrit = ##class(%SQL.Statement).%ExecDirect(,
+        "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.ClaimResponse WHERE outcome=? AND disposition [ ?", "queued", "critical")
+        Do tCrit.%Next()
+        Set tHigh = ##class(%SQL.Statement).%ExecDirect(,
+        "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.ClaimResponse WHERE outcome=? AND (disposition [ ? OR disposition [ ?)", "queued", "high", "0.35")
+        Do tHigh.%Next()
+        Set tMed = tHeldCount - tCrit.%Get("cnt") - tHigh.%Get("cnt")
+        If tMed < 0 Set tMed = 0
+
+        Set tRiskDist = []
+        Do tRiskDist.%Push({"level": "critical", "count": (+tCrit.%Get("cnt"))})
+        Do tRiskDist.%Push({"level": "high", "count": (+tHigh.%Get("cnt"))})
+        Do tRiskDist.%Push({"level": "medium", "count": (tMed)})
+
+        // Daily counts for last 7 days
+        Set tDaily = []
+        For tI = 6:-1:0 {
+            Set tDate = $PIECE($HOROLOG,",",1) - tI
+            Set tDateStr = $ZDATE(tDate, 3)
+            Set tDRS = ##class(%SQL.Statement).%ExecDirect(,
+            "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.ClaimResponse WHERE CAST(_lastUpdated AS DATE) = ?", tDateStr)
+            Do tDRS.%Next()
+            Do tDaily.%Push({"date": (tDateStr), "count": (+tDRS.%Get("cnt"))})
+        }
+
+        // Leakage rate
+        Set tLeakRate = 0
+        If tTotalCount > 0 Set tLeakRate = tHeldCount / tTotalCount
+
         Set tStats = {
             "held": (tHeldCount),
             "approvedToday": (tApprovedCount),
             "interceptedTotal": (tTotalCount),
+            "totalValueHeld": (tValueHeld),
             "modelStatus": "healthy",
-            "leakageRate": 0.34
-        }
-        // Compute actual leakage rate from held vs total claims
-        If tTotalCount > 0 {
-            Set tLeakRate = tHeldCount / tTotalCount
-            Set tStats = {
-                "held": (tHeldCount),
-                "approvedToday": (tApprovedCount),
-                "interceptedTotal": (tTotalCount),
-                "modelStatus": "healthy",
-                "leakageRate": (tLeakRate)
-            }
+            "leakageRate": (tLeakRate),
+            "riskDistribution": (tRiskDist),
+            "dailyInterceptedCounts": (tDaily)
         }
         Write tStats.%ToJSON()
     } Catch ex {
@@ -543,7 +730,6 @@ ClassMethod Chat() As %Status
 ClassMethod LoadSampleData() As %Status
 {
     Set tSC = $$$OK
-    Set %response.ContentType = "application/json"
     Try {
         // 1. Wipe existing tables for a clean state
         Do ##class(%SQL.Statement).%ExecDirect(, "DELETE FROM HSFHIR_X0001_S.ClaimResponse")
