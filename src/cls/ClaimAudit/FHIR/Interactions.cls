@@ -32,7 +32,7 @@ Method OnBeforeRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest A
 Method AuditSingleClaim(pClaimJson As %DynamicObject) [ Private ]
 {
     Set tSC = ##class(ClaimAudit.AI.Engine).AuditClaim(pClaimJson, .tAuditResult)
-    If $$$ISOK(tSC) && (tAuditResult.flagged = 1) {
+    If tAuditResult.flagged = 1 {
         
         // Invoke AI Hub Agent to author explainable hold disposition
         Set summary = ##class(ClaimAudit.AI.Agent).GenerateHoldSummary(tAuditResult.patientId, tAuditResult.providerNpi, tAuditResult.billedAmount, tAuditResult.codeCount, tAuditResult.serviceDate, tAuditResult.firstCodeDesc, tAuditResult.reasons)

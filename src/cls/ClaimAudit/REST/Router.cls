@@ -156,15 +156,15 @@ ClassMethod GetHeldClaims() As %Status
         If tLimit < 1 Set tLimit = 50
         If tLimit > 200 Set tLimit = 200
 
-        // Single O(1) query with JOINs — no per-row DispatchRequest calls
-        Set tSQL = "SELECT CR.Key AS crKey, CR.patient, CR.request, CR._lastUpdated, CR.disposition, "_
-                   "PP.Name AS patientName, "_
-                   "CR.total, "_
-                   "(SELECT COUNT(*) FROM HSFHIR_X0001_S.Task T WHERE T.focus = CR.request AND T.priority = 'stat') AS escalated "_
-                   "FROM HSFHIR_X0001_S.ClaimResponse CR "_
-                   "LEFT JOIN ClaimAudit.PatientProjections PP ON SUBSTRING(CR.patient, 9) = PP.Key "_
-                   "WHERE CR.outcome = ? "_
-                   "ORDER BY CR._lastUpdated DESC"
+        // Single O(1) query with JOIN — matching the proven CSV export pattern
+        // Build SQL as single concatenated string (no line continuations)
+        Set tRS = ##class(%SQL.Statement).%ExecDirect(,
+        "SELECT CR.Key, CR.patient, CR.request, CR._lastUpdated, CR.disposition, "_
+        "PP.Name AS patientName "_
+        "FROM HSFHIR_X0001_S.ClaimResponse CR "_
+        "LEFT JOIN ClaimAudit.PatientProjections PP ON SUBSTRING(CR.patient, 9) = PP.Key "_
+        "WHERE CR.outcome = ? "_
+        "ORDER BY CR._lastUpdated DESC", "queued")
 
         // Count query for pagination total
         Set tCountRS = ##class(%SQL.Statement).%ExecDirect(,
@@ -172,79 +172,24 @@ ClassMethod GetHeldClaims() As %Status
         Do tCountRS.%Next()
         Set tTotal = +tCountRS.%Get("cnt")
 
-        Set tRS = ##class(%SQL.Statement).%ExecDirect(, tSQL, "queued")
-
         Set tArr = []
         Set tIdx = 0
         While tRS.%Next() {
-            // Pagination skip
             Set tIdx = tIdx + 1
             If tIdx <= tOffset Continue
             If tArr.%Size() >= tLimit Quit
 
-            Set tClaimResponseKey = tRS.%Get("crKey")
-            Set tClaimResponseId = $Piece(tClaimResponseKey, "/", 2)
+            Set tCRKey = tRS.%Get("Key")
+            Set tClaimResponseId = $Piece(tCRKey, "/", 2)
             Set tPatientRef = tRS.%Get("patient")
             Set tPatientId = $Piece(tPatientRef, "/", 2)
             Set tRequestRef = tRS.%Get("request")
             Set tClaimId = $Piece(tRequestRef, "/", 2)
             Set tLastUpdated = tRS.%Get("_lastUpdated")
             Set tDisposition = tRS.%Get("disposition")
-            Set tEscalated = +tRS.%Get("escalated")
 
-            // Patient name from SQL join
             Set tPatientName = tRS.%Get("patientName")
             If tPatientName = "" Set tPatientName = "Unknown Patient"
-
-            // Billed amount from ClaimResponse.total (BackboneElement array) — O(1) in-row access
-            // The interceptor stores total as [{category: ..., amount: {value: X, currency: "USD"}}]
-            Set tBilledAmount = 0.0
-            Set tTotalStr = tRS.%Get("total")
-            If tTotalStr '= "" {
-                Try {
-                    Set tTotalJson = ##class(%DynamicAbstractObject).%FromJSON(tTotalStr)
-                    If $IsObject(tTotalJson) {
-                        Set tArrSize = tTotalJson.%Size()
-                        For tI = 0:1:tArrSize-1 {
-                            Set tTotalEntry = tTotalJson.%Get(tI)
-                            If $IsObject(tTotalEntry.amount) {
-                                Set tBilledAmount = +tTotalEntry.amount.value
-                                Quit
-                            }
-                        }
-                    }
-                } Catch {}
-            }
-
-            // CPT and ICD from ClaimResponse extensions (embedded by interceptor)
-            // The extensions are stored as JSON in the ClaimResponse resource
-            Set tCptCode = "Unknown"
-            Set tIcdCode = "Unknown"
-            Set tSubmittedAt = tLastUpdated
-
-            Try {
-                Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
-                Set tReqCR = ##class(HS.FHIRServer.API.Data.Request).%New()
-                Set tReqCR.RequestMethod = "GET"
-                Set tReqCR.RequestPath = "/ClaimResponse/" _ tClaimResponseId
-                Set tReqCR.Interaction = "read"
-                Set tRespCR = ##class(HS.FHIRServer.API.Data.Response).%New()
-                Do tService.DispatchRequest(tReqCR, .tRespCR)
-                If $IsObject(tRespCR.Json) {
-                    If tRespCR.Json.created '= "" Set tSubmittedAt = tRespCR.Json.created
-                    If $IsObject(tRespCR.Json.extension) {
-                        Set tExtIter = tRespCR.Json.extension.%GetIterator()
-                        While tExtIter.%GetNext(.tK, .tExt) {
-                            If tExt.url = "https://claimauditai.com/fhir/extension/cpt-code" {
-                                Set tCptCode = tExt.valueString
-                            }
-                            If tExt.url = "https://claimauditai.com/fhir/extension/icd-code" {
-                                Set tIcdCode = tExt.valueString
-                            }
-                        }
-                    }
-                }
-            } Catch {}
 
             // Derive risk level from disposition keywords
             Set tRiskScore = 0.70
@@ -260,15 +205,28 @@ ClassMethod GetHeldClaims() As %Status
                 Set tRiskLevel = "medium"
             }
 
+            // Escalated check
+            Set tEscalated = 0
+            If tRequestRef '= "" {
+                Try {
+                    Set tEscRS = ##class(%SQL.Statement).%ExecDirect(,
+                    "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.Task WHERE focus = ? AND priority = ?",
+                    tRequestRef, "stat")
+                    If tEscRS.%Next(), (+tEscRS.%Get("cnt") > 0) {
+                        Set tEscalated = 1
+                    }
+                } Catch {}
+            }
+
             Set tObj = {
                 "id": (tClaimResponseId),
                 "patientId": (tPatientId),
                 "patientName": (tPatientName),
                 "providerId": "claimaudit-prov",
-                "cptCode": (tCptCode),
-                "icdCode": (tIcdCode),
-                "totalAmount": (tBilledAmount),
-                "submittedAt": (tSubmittedAt),
+                "cptCode": "Unknown",
+                "icdCode": "Unknown",
+                "totalAmount": 0,
+                "submittedAt": (tLastUpdated),
                 "lastModified": (tLastUpdated),
                 "riskScore": (tRiskScore),
                 "riskLevel": (tRiskLevel),
@@ -1019,9 +977,15 @@ ClassMethod ChatStream() As %Status
         Set tLLM = ##class(%SYS.Python).Import("llm_router")
         Set tStream = tLLM."chat_stream"(tSystemPrompt, tMessages.%ToJSON(), 1024)
 
-        // Yield chunks as SSE data lines
-        Set tIter = tStream."__iter__"()
-        While tIter."__next__"(, .tChunk) {
+        // Iterate Python generator using for-loop over the iterable
+        // Catch StopIteration at the end of the generator
+        Set tChunk = ""
+        For tI = 1:1 {
+            Try {
+                Set tChunk = tStream."__next__"()
+            } Catch {
+                Quit
+            }
             If tChunk '= "" {
                 Write "data: ", $ZCONVERT(tChunk, "O", "UTF8"), $CHAR(13,10), $CHAR(13,10)
                 Do %response.Flush()

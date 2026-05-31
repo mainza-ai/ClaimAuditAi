@@ -198,7 +198,7 @@ ClassMethod AuditClaim(pClaimJson As %DynamicObject, Output pResult As %DynamicO
         )
 
         // Tier 1: NLP results
-        Set tDict1 = $Get(tAllResults."tier1")
+        Set tDict1 = tAllResults."get"("tier1")
         Set t1Flagged = 0
         Set t1Reason = ""
         Set t1Sim = 0.0
@@ -209,7 +209,7 @@ ClassMethod AuditClaim(pClaimJson As %DynamicObject, Output pResult As %DynamicO
         }
 
         // Tier 2: Autoencoder results
-        Set tDict2 = $Get(tAllResults."tier2")
+        Set tDict2 = tAllResults."get"("tier2")
         Set t2Flagged = 0
         Set t2Reason = ""
         Set t2Loss = 0.0
@@ -220,7 +220,7 @@ ClassMethod AuditClaim(pClaimJson As %DynamicObject, Output pResult As %DynamicO
         }
 
         // Tier 3: Graph results
-        Set tDict3 = $Get(tAllResults."tier3")
+        Set tDict3 = tAllResults."get"("tier3")
         Set t3Flagged = 0
         Set t3Reason = ""
         If $IsObject(tDict3) {
