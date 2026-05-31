@@ -188,26 +188,46 @@ ClassMethod AuditClaim(pClaimJson As %DynamicObject, Output pResult As %DynamicO
             } Catch {}
         }
         
-        // TIER 1: Semantic NLP Vector Search
-        Set nlp = ##class(%SYS.Python).Import("nlp_auditor")
-        Set pyT1 = nlp."verify_clinical_validity"(patientId, firstCodeDesc)
-        Set t1Flagged = +pyT1."__getitem__"("flagged")
-        Set t1Reason = pyT1."__getitem__"("reason")
-        Set t1Sim = +pyT1."__getitem__"("similarity")
-        
-        // TIER 2: PyTorch Autoencoder Anomaly Score
-        Set ae = ##class(%SYS.Python).Import("autoencoder_train")
-        Set pyT2 = ae."evaluate_claim_anomaly"(billedAmount, codeCount, specialtyCode, patientAge, durationDays)
-        Set t2Flagged = +pyT2."__getitem__"("flagged")
-        Set t2Reason = pyT2."__getitem__"("reason")
-        Set t2Loss = +pyT2."__getitem__"("loss")
-        
-        // TIER 3: NetworkX Collusion Network Check
-        Set ga = ##class(%SYS.Python).Import("graph_analyzer")
-        Set pyT3 = ga."check_collusion_network"(patientId, providerNpi, serviceDate)
-        Set t3Flagged = +pyT3."__getitem__"("flagged")
-        Set t3Reason = pyT3."__getitem__"("reason")
-        
+        // Run all three AI tiers in parallel with timeouts and circuit breaker
+        Set orchestrator = ##class(%SYS.Python).Import("tier_orchestrator")
+        Set tAllResults = orchestrator."run_all_tiers"(
+            patientId, providerNpi, firstCodeDesc,
+            billedAmount, codeCount,
+            specialtyCode, patientAge, durationDays,
+            serviceDate
+        )
+
+        // Tier 1: NLP results
+        Set tDict1 = $Get(tAllResults."tier1")
+        Set t1Flagged = 0
+        Set t1Reason = ""
+        Set t1Sim = 0.0
+        If $IsObject(tDict1) {
+            Set t1Flagged = +tDict1."get"("flagged", 0)
+            Set t1Reason = tDict1."get"("reason", "")
+            Set t1Sim = +tDict1."get"("similarity", 0.0)
+        }
+
+        // Tier 2: Autoencoder results
+        Set tDict2 = $Get(tAllResults."tier2")
+        Set t2Flagged = 0
+        Set t2Reason = ""
+        Set t2Loss = 0.0
+        If $IsObject(tDict2) {
+            Set t2Flagged = +tDict2."get"("flagged", 0)
+            Set t2Reason = tDict2."get"("reason", "")
+            Set t2Loss = +tDict2."get"("loss", 0.0)
+        }
+
+        // Tier 3: Graph results
+        Set tDict3 = $Get(tAllResults."tier3")
+        Set t3Flagged = 0
+        Set t3Reason = ""
+        If $IsObject(tDict3) {
+            Set t3Flagged = +tDict3."get"("flagged", 0)
+            Set t3Reason = tDict3."get"("reason", "")
+        }
+
         // Synthesis & Risk Scoring
         Set score = 0.0
         Set flaggedCount = 0

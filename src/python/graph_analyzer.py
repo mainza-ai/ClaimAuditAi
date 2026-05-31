@@ -12,9 +12,10 @@ except ImportError:
 _graph_cache = {"graph": None, "timestamp": 0, "ttl": 30}
 _graph_lock = threading.Lock()
 
-def build_relational_graph() -> nx.DiGraph:
-    """Query IRIS database relations and construct a NetworkX DiGraph representing entity connections."""
-    G = nx.DiGraph()
+def build_relational_graph() -> nx.MultiDiGraph:
+    """Query IRIS database relations and construct a NetworkX MultiDiGraph representing entity connections.
+    MultiDiGraph prevents duplicate edge overwrites between the same patient-provider pair."""
+    G = nx.MultiDiGraph()
     if not iris:
         # If not running in IRIS, return a pre-populated mock graph for ZPM verification
         # Nodes: Patients, NPIs (Practitioners), Clinics (Addresses)
@@ -93,7 +94,32 @@ def build_relational_graph() -> nx.DiGraph:
         sys.stderr.write(f"Graph Construction Error: {str(e)}\n")
         return G
 
-def _get_cached_graph(force_rebuild: bool = False) -> nx.DiGraph:
+# US state abbreviations for validation
+_VALID_STATES = {
+    "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
+    "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
+    "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
+    "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
+    "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
+    "DC", "PR", "VI", "GU", "AS", "MP",
+}
+
+
+def _extract_state(address: str) -> str:
+    """Extract a 2-letter US state code from an address string."""
+    if not address:
+        return ""
+    parts = address.strip().upper().split()
+    for part in reversed(parts):
+        if len(part) == 2 and part in _VALID_STATES:
+            return part
+    last = parts[-1]
+    if len(last) >= 2 and last[:2] in _VALID_STATES:
+        return last[:2]
+    return ""
+
+
+def _get_cached_graph(force_rebuild: bool = False) -> nx.MultiDiGraph:
     """Get the relational graph from cache or rebuild if TTL expired."""
     with _graph_lock:
         now = time.time()
@@ -138,9 +164,12 @@ def check_collusion_network(patient_id: str, provider_npi: str, service_date: st
         if G.has_node(patient_id):
             patient_claims = []
             for neighbor in G.neighbors(patient_id):
-                edge_data = G.get_edge_data(patient_id, neighbor)
-                if edge_data and edge_data.get("date") == service_date and neighbor != provider_npi:
-                    patient_claims.append(neighbor)
+                edge_dict = G.get_edge_data(patient_id, neighbor)
+                # MultiDiGraph returns {edge_key: edge_attrs, ...}
+                if edge_dict:
+                    edge_data = next(iter(edge_dict.values()))
+                    if edge_data.get("date") == service_date and neighbor != provider_npi:
+                        patient_claims.append(neighbor)
             
             # If the patient has claims at multiple providers on the exact same day
             if len(patient_claims) > 0:
@@ -152,10 +181,8 @@ def check_collusion_network(patient_id: str, provider_npi: str, service_date: st
                     # If addresses are completely different, assume a geo-temporal impossibility (e.g. Miami vs Seattle)
                     # We can do a basic string state/city match or distance calculation
                     # Let's check states (e.g. "FL" vs "WA") in address
-                    state_parts1 = prov1_addr.strip().split()
-                    state1 = state_parts1[-1][:2].upper() if len(state_parts1[-1]) >= 2 else ""
-                    state_parts2 = prov2_addr.strip().split()
-                    state2 = state_parts2[-1][:2].upper() if len(state_parts2[-1]) >= 2 else ""
+                    state1 = _extract_state(prov1_addr)
+                    state2 = _extract_state(prov2_addr)
                     
                     if state1 and state2 and state1 != state2:
                         flagged = True
@@ -293,8 +320,7 @@ def export_graph_for_ui() -> str:
                 states = set()
                 for p in unique_provs:
                     addr = G.nodes.get(p, {}).get("address", "")
-                    parts = addr.strip().split()
-                    st = parts[-1][:2].upper() if parts and len(parts[-1]) >= 2 else ""
+                    st = _extract_state(addr)
                     if st:
                         states.add(st)
                 if len(states) > 1:
@@ -315,7 +341,7 @@ def export_graph_for_ui() -> str:
         if G.nodes[dst].get("type") == "provider":
             prov_patient_count.setdefault(dst, set()).add(src)
     for prov, patients in prov_patient_count.items():
-        if len(patients) >= 3:
+        if len(patients) >= 10:
             insights.append({
                 "type": "high_degree_provider",
                 "severity": "high",

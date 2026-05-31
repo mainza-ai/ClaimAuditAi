@@ -252,6 +252,10 @@ ClassMethod UpdateLLMSettings() As %Status
         Set tFile.Filename = tSettingsPath
         Do tFile.Write(tMerged.%ToJSON())
         Do tFile.%Save()
+        // Invalidate cached LLM client so next request picks up new settings
+        Do ##class(ClaimAudit.AI.Engine).ConfigurePythonPath()
+        Set tLLM = ##class(%SYS.Python).Import("llm_router")
+        Do tLLM."invalidate_client_cache"()
         Write {"status": "success", "message": "LLM settings saved"}.%ToJSON()
     } Catch ex {
         Set tSC = ex.AsStatus()

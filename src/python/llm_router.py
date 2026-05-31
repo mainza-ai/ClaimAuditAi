@@ -1,11 +1,19 @@
 import os
-import json
 import sys
+import json
+import time
 import logging
 import urllib.request
 import urllib.error
 
 logger = logging.getLogger(__name__)
+
+# LLM client singleton cache
+_client_cache = {}
+_cache_lock = __import__('threading').Lock()
+
+RETRY_COUNT = 3
+RETRY_BASE_DELAY = 1.0  # seconds
 
 def clean_non_bmp(text: str) -> str:
     return "".join(c for c in text if ord(c) <= 0xFFFF)
@@ -24,11 +32,23 @@ def _get_client_and_model():
     settings = _load_settings()
     provider = settings.get("provider") or os.environ.get("LLM_PROVIDER", "nvidia").strip().lower()
 
+    cache_key = provider
+    with _cache_lock:
+        if cache_key in _client_cache:
+            return _client_cache[cache_key]
+
+    result = _create_client(provider, settings)
+    with _cache_lock:
+        _client_cache[cache_key] = result
+    return result
+
+
+def _create_client(provider: str, settings: dict):
     if provider == "nvidia":
         from openai import OpenAI
         api_key = settings.get("nvidiaApiKey") or os.environ.get("NVIDIA_API_KEY")
         if not api_key:
-            raise ValueError("LLM_PROVIDER is 'nvidia' but NVIDIA_API_KEY is not set. Configure it in .env or LLM Settings.")
+            raise ValueError("LLM_PROVIDER is 'nvidia' but NVIDIA_API_KEY is not set.")
         base_url = settings.get("nvidiaBaseUrl") or os.environ.get("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
         model = settings.get("nvidiaModel") or os.environ.get("NVIDIA_MODEL", "nvidia/nemotron-3-super-120b-a12b")
         client = OpenAI(api_key=api_key, base_url=base_url)
@@ -45,7 +65,7 @@ def _get_client_and_model():
         from openai import OpenAI
         api_key = settings.get("openaiApiKey") or os.environ.get("OPENAI_API_KEY")
         if not api_key:
-            raise ValueError("LLM_PROVIDER is 'openai' but OPENAI_API_KEY is not set. Configure it in .env or LLM Settings.")
+            raise ValueError("LLM_PROVIDER is 'openai' but OPENAI_API_KEY is not set.")
         base_url = settings.get("openaiBaseUrl") or os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
         model = settings.get("openaiModel") or os.environ.get("OPENAI_MODEL", "gpt-4")
         client = OpenAI(api_key=api_key, base_url=base_url)
@@ -54,23 +74,42 @@ def _get_client_and_model():
     else:
         raise ValueError(f"Unknown LLM_PROVIDER '{provider}'. Valid values: nvidia, ollama, openai")
 
+
 def chat(system_prompt: str, messages_json: str, max_tokens: int = 1024) -> str:
-    client, model = _get_client_and_model()
-    try:
-        messages = json.loads(messages_json)
-    except Exception:
-        messages = []
-    full_messages = [{"role": "system", "content": system_prompt}] + messages
-    response = client.chat.completions.create(
-        model=model,
-        messages=full_messages,
-        max_tokens=max_tokens,
-        temperature=0.3,
-        timeout=60.0,
-    )
-    if not response.choices:
-        raise ValueError("LLM returned empty response — no choices available")
-    return clean_non_bmp(response.choices[0].message.content)
+    last_error = None
+    for attempt in range(RETRY_COUNT + 1):
+        try:
+            client, model = _get_client_and_model()
+            try:
+                messages = json.loads(messages_json)
+            except Exception:
+                messages = []
+            full_messages = [{"role": "system", "content": system_prompt}] + messages
+            response = client.chat.completions.create(
+                model=model,
+                messages=full_messages,
+                max_tokens=max_tokens,
+                temperature=0.3,
+                timeout=60.0,
+            )
+            if not response.choices:
+                raise ValueError("LLM returned empty response — no choices available")
+            return clean_non_bmp(response.choices[0].message.content)
+        except Exception as e:
+            last_error = e
+            if attempt < RETRY_COUNT:
+                delay = RETRY_BASE_DELAY * (2 ** attempt)
+                logger.warning(f"LLM attempt {attempt + 1} failed: {e}. Retrying in {delay:.1f}s...")
+                time.sleep(delay)
+            else:
+                logger.error(f"LLM failed after {RETRY_COUNT + 1} attempts: {e}")
+    raise RuntimeError(f"LLM request failed after {RETRY_COUNT + 1} attempts: {last_error}")
+
+
+def invalidate_client_cache():
+    """Clear cached LLM clients — call after settings change."""
+    with _cache_lock:
+        _client_cache.clear()
 
 def generate(prompt: str, max_tokens: int = 2048) -> str:
     return chat(
