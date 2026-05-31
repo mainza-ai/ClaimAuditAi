@@ -44,7 +44,7 @@ jobs:
           cache: npm
           cache-dependency-path: ui/package-lock.json
       - name: Install dependencies
-        run: cd ui && npm ci
+        run: cd ui && npm install --legacy-peer-deps
       - name: Lint
         run: cd ui && npx eslint src/
       - name: Type check
@@ -68,7 +68,7 @@ jobs:
           cache: npm
           cache-dependency-path: ui/package-lock.json
       - name: Build frontend
-        run: cd ui && npm ci && npm run build
+        run: cd ui && npm install --legacy-peer-deps && npm run build
       - name: Verify build output
         run: |
           if [ ! -d "ui/dist" ]; then

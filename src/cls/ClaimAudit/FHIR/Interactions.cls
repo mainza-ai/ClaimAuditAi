@@ -213,7 +213,9 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
                     "category": {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/adjudication", "code": "submitted"}]},
                     "amount": (claimJson.total)
                 }
-                Set claimResponse.total = [tTotalObj]
+                Set tTotalArr = ##class(%DynamicArray).%New()
+                Do tTotalArr.%Push(tTotalObj)
+                Set claimResponse.total = tTotalArr
             }
 
             // Embed CPT and ICD codes as extensions so they can be read without the Claim resource

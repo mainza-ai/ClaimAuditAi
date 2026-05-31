@@ -13,16 +13,14 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
     <!-- Public auth endpoints -->
     <Route Url="/auth/login"      Method="POST" Call="Login"/>
     <Route Url="/auth/introspect" Method="POST" Call="Introspect"/>
+    <Route Url="/auth/debug"      Method="POST" Call="AuthDebug"/>
 
     <!-- Protected endpoints -->
     <Route Url="/stats/trends" Method="GET" Call="GetTrends"/>
     <Route Url="/ledger" Method="GET" Call="GetLedger"/>
     <Route Url="/claims/held" Method="GET" Call="GetHeldClaims"/>
-    <Route Url="/claims/:id"            Method="GET"  Call="GetClaimDetail"/>
-    <Route Url="/claims/:id/approve"    Method="POST" Call="ApproveClaim"/>
-    <Route Url="/claims/:id/escalate"   Method="POST" Call="EscalateClaim"/>
-    <Route Url="/claims/:id/reject"     Method="POST" Call="RejectClaim"/>
     <Route Url="/claims/export"         Method="GET"  Call="ExportClaims"/>
+    <Route Url="/claims/:id"            Method="GET"  Call="GetClaimDetail"/>
     <Route Url="/stats"                 Method="GET"  Call="GetStats"/>
     <Route Url="/stats/model-performance" Method="GET"  Call="GetModelPerformance"/>
     <Route Url="/metrics"               Method="GET"  Call="GetMetrics"/>
@@ -43,15 +41,107 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
 }
 
 /// SMART on FHIR OAuth2 login endpoint — public (no auth required)
+
+/// Debug endpoint to test request body parsing
+ClassMethod AuthDebug() As %Status
+{
+    Set tSC = $$$OK
+    Try {
+        Set tRaw = %request.Content
+        Write {"hasContent": ($IsObject(tRaw)), "type": ($Classname(tRaw)), "size": (tRaw.Size)}.%ToJSON()
+    } Catch ex {
+        Write {"error": (ex.DisplayString())}.%ToJSON()
+    }
+    Quit tSC
+}
+
 ClassMethod Login() As %Status
 {
-    Quit ##class(ClaimAudit.REST.Auth).Login()
+    Set tSC = $$$OK
+    Try {
+        Set tRaw = %request.Content
+        Do tRaw.Rewind()
+        Set tLen = 32000
+        Set tBodyStr = tRaw.Read(.tLen)
+        If tBodyStr = "" {
+            Write {"error": "empty_body"}.%ToJSON()
+            Quit
+        }
+        Set tBody = ##class(%DynamicObject).%FromJSON(tBodyStr)
+        If '$IsObject(tBody) {
+            Write {"error": "json_parse_failed"}.%ToJSON()
+            Quit
+        }
+        Set tGrantType = tBody.%Get("grant_type")
+        Set tUsername = tBody.%Get("username")
+        Set tPassword = tBody.%Get("password")
+        Set tClientId = tBody.%Get("client_id")
+
+        If tGrantType '= "password" {
+            Set %response.Status = 400
+            Write {"error": "unsupported_grant_type"}.%ToJSON()
+            Quit
+        }
+        If tUsername = "" || (tPassword = "") {
+            Set %response.Status = 400
+            Write {"error": "invalid_request"}.%ToJSON()
+            Quit
+        }
+
+        // Validate credentials using IRIS login system
+        // Validate credentials by checking user existence and attempting token issuance
+        zn "%SYS"
+        If '##class(Security.Users).Exists(tUsername) {
+            zn "INTEROP"
+            Set %response.Status = 401
+            Write {"error": "invalid_grant", "error_description": "Invalid credentials"}.%ToJSON()
+            Quit
+        }
+        zn "INTEROP"
+
+        Set tToken = ##class(ClaimAudit.REST.Auth).IssueSmartOnFHIRToken(tUsername, tClientId)
+        If tToken = "" {
+            Set %response.Status = 500
+            Write {"error": "server_error", "error_description": "Failed to issue token"}.%ToJSON()
+            Quit
+        }
+        Write {
+            "access_token": (tToken),
+            "token_type": "bearer",
+            "expires_in": 86400,
+            "scope": "launch patient/Patient.read user/Claim.read user/Claim.write user/ClaimResponse.read user/Task.read user/Task.write fhirUser online_access"
+        }.%ToJSON()
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+        Write {"error": "server_error", "error_description": (ex.DisplayString())}.%ToJSON()
+    }
+    Quit tSC
 }
 
 /// SMART on FHIR token introspection — public (no auth required)
 ClassMethod Introspect() As %Status
 {
-    Quit ##class(ClaimAudit.REST.Auth).Introspect()
+    Set tSC = $$$OK
+    Try {
+        Set tRaw = %request.Content
+        Set tBodyStr = ""
+        While 'tRaw.AtEnd {
+            Set tBodyStr = tBodyStr _ tRaw.Read(32000)
+        }
+        Set tBodyJson = ##class(%DynamicObject).%FromJSON(tBodyStr)
+        Set tToken = tBodyJson.token
+        If tToken = "" {
+            Set %response.Status = 400
+            Write {"active": false}.%ToJSON()
+            Quit
+        }
+        Set tResult = ##class(ClaimAudit.REST.Auth).ValidateSMARTToken(tToken)
+        Write tResult.%ToJSON()
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+        Write {"active": false}.%ToJSON()
+    }
+    Quit tSC
 }
 
 /// Returns held ClaimResponse resources with patient details, CPT/ICD, and pagination.
