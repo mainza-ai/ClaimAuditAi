@@ -218,8 +218,10 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
                 Set claimResponse.total = tTotalArr
             }
 
-            // Embed CPT and ICD codes as extensions so they can be read without the Claim resource
-            Set tExtensions = []
+            // Embed CPT, ICD, and risk score as extensions so they can be read without the Claim resource
+            Set tExtensions = claimResponse.extension
+            If '$IsObject(tExtensions) Set tExtensions = []
+            Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/risk-score", "valueDecimal": (score)})
             Set tCptCode = $Get(^||ClaimAuditFlag("cptCode"))
             Set tIcdCode = $Get(^||ClaimAuditFlag("icdCode"))
             If tCptCode '= "" {
@@ -228,9 +230,7 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
             If tIcdCode '= "" {
                 Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/icd-code", "valueString": (tIcdCode)})
             }
-            If tExtensions.%Size() > 0 {
-                Set claimResponse.extension = tExtensions
-            }
+            Set claimResponse.extension = tExtensions
 
             Set tRequestCR = ##class(HS.FHIRServer.API.Data.Request).%New()
             Set tRequestCR.RequestMethod = "POST"

@@ -81,8 +81,12 @@ ClassMethod ConfigurePythonPath()
     Try {
         Set sys = ##class(%SYS.Python).Import("sys")
         Set devPath = "/home/irisowner/dev/src/python"
+        Set pipPath = "/usr/irissys/mgr/python"
         If '(sys.path."__contains__"(devPath)) {
             Do sys.path.insert(0, devPath)
+        }
+        If '(sys.path."__contains__"(pipPath)) {
+            Do sys.path.insert(0, pipPath)
         }
     } Catch {}
 }

@@ -218,15 +218,60 @@ ClassMethod GetHeldClaims() As %Status
                 } Catch {}
             }
 
+            // Derive risk from the stored score extension (fall back to disposition keywords)
+            Set tRiskScore = 0.70
+            Set tRiskLevel = "high"
+            Set tCptCode = "Unknown"
+            Set tIcdCode = "Unknown"
+            Set tSubmittedAt = tLastUpdated
+
+            // Fetch the full ClaimResponse to read extensions (score, CPT, ICD)
+            Try {
+                Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
+                Set tReqCR = ##class(HS.FHIRServer.API.Data.Request).%New()
+                Set tReqCR.RequestMethod = "GET"
+                Set tReqCR.RequestPath = "/ClaimResponse/" _ tClaimResponseId
+                Set tReqCR.Interaction = "read"
+                Set tRespCR = ##class(HS.FHIRServer.API.Data.Response).%New()
+                Do tService.DispatchRequest(tReqCR, .tRespCR)
+                If $IsObject(tRespCR.Json) {
+                    If tRespCR.Json.created '= "" Set tSubmittedAt = tRespCR.Json.created
+                    If $IsObject(tRespCR.Json.extension) {
+                        Set tExtIter = tRespCR.Json.extension.%GetIterator()
+                        While tExtIter.%GetNext(.tK, .tExt) {
+                            If tExt.url = "https://claimauditai.com/fhir/extension/risk-score" {
+                                Set tRiskScore = +tExt.valueDecimal
+                            }
+                            If tExt.url = "https://claimauditai.com/fhir/extension/cpt-code" {
+                                Set tCptCode = tExt.valueString
+                            }
+                            If tExt.url = "https://claimauditai.com/fhir/extension/icd-code" {
+                                Set tIcdCode = tExt.valueString
+                            }
+                        }
+                    }
+                }
+            } Catch {}
+
+            // Map score to risk level
+            Set tRiskLevel = "high"
+            If tRiskScore >= 0.70 {
+                Set tRiskLevel = "critical"
+            } ElseIf tRiskScore >= 0.50 {
+                Set tRiskLevel = "high"
+            } ElseIf tRiskScore >= 0.35 {
+                Set tRiskLevel = "medium"
+            }
+
             Set tObj = {
                 "id": (tClaimResponseId),
                 "patientId": (tPatientId),
                 "patientName": (tPatientName),
                 "providerId": "claimaudit-prov",
-                "cptCode": "Unknown",
-                "icdCode": "Unknown",
+                "cptCode": (tCptCode),
+                "icdCode": (tIcdCode),
                 "totalAmount": 0,
-                "submittedAt": (tLastUpdated),
+                "submittedAt": (tSubmittedAt),
                 "lastModified": (tLastUpdated),
                 "riskScore": (tRiskScore),
                 "riskLevel": (tRiskLevel),
@@ -967,36 +1012,37 @@ ClassMethod ChatStream() As %Status
             Set tSystemPrompt = tSystemPrompt _ " Current claim context: " _ tClaimContext
         }
 
-        // SSE headers
+        // SSE headers — must be set and flushed before any processing
         Set %response.ContentType = "text/event-stream"
         Set %response.Headers("Cache-Control") = "no-cache"
         Set %response.Headers("Connection") = "keep-alive"
         Set %response.Headers("X-Accel-Buffering") = "no"
+        Do %response.Flush()
 
         Do ##class(ClaimAudit.AI.Engine).ConfigurePythonPath()
         Set tLLM = ##class(%SYS.Python).Import("llm_router")
-        Set tStream = tLLM."chat_stream"(tSystemPrompt, tMessages.%ToJSON(), 1024)
 
-        // Iterate Python generator using for-loop over the iterable
-        // Catch StopIteration at the end of the generator
-        Set tChunk = ""
-        For tI = 1:1 {
-            Try {
-                Set tChunk = tStream."__next__"()
-            } Catch {
-                Quit
-            }
-            If tChunk '= "" {
-                Write "data: ", $ZCONVERT(tChunk, "O", "UTF8"), $CHAR(13,10), $CHAR(13,10)
-                Do %response.Flush()
-            }
+        // Use the non-streaming chat() function and split into SSE chunks manually.
+        // chat_stream() generator fails in the IRIS Python bridge due to StopIteration handling.
+        Set tResponse = ""_tLLM."chat"(tSystemPrompt, tMessages.%ToJSON(), 1024)
+
+        // Send response in chunks as SSE data lines
+        Set tLen = $LENGTH(tResponse)
+        Set tPos = 1
+        While tPos <= tLen {
+            Set tChunk = $EXTRACT(tResponse, tPos, tPos + 79)
+            Write "data: ", $ZCONVERT(tChunk, "O", "UTF8"), $CHAR(13,10), $CHAR(13,10)
+            Do %response.Flush()
+            Set tPos = tPos + 80
         }
         Write "data: [DONE]", $CHAR(13,10), $CHAR(13,10)
+        Do %response.Flush()
 
     } Catch ex {
         Set tSC = ex.AsStatus()
         Write "event: error", $CHAR(13,10)
         Write "data: ", $ZCONVERT("Chat streaming error: "_ex.DisplayString(), "O", "UTF8"), $CHAR(13,10), $CHAR(13,10)
+        Do %response.Flush()
     }
     Quit tSC
 }
