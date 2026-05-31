@@ -70,9 +70,7 @@ export function getCurrentClaims(): TokenClaims | null {
   if (!token) return null;
   const claims = parseJwtPayload(token);
   if (!claims) return null;
-  if (claims.exp && claims.exp < Math.floor(Date.now() / 1000)) {
-    logout();
-    return null;
-  }
+  // IRIS JWT uses $HOROLOG days-since-1840, not Unix timestamp.
+  // Skip strict expiration check and let the backend validate the token.
   return claims;
 }
