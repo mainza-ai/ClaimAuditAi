@@ -192,4 +192,36 @@
   .mono {
     font-family: var(--font-mono);
   }
+
+  /* Assistant message bubble prose overrides */
+  .message-bubble-assistant p {
+    color: var(--text-primary) !important;
+  }
+  .message-bubble-assistant code {
+    color: var(--accent-primary) !important;
+    background-color: var(--bg-hover) !important;
+  }
+
+  /* Disposition report prose overrides */
+  .disposition-prose h1,
+  .disposition-prose h2,
+  .disposition-prose h3,
+  .disposition-prose h4,
+  .disposition-prose h5,
+  .disposition-prose h6 {
+    color: var(--text-primary) !important;
+  }
+  .disposition-prose p {
+    color: var(--text-secondary) !important;
+  }
+  .disposition-prose li {
+    color: var(--text-secondary) !important;
+  }
+  .disposition-prose strong {
+    color: var(--text-primary) !important;
+  }
+  .disposition-prose code {
+    color: var(--accent-primary) !important;
+    background-color: var(--bg-hover) !important;
+  }
 }

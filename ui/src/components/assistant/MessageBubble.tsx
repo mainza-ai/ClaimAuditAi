@@ -18,20 +18,9 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
         {isUser ? (
           message.content
         ) : (
-          <>
-            <style>{`
-              .message-bubble-assistant p {
-                color: var(--text-primary) !important;
-              }
-              .message-bubble-assistant code {
-                color: var(--accent-primary) !important;
-                background-color: var(--bg-hover) !important;
-              }
-            `}</style>
-            <div className="message-bubble-assistant">
-              <ReactMarkdown>{message.content}</ReactMarkdown>
-            </div>
-          </>
+          <div className="message-bubble-assistant">
+            <ReactMarkdown>{message.content}</ReactMarkdown>
+          </div>
         )}
       </div>
     </div>
