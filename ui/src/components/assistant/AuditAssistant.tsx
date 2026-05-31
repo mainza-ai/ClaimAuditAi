@@ -95,29 +95,44 @@ timestamp: new Date().toISOString(),
   if (!isOpen) return null;
 
   return (
-    <div className="fixed top-0 right-0 h-full w-96 bg-gray-900 border-l border-gray-800 flex flex-col z-40 shadow-2xl">
+    <div style={{
+      position: 'fixed', top: 0, right: 0, height: '100vh', width: 384,
+      backgroundColor: 'var(--bg-card)',
+      borderLeft: '1px solid var(--border-default)',
+      display: 'flex', flexDirection: 'column',
+      zIndex: 40, boxShadow: 'var(--shadow-modal)',
+    }}>
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800 shrink-0">
-        <div className="flex items-center gap-2">
-          <Bot size={18} className="text-blue-400" />
-          <span className="text-sm font-semibold text-gray-200">Audit Assistant</span>
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '12px 16px', borderBottom: '1px solid var(--border-default)', flexShrink: 0,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Bot size={18} style={{ color: 'var(--accent-primary)' }} />
+          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>Audit Assistant</span>
           {effectiveClaimId && effectiveClaimId !== 'global' && (
-            <span className="text-xs text-gray-500 font-mono">· {effectiveClaimId}</span>
+            <span style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>· {effectiveClaimId}</span>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {effectiveClaimId && history.length > 0 && (
             <button
               onClick={() => clearHistory(effectiveClaimId)}
               title="Clear conversation"
-              className="p-1.5 rounded text-gray-500 hover:text-gray-300 hover:bg-gray-800 transition-colors"
+              style={{
+                padding: '6px', borderRadius: 4, background: 'none', border: 'none',
+                color: 'var(--text-tertiary)', cursor: 'pointer',
+              }}
             >
               <RotateCcw size={14} />
             </button>
           )}
           <button
             onClick={togglePanel}
-            className="p-1.5 rounded text-gray-500 hover:text-gray-300 hover:bg-gray-800 transition-colors"
+            style={{
+              padding: '6px', borderRadius: 4, background: 'none', border: 'none',
+              color: 'var(--text-tertiary)', cursor: 'pointer',
+            }}
           >
             <X size={16} />
           </button>
@@ -126,27 +141,34 @@ timestamp: new Date().toISOString(),
 
       {/* Context pill */}
       {claimContext && effectiveClaimId !== 'global' ? (
-        <div className="px-4 py-2 bg-gray-950/30 border-b border-gray-800/50 shrink-0">
-          <p className="text-xs text-gray-500">
-            Reviewing claim <span className="text-blue-400 font-mono font-bold">{claimContext.claimId}</span>
-            {' · '}CPT <span className="text-gray-300 font-bold">{claimContext.cptCode?.slice(0, 15)}...</span>
-            {' · '}Risk <span className="text-red-400 font-mono font-bold">{claimContext.riskScore.toFixed(2)}</span>
+        <div style={{
+          padding: '8px 16px', backgroundColor: 'var(--bg-page)',
+          borderBottom: '1px solid var(--border-default)', flexShrink: 0,
+        }}>
+          <p style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
+            Reviewing claim <span style={{ color: 'var(--accent-primary)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{claimContext.claimId}</span>
+            {' · '}CPT <span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{claimContext.cptCode}</span>
+            {' · '}Risk <span style={{ color: 'var(--color-danger)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{Number(claimContext.riskScore ?? 0).toFixed(2)}</span>
           </p>
         </div>
       ) : (
-        <div className="px-4 py-2 bg-gray-950/30 border-b border-gray-800/50 shrink-0">
-          <p className="text-xs text-gray-500 font-mono flex items-center gap-1.5">
+        <div style={{
+          padding: '8px 16px', backgroundColor: 'var(--bg-page)',
+          borderBottom: '1px solid var(--border-default)', flexShrink: 0,
+        }}>
+          <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', display: 'flex', alignItems: 'center', gap: 6 }}>
             <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-            Mode: <span className="text-blue-400 font-bold">General integrity Advisor</span>
+            Mode: <span style={{ color: 'var(--accent-primary)', fontWeight: 700 }}>General integrity Advisor</span>
           </p>
         </div>
       )}
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 16px' }}>
         {history.length === 0 && (
-          <div className="space-y-2 mt-4">
-            <p className="text-xs text-gray-500 text-center">Suggested questions:</p>
+          <div style={{ marginTop: 16 }}>
+            <p style={{ fontSize: 12, color: 'var(--text-tertiary)', textAlign: 'center' }}>Suggested questions:</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
             {(effectiveClaimId !== 'global'
               ? [
                   'Why was this claim flagged?',
@@ -166,11 +188,18 @@ timestamp: new Date().toISOString(),
               <button
                 key={q}
                 onClick={() => handleSend(q)}
-                className="w-full text-left text-xs text-blue-400 hover:text-blue-300 px-3 py-2 bg-blue-950/30 rounded-lg border border-blue-900/50 hover:border-blue-700 transition-all font-mono"
+                style={{
+                  width: '100%', textAlign: 'left', fontSize: 12,
+                  color: 'var(--accent-text)', padding: '8px 12px',
+                  backgroundColor: 'var(--accent-subtle)',
+                  borderRadius: 8, border: '1px solid var(--border-focus)',
+                  cursor: 'pointer', fontFamily: 'var(--font-mono)',
+                }}
               >
                 {q}
               </button>
             ))}
+            </div>
           </div>
         )}
 
@@ -179,13 +208,11 @@ timestamp: new Date().toISOString(),
         ))}
 
         {isLoading && (
-          <div className="flex items-center gap-2 text-gray-500 mt-2">
-            <div className="flex gap-1">
-              <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce [animation-delay:0ms]" />
-              <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce [animation-delay:150ms]" />
-              <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce [animation-delay:300ms]" />
-            </div>
-            <span className="text-xs font-mono">Thinking...</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-tertiary)', marginTop: 8 }}>
+            <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce [animation-delay:0ms]" />
+            <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce [animation-delay:150ms]" />
+            <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce [animation-delay:300ms]" />
+            <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)' }}>Thinking...</span>
           </div>
         )}
 
@@ -194,7 +221,10 @@ timestamp: new Date().toISOString(),
 
       {/* Quick Prompt Chips */}
       {effectiveClaimId && (
-        <div className="border-t border-gray-800/60 px-4 py-2 bg-gray-950/20 flex flex-wrap gap-1.5 shrink-0">
+        <div style={{
+          borderTop: '1px solid var(--border-default)', padding: '8px 16px',
+          backgroundColor: 'var(--bg-page)', display: 'flex', flexWrap: 'wrap', gap: 6, flexShrink: 0,
+        }}>
           {(effectiveClaimId !== 'global'
             ? [
                 { label: 'Summarize Anomaly', prompt: 'Summarize why this claim was flagged by the three-tier system.' },
@@ -211,7 +241,12 @@ timestamp: new Date().toISOString(),
               key={chip.label}
               disabled={isLoading}
               onClick={() => handleSend(chip.prompt)}
-              className="text-[10px] font-mono font-bold bg-gray-800 hover:bg-gray-700/80 border border-gray-700/60 hover:border-blue-500/40 text-gray-300 hover:text-blue-400 px-2 py-1 rounded transition-all disabled:opacity-40"
+              style={{
+                fontSize: 10, fontFamily: 'var(--font-mono)', fontWeight: 700,
+                backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-default)',
+                color: 'var(--text-secondary)', padding: '4px 8px', borderRadius: 4,
+                cursor: 'pointer',
+              }}
             >
               {chip.label}
             </button>
@@ -220,7 +255,10 @@ timestamp: new Date().toISOString(),
       )}
 
       {/* Input */}
-      <div className="border-t border-gray-800 px-4 py-3 bg-gray-900 shrink-0">
+      <div style={{
+        borderTop: '1px solid var(--border-default)', padding: '12px 16px',
+        backgroundColor: 'var(--bg-card)', flexShrink: 0,
+      }}>
         <AssistantInput
           onSend={handleSend}
           disabled={isLoading}

@@ -24,7 +24,7 @@ export function GraphView() {
   const [selectedNode, setSelectedNode] = useState<{ id: string; label: string; type: string } | null>(null);
   const [layout, setLayout] = useState<'cose' | 'circle' | 'grid'>('cose');
 
-  const { data: graph, isLoading } = useQuery<GraphData>({
+  const { data: graph, isLoading, isError } = useQuery<GraphData>({
     queryKey: ['graph'],
     queryFn: () => apiClient.get('/graph').then(r => r.data),
     refetchInterval: 30000,
@@ -119,7 +119,7 @@ export function GraphView() {
       layout: { name: layout, padding: 60, animate: true, animationDuration: 400 } as any,
     });
 
-    graph.insights.forEach((insight: GraphInsight) => {
+    (graph.insights ?? []).forEach((insight: GraphInsight) => {
       if (insight.severity === 'critical') {
         if (insight.patient) cy.$(`#patient-${insight.patient}`).addClass('flagged');
         if (insight.providerId) cy.$(`#${insight.providerId}`).addClass('flagged');
@@ -210,7 +210,19 @@ export function GraphView() {
               Building network graph...
             </div>
           )}
-          {!isLoading && !graph?.nodes?.length && (
+          {isError && (
+            <div style={{
+              position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center', gap: 8,
+              color: 'var(--color-danger)', fontSize: 14,
+              backgroundColor: 'var(--bg-card)', borderRadius: 8, border: '1px solid var(--border-default)',
+            }}>
+              <AlertTriangle size={32} style={{ opacity: 0.5 }} />
+              <p style={{ margin: 0 }}>Failed to load collusion graph.</p>
+              <p style={{ margin: 0, fontSize: 12 }}>The graph analysis engine may be unavailable.</p>
+            </div>
+          )}
+          {!isLoading && !isError && !graph?.nodes?.length && (
             <div style={{
               position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
               alignItems: 'center', justifyContent: 'center', gap: 8,

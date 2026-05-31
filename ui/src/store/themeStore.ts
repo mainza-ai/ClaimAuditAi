@@ -24,8 +24,10 @@ function getInitialTheme(): Theme {
   return 'light';
 }
 
+const initialTheme = getInitialTheme();
+
 export const useThemeStore = create<ThemeState>((set, get) => ({
-  theme: getInitialTheme(),
+  theme: initialTheme,
 
   setTheme: (theme) => {
     applyTheme(theme);
@@ -38,3 +40,6 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     set({ theme: next });
   },
 }));
+
+// Apply theme immediately on module load (before first render)
+applyTheme(initialTheme);

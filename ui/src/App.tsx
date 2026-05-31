@@ -64,6 +64,12 @@ export default function App() {
                 <Route path="/ledger" element={<Ledger />} />
                 <Route path="/settings/llm" element={<LLMSettings />} />
                 <Route path="/admin/data" element={<DataManagement />} />
+                <Route path="*" element={
+                  <div style={{ textAlign: 'center', padding: '64px 0', color: 'var(--text-secondary)' }}>
+                    <h2 style={{ fontSize: 24, fontWeight: 600, margin: 0 }}>404</h2>
+                    <p style={{ margin: '8px 0 0', fontSize: 14 }}>This page does not exist.</p>
+                  </div>
+                } />
               </Routes>
               </ErrorBoundary>
             </main>

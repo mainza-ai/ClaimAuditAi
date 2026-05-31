@@ -129,8 +129,10 @@ def check_collusion_network(patient_id: str, provider_npi: str, service_date: st
                     # If addresses are completely different, assume a geo-temporal impossibility (e.g. Miami vs Seattle)
                     # We can do a basic string state/city match or distance calculation
                     # Let's check states (e.g. "FL" vs "WA") in address
-                    state1 = prov1_addr.split(",")[-1].strip()[:2].upper() if "," in prov1_addr else ""
-                    state2 = prov2_addr.split(",")[-1].strip()[:2].upper() if "," in prov2_addr else ""
+                    state_parts1 = prov1_addr.strip().split()
+                    state1 = state_parts1[-1][:2].upper() if len(state_parts1[-1]) >= 2 else ""
+                    state_parts2 = prov2_addr.strip().split()
+                    state2 = state_parts2[-1][:2].upper() if len(state_parts2[-1]) >= 2 else ""
                     
                     if state1 and state2 and state1 != state2:
                         flagged = True
@@ -220,19 +222,83 @@ def export_graph_for_ui() -> str:
                 patient_dates[pat] = {}
             if svc_date not in patient_dates[pat]:
                 patient_dates[pat][svc_date] = []
-            patient_dates[pat][svc_date].append(prov)
+            patient_dates[pat][svc_date].append((prov, src, dst))
 
     for patient, dates in patient_dates.items():
-        for date, providers in dates.items():
-            unique_provs = set(providers)
+        for date, prov_edges in dates.items():
+            unique_provs = list(set(p for p, _, _ in prov_edges))
             if len(unique_provs) > 1:
+                claim_ids = [f"edge-{s}-{d}" for _, s, d in prov_edges]
                 insights.append({
                     "type": "temporal_impossibility",
                     "severity": "critical",
-                    "message": f"Patient {patient} billed by {len(unique_provs)} different providers on {date}: {', '.join(unique_provs)}",
+                    "message": f"Patient billed by {len(unique_provs)} different providers on {date}: {', '.join(unique_provs)}",
                     "date": date,
                     "patient": patient,
+                    "providerId": f"provider-{unique_provs[0]}",
+                    "claimIds": claim_ids,
                 })
+
+    # Detect address collisions (different NPIs registered at same address)
+    addr_npi_map = {}
+    for node, attrs in G.nodes(data=True):
+        if attrs.get("type") == "provider" and attrs.get("address"):
+            addr = attrs["address"].strip().lower()
+            if addr not in addr_npi_map:
+                addr_npi_map[addr] = []
+            addr_npi_map[addr].append(node)
+
+    for addr, npis in addr_npi_map.items():
+        unique_npis = list(set(npis))
+        if len(unique_npis) > 1:
+            insights.append({
+                "type": "address_collision",
+                "severity": "critical",
+                "message": f"Address collision: {len(unique_npis)} providers registered at same address: {' '.join(unique_npis)}",
+                "patient": unique_npis[0],
+                "providerId": f"provider-{unique_npis[0]}",
+                "claimIds": [f"provider-{n}" for n in unique_npis],
+            })
+
+    # Detect geo-temporal anomalies (same patient, different states, same day)
+    for patient, dates in patient_dates.items():
+        for date, prov_edges in dates.items():
+            unique_provs = list(set(p for p, _, _ in prov_edges))
+            if len(unique_provs) > 1:
+                states = set()
+                for p in unique_provs:
+                    addr = G.nodes.get(p, {}).get("address", "")
+                    parts = addr.strip().split()
+                    st = parts[-1][:2].upper() if parts and len(parts[-1]) >= 2 else ""
+                    if st:
+                        states.add(st)
+                if len(states) > 1:
+                    claim_ids = [f"edge-{s}-{d}" for _, s, d in prov_edges]
+                    insights.append({
+                        "type": "geo_temporal_leap",
+                        "severity": "high",
+                        "message": f"Geo-temporal anomaly: Patient billed in {', '.join(states)} on same day ({date})",
+                        "date": date,
+                        "patient": patient,
+                        "providerId": f"provider-{unique_provs[0]}",
+                        "claimIds": claim_ids,
+                    })
+
+    # Detect high-degree providers (too many unique patients)
+    prov_patient_count = {}
+    for src, dst in G.edges():
+        if G.nodes[dst].get("type") == "provider":
+            prov_patient_count.setdefault(dst, set()).add(src)
+    for prov, patients in prov_patient_count.items():
+        if len(patients) >= 3:
+            insights.append({
+                "type": "high_degree_provider",
+                "severity": "high",
+                "message": f"High-degree provider: {prov} has {len(patients)} unique patients",
+                "patient": min(patients),
+                "providerId": f"provider-{prov}",
+                "claimIds": [f"edge-{p}-{prov}" for p in patients],
+            })
 
     return json.dumps({
         "nodes": nodes,

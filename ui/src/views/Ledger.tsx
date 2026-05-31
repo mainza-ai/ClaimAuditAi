@@ -4,13 +4,22 @@ import { ShieldCheck, AlertTriangle, UserCheck, Clock } from 'lucide-react';
 import { format } from 'date-fns';
 
 export function Ledger() {
-const { data: entries = [], isLoading } = useQuery({
+const { data: entries = [], isLoading, isError } = useQuery({
 queryKey: ['ledger'],
 queryFn: getLedger,
 });
 
 return (
 <div className="space-y-6">
+{isError && (
+  <div style={{
+    padding: 16, borderRadius: 8, backgroundColor: 'var(--color-danger-bg)',
+    border: '1px solid var(--color-danger-border)', color: 'var(--color-danger)',
+    fontSize: 13,
+  }}>
+    Failed to load audit ledger. The ledger service may be unavailable.
+  </div>
+)}
 <div
   className="flex items-center justify-between pb-4"
   style={{ borderBottom: '1px solid var(--border-default)' }}

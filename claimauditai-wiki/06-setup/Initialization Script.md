@@ -48,6 +48,11 @@ On first container start, the Docker entrypoint executes `init_iris.sh` from `/d
                    ProviderProjections,  │
                    ClaimProjections)     v
                                   HNSW Index + Autoencoder
+                          │
+                          v
+                  Compile Router.cls ──> All REST routes available
+                  (Includes /system/*  │
+                   admin routes)       │
 ```
 
 The FHIR server is created using `HS.FHIRServer.Installer.InstallInstance` which:
@@ -58,12 +63,17 @@ The FHIR server is created using `HS.FHIRServer.Installer.InstallInstance` which
 ### Idempotency
 The runtime script checks if `HSFHIR_X0001_S.ClaimResponse` table exists before creating the FHIR server. This uses SQL bind parameters (`?`) to avoid ObjectScript single-quote consumption issues.
 
+The `Engine.Setup()` call is idempotent — it creates tables only if they don't exist and skips re-training if the autoencoder model file is present.
+
+The Router compilation (`$SYSTEM.OBJ.Load(...)`) always runs to ensure the latest source is compiled, including newly added routes like `/system/status`, `/system/clear`, and `/system/upload`.
+
 ## Key Details
 - **Build Manifest**: `iris.script` (runs during Docker build)
 - **Runtime Manifest**: `init_iris.sh` (runs at container startup)
 - **Namespace Creator Class**: `iris/installer.cls`
 - **Module Configuration**: `module.xml` with `SourcesRoot=src/cls`
 - **ZPM Package Scope**: `ClaimAudit.REST.PKG` + `ClaimAudit.AI.PKG` (excludes FHIR)
+- **Router Compilation**: Recompiled at runtime in INTEROP namespace to pick up route changes
 
 ## See Also
 [[iris.script Indentation Pitfalls]] · [[FHIR Server Provisioning]] · [[Installation Guide]]

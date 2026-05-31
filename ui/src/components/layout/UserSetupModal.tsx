@@ -6,8 +6,16 @@ import { User, ShieldCheck } from 'lucide-react';
 const ROLES = [
   { value: 'Auditor' as UserRole, label: 'Auditor', description: 'Can review, escalate, and recommend approval on held claims' },
   { value: 'Director' as UserRole, label: 'Director', description: 'Can approve, reject, and override escalated claims' },
+  { value: 'Specialist' as UserRole, label: 'Specialist', description: 'Can review claims and provide recommendations (view-only adjudication)' },
   { value: 'Tech Owner / Admin' as UserRole, label: 'Tech Owner / Admin', description: 'Full access including data management and system configuration' },
 ];
+
+const ROLE_MAP: Record<string, 'auditor' | 'director' | 'admin'> = {
+  'Auditor': 'auditor',
+  'Director': 'director',
+  'Specialist': 'auditor',
+  'Tech Owner / Admin': 'admin',
+};
 
 export function UserSetupModal() {
   const { setUser } = useUserStore();
@@ -21,7 +29,7 @@ export function UserSetupModal() {
       setError('Please enter your name.');
       return;
     }
-    setUser(name.trim(), role.toLowerCase() as any);
+    setUser(name.trim(), ROLE_MAP[role] || 'auditor');
     setActiveRole(role);
   }
 

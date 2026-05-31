@@ -25,7 +25,7 @@ export function ClaimDetail() {
   const [copied, setCopied] = useState(false);
   const [modal, setModal] = useState<'approve' | 'escalate' | 'reject' | null>(null);
 
-  const { data: rawClaim, isLoading } = useQuery({
+  const { data: rawClaim, isLoading, isError } = useQuery({
     queryKey: ['claim', id],
     queryFn: () => getClaimDetail(id!),
     enabled: !!id,
@@ -66,19 +66,23 @@ export function ClaimDetail() {
   };
 
   const handleSuccess = () => {
-    queryClient.invalidateQueries({ queryKey: ['claims', 'held'], refetchType: 'active' });
-    queryClient.invalidateQueries({ queryKey: ['stats'], refetchType: 'active' });
+    queryClient.removeQueries({ queryKey: ['claims', 'held'] });
+    queryClient.invalidateQueries({ queryKey: ['stats'] });
+    queryClient.invalidateQueries({ queryKey: ['ledger'] });
     setModal(null);
     navigate('/queue');
   };
 
   const userCanApprove = PERMISSIONS.canApprove(activeRole) && !claim?.escalated;
-  const userCanEscalate = PERMISSIONS.canEscalate(activeRole);
+  const userCanEscalate = PERMISSIONS.canEscalate(activeRole) && !claim?.escalated;
   const userCanReject = PERMISSIONS.canReject(activeRole) && !claim?.escalated;
   const canTakeAction = userCanApprove || userCanEscalate || userCanReject;
 
   if (isLoading && !claim) {
     return <div style={{ color: 'var(--text-secondary)', fontSize: 14, textAlign: 'center', padding: '64px 0' }}>Retrieving full clinical adjudication...</div>;
+  }
+  if (isError) {
+    return <div style={{ color: 'var(--color-danger)', fontSize: 14, textAlign: 'center', padding: '64px 0' }}>Failed to load claim data. Please try again.</div>;
   }
   if (!claim) {
     return <div style={{ color: 'var(--color-danger)', fontSize: 14, textAlign: 'center', padding: '64px 0' }}>Adjudication not found.</div>;

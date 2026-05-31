@@ -19,7 +19,7 @@ interface LLMSettingsData {
 export function LLMSettings() {
   const qc = useQueryClient();
 
-  const { data: settings, isLoading } = useQuery<LLMSettingsData>({
+  const { data: settings, isLoading, isError } = useQuery<LLMSettingsData>({
     queryKey: ['llm-settings'],
     queryFn: () => apiClient.get('/settings/llm').then(r => r.data),
   });
@@ -34,6 +34,7 @@ export function LLMSettings() {
   const [openaiKey, setOpenaiKey] = useState('');
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
   const [ollamaStatus, setOllamaStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle');
+  const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
     if (settings) {
@@ -49,7 +50,13 @@ export function LLMSettings() {
   const save = useMutation({
     mutationFn: (payload: Record<string, unknown>) =>
       apiClient.post('/settings/llm', payload).then(r => r.data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['llm-settings'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['llm-settings'] });
+      setDirty(false);
+    },
+    onError: () => {
+      // error state handled by isError in JSX
+    },
   });
 
   async function fetchOllamaModels() {
@@ -69,6 +76,7 @@ export function LLMSettings() {
   }
 
   function handleSave() {
+    setDirty(false);
     const payload: Record<string, unknown> = { provider };
     if (provider === 'nvidia') {
       payload.nvidiaModel = nvidiaModel;
@@ -85,6 +93,12 @@ export function LLMSettings() {
   }
 
   if (isLoading) return <div style={{ color: 'var(--text-secondary)', padding: 24 }}>Loading settings...</div>;
+  if (isError) return (
+    <div style={{ color: 'var(--color-danger)', padding: 24, textAlign: 'center' }}>
+      <AlertTriangle size={24} style={{ marginBottom: 12 }} />
+      <p>Failed to load LLM settings. Server may be unavailable.</p>
+    </div>
+  );
 
   const PROVIDERS: { value: Provider; label: string; description: string }[] = [
     {
@@ -135,7 +149,7 @@ export function LLMSettings() {
               name="provider"
               value={p.value}
               checked={provider === p.value}
-              onChange={() => setProvider(p.value)}
+              onChange={() => { setProvider(p.value); setDirty(true); }}
               style={{ marginTop: 2, accentColor: 'var(--accent-primary)' }}
             />
             <div>
@@ -264,10 +278,16 @@ export function LLMSettings() {
         {save.isPending ? 'Saving...' : 'Save settings'}
       </button>
 
-      {save.isSuccess && (
+      {save.isSuccess && !dirty && (
         <p style={{ fontSize: 13, color: 'var(--color-success)', display: 'flex', alignItems: 'center', gap: 6 }}>
           <CheckCircle size={14} />
           Settings saved. New provider is active immediately.
+        </p>
+      )}
+      {save.isError && (
+        <p style={{ fontSize: 13, color: 'var(--color-danger)', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <AlertTriangle size={14} />
+          Failed to save settings. Check server connection.
         </p>
       )}
     </div>

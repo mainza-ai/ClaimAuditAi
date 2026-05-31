@@ -10,7 +10,7 @@ Method OnBeforeRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest A
     }
     
     // Intercept POST/PUT Claim creations
-    If (pFHIRRequest.Type = "Claim") && (pFHIRRequest.Json '= "") {
+    If (pFHIRRequest.Type = "Claim") && $IsObject(pFHIRRequest.Json) {
         Set claimJson = pFHIRRequest.Json
         
         // Execute dynamic audit engine checks (NLP, Autoencoder, Graph Tiers)
@@ -39,10 +39,10 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
     
     Set ^ClaimAuditLog("type") = pFHIRRequest.Type
     Set ^ClaimAuditLog("status") = pFHIRResponse.Status
-    Set ^ClaimAuditLog("isjson") = (pFHIRRequest.Json '= "")
+    Set ^ClaimAuditLog("isjson") = $IsObject(pFHIRRequest.Json)
     
     // Intercept POST/PUT DocumentReference creations to index progress notes
-    If (pFHIRRequest.Type = "DocumentReference") && (pFHIRRequest.Json '= "") && ($Extract(pFHIRResponse.Status, 1) = "2") {
+    If (pFHIRRequest.Type = "DocumentReference") && $IsObject(pFHIRRequest.Json) && ($Extract(pFHIRResponse.Status, 1) = "2") {
         Try {
             Set docId = pFHIRResponse.Id
             If docId = "" Set docId = $Piece(pFHIRResponse.ETag, "/", 1)
@@ -79,7 +79,7 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
     }
     
     // If the request was a Bundle, unpack and index any DocumentReference resources inside
-    If (pFHIRRequest.Json '= "") && (pFHIRRequest.Json.resourceType = "Bundle") && ($Extract(pFHIRResponse.Status, 1) = "2") {
+    If $IsObject(pFHIRRequest.Json) && (pFHIRRequest.Json.resourceType = "Bundle") && ($Extract(pFHIRResponse.Status, 1) = "2") {
         Try {
             Set bundleJson = pFHIRRequest.Json
             If $IsObject(bundleJson.entry) {

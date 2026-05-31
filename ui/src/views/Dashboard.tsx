@@ -41,16 +41,19 @@ export function Dashboard() {
   const { data: stats, isLoading: statsLoading, isError: statsError, isFetching: statsFetching } = useQuery({
     queryKey: ['stats'],
     queryFn: getStats,
+    refetchInterval: 15000,
   });
 
   const { data: held, isLoading: heldLoading, isError: heldError, isFetching: heldFetching } = useQuery({
     queryKey: ['claims', 'held'],
     queryFn: getHeldClaims,
+    refetchInterval: 15000,
   });
 
   const { data: trends = [] } = useQuery({
     queryKey: ['stats', 'trends'],
     queryFn: getTrends,
+    refetchInterval: 30000,
   });
 
   const allHeld = held ?? [];

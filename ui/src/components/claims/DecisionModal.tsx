@@ -46,16 +46,19 @@ export function DecisionModal({ claimId, action, onConfirm, onCancel }: Decision
   const [aiSummary, setAiSummary] = useState('');
   const [summarizing, setSummarizing] = useState(false);
   const [summaryReady, setSummaryReady] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const submit = useMutation({
     mutationFn: () =>
       apiClient.post(`/claims/${claimId}/${action}`, {
         authorizedBy,
         role,
-        rationaleRaw: rawReason,
-        rationaleSummary: aiSummary,
+        rationaleSummary: summaryReady ? aiSummary : rawReason,
       }),
     onSuccess: onConfirm,
+    onError: (err: any) => {
+      setSubmitError(err?.response?.data?.error || err?.message || 'Submission failed');
+    },
   });
 
   async function handleSummarize() {
@@ -117,7 +120,7 @@ export function DecisionModal({ claimId, action, onConfirm, onCancel }: Decision
           </label>
           <textarea
             value={rawReason}
-            onChange={e => { setRawReason(e.target.value); setSummaryReady(false); setAiSummary(''); }}
+            onChange={e => { setRawReason(e.target.value); }}
             placeholder={config.placeholder}
             rows={4}
             style={{
@@ -156,7 +159,7 @@ export function DecisionModal({ claimId, action, onConfirm, onCancel }: Decision
             }}
           >
             {summarizing ? <Loader2 size={14} className="animate-spin" /> : null}
-            {summarizing ? 'Generating AI summary...' : 'Generate AI rationale summary'}
+            {summarizing ? 'Generating AI summary...' : 'Generate AI rationale summary (optional)'}
           </button>
         )}
 
@@ -197,13 +200,19 @@ export function DecisionModal({ claimId, action, onConfirm, onCancel }: Decision
           </div>
         )}
 
+        {submitError && (
+          <div style={{ padding: 10, borderRadius: 6, backgroundColor: 'var(--color-danger-bg)', border: '1px solid var(--color-danger-border)' }}>
+            <p style={{ margin: 0, fontSize: 13, color: 'var(--color-danger)' }}>{submitError}</p>
+          </div>
+        )}
+
         <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
           <button onClick={onCancel} className="btn-ghost">Cancel</button>
           <button
             onClick={() => submit.mutate()}
-            disabled={!summaryReady || submit.isPending || !rawReason.trim()}
+            disabled={submit.isPending || !rawReason.trim()}
             className="btn-primary"
-            style={{ ...config.confirmStyle, opacity: (!summaryReady || !rawReason.trim()) ? 0.5 : 1 }}
+            style={{ ...config.confirmStyle, opacity: !rawReason.trim() ? 0.5 : 1 }}
           >
             {submit.isPending ? 'Submitting...' : config.confirmLabel}
           </button>

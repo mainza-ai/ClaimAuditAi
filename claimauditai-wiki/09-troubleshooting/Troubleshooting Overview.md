@@ -18,8 +18,13 @@ If your installation encounters errors, locate the symptom in the table below to
 | **iris.script commands not executing** | Indented lines treated as continuations, never run as commands | [[iris.script Indentation Pitfalls]] |
 | **Claim amounts always $0 in UI** | Claim resources not persisted by FHIR interceptor; total not stored in ClaimResponse | [[Claim Amounts Always $0]] |
 | **LLM adjudication fails / Python exception** | NVIDIA_API_KEY invisible to Embedded Python; missing .llm_settings.json | [[LLM Provider Connection Failures]] |
-| **Seed Sample Data times out after 60s** | Interceptor loads NLP model per-claim; total ~8 min for 8 claims | [[Seed Data Loading Timeout]] |
-| **ClaimResponse FHIR validation errors** | `total` field must be an array of BackboneElement, not a Money object | [[ClaimResponse FHIR Validation]] |
+| **Claim actions return success but claim stays in queue** | FHIR datetime extension format rejected (missing ISO 8601 T/Z separators) | [[Claim Actions Silently Fail]] |
+| **Rejected claims do not appear in the audit ledger** | GetLedger SQL query excludes `status='cancelled'` tasks | [[Rejected Claims Missing From Ledger]] |
+| **Dashboard metrics never update after claim actions** | Dashboard queries have no `refetchInterval`; HoldQueue refetches stale cache | [[Dashboard Metrics Stale After Actions]] |
+| **Daily intercepted chart shows all zeros** | `CAST(_lastUpdated AS DATE)` returns horolog integer, not date string | [[Dashboard Daily Counts Always Zero]] |
+| **Trend chart day names all show "Sun"** | $ZDATE format 11 returns weekday abbreviation string, not number; LISTGET index off-by-one | [[Dashboard Daily Counts Always Zero]] |
+| **Dark mode does not persist on page refresh** | `applyTheme()` not called during Zustand store initialization | [[Theme Not Applied on Page Load]] |
+| **Admin endpoints (/api/admin/*) return 401 Unauthorized** | IRIS CSP web application blocks the `/admin/` path prefix | [[Admin Routes Return 401]] |
 
 ## Key Details
 - **Primary Diagnostic Command**: `docker logs --tail 100 claimaudit-iris`
