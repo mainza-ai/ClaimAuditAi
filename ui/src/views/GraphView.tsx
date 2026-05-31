@@ -1,10 +1,10 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import cytoscape from 'cytoscape';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../api/client';
 import { useThemeStore } from '../store/themeStore';
 import type { GraphData, GraphInsight } from '../types/graph';
-import { AlertTriangle, Network, Users, Building2 } from 'lucide-react';
+import { AlertTriangle, Network, Users, Building2, ZoomIn, ZoomOut, Maximize } from 'lucide-react';
 
 const SEVERITY_COLORS: Record<string, string> = {
   critical: 'var(--color-danger)',
@@ -18,8 +18,90 @@ const SEVERITY_BG: Record<string, string> = {
   medium: 'var(--bg-hover)',
 };
 
+function getGraphStyle(isDark: boolean) {
+  return [
+    {
+      selector: 'node[type="provider"]',
+      style: {
+        'background-color': isDark ? '#1d4ed8' : '#0067B8',
+        'border-width': 2,
+        'border-color': isDark ? '#3b82f6' : '#004f8c',
+        'label': 'data(label)',
+        'color': isDark ? '#e0f2fe' : '#1A1A1A',
+        'font-size': '11px',
+        'font-family': 'DM Sans, system-ui, sans-serif',
+        'text-valign': 'bottom',
+        'text-margin-y': 6,
+        'width': 36,
+        'height': 36,
+        'text-wrap': 'wrap',
+        'text-max-width': '100px',
+        'shape': 'roundrectangle',
+      },
+    },
+    {
+      selector: 'node[type="patient"]',
+      style: {
+        'background-color': isDark ? '#374151' : '#F5F7F9',
+        'border-width': 2,
+        'border-color': isDark ? '#6b7280' : '#CBD5E1',
+        'label': 'data(label)',
+        'color': isDark ? '#d1d5db' : '#1A1A1A',
+        'font-size': '10px',
+        'font-family': 'DM Sans, system-ui, sans-serif',
+        'text-valign': 'bottom',
+        'text-margin-y': 6,
+        'width': 28,
+        'height': 28,
+        'shape': 'ellipse',
+      },
+    },
+    {
+      selector: 'node.flagged',
+      style: {
+        'border-color': isDark ? '#ef4444' : '#C0392B',
+        'border-width': 3,
+        'background-color': isDark ? '#7f1d1d' : '#FEF2F2',
+      },
+    },
+    {
+      selector: 'edge',
+      style: {
+        'width': 1.5,
+        'line-color': isDark ? '#374151' : '#CBD5E1',
+        'target-arrow-color': isDark ? '#374151' : '#CBD5E1',
+        'target-arrow-shape': 'triangle',
+        'curve-style': 'bezier',
+        'label': 'data(label)',
+        'font-size': '9px',
+        'font-family': 'JetBrains Mono, monospace',
+        'color': isDark ? '#6b7280' : '#9CA3AF',
+        'text-rotation': 'autorotate',
+        'text-margin-y': -8,
+      },
+    },
+    {
+      selector: 'edge.flagged',
+      style: {
+        'line-color': isDark ? '#ef4444' : '#C0392B',
+        'target-arrow-color': isDark ? '#ef4444' : '#C0392B',
+        'width': 2.5,
+        'line-style': 'dashed',
+      },
+    },
+    {
+      selector: ':selected',
+      style: {
+        'border-color': isDark ? '#60a5fa' : '#0067B8',
+        'border-width': 3,
+      },
+    },
+  ];
+}
+
 export function GraphView() {
   const containerRef = useRef<HTMLDivElement>(null);
+  const cyRef = useRef<cytoscape.Core | null>(null);
   const { theme } = useThemeStore();
   const [selectedNode, setSelectedNode] = useState<{ id: string; label: string; type: string } | null>(null);
   const [layout, setLayout] = useState<'cose' | 'circle' | 'grid'>('cose');
@@ -32,120 +114,87 @@ export function GraphView() {
 
   const isDark = theme === 'dark';
 
+  // Create or update cytoscape instance when graph data changes
   useEffect(() => {
     if (!containerRef.current || !graph?.nodes?.length) return;
 
-    const cy = cytoscape({
-      container: containerRef.current,
-      elements: [...graph.nodes, ...graph.edges],
-      style: [
-        {
-          selector: 'node[type="provider"]',
-          style: {
-            'background-color': isDark ? '#1d4ed8' : '#0067B8',
-            'border-width': 2,
-            'border-color': isDark ? '#3b82f6' : '#004f8c',
-            'label': 'data(label)',
-            'color': isDark ? '#e0f2fe' : '#1A1A1A',
-            'font-size': '11px',
-            'font-family': 'DM Sans, system-ui, sans-serif',
-            'text-valign': 'bottom',
-            'text-margin-y': 6,
-            'width': 36,
-            'height': 36,
-            'text-wrap': 'wrap',
-            'text-max-width': '100px',
-            'shape': 'roundrectangle',
-          },
-        },
-        {
-          selector: 'node[type="patient"]',
-          style: {
-            'background-color': isDark ? '#374151' : '#F5F7F9',
-            'border-width': 2,
-            'border-color': isDark ? '#6b7280' : '#CBD5E1',
-            'label': 'data(label)',
-            'color': isDark ? '#d1d5db' : '#1A1A1A',
-            'font-size': '10px',
-            'font-family': 'DM Sans, system-ui, sans-serif',
-            'text-valign': 'bottom',
-            'text-margin-y': 6,
-            'width': 28,
-            'height': 28,
-            'shape': 'ellipse',
-          },
-        },
-        {
-          selector: 'node.flagged',
-          style: {
-            'border-color': isDark ? '#ef4444' : '#C0392B',
-            'border-width': 3,
-            'background-color': isDark ? '#7f1d1d' : '#FEF2F2',
-          },
-        },
-        {
-          selector: 'edge',
-          style: {
-            'width': 1.5,
-            'line-color': isDark ? '#374151' : '#CBD5E1',
-            'target-arrow-color': isDark ? '#374151' : '#CBD5E1',
-            'target-arrow-shape': 'triangle',
-            'curve-style': 'bezier',
-            'label': 'data(label)',
-            'font-size': '9px',
-            'font-family': 'JetBrains Mono, monospace',
-            'color': isDark ? '#6b7280' : '#9AA5B4',
-            'text-rotation': 'autorotate',
-            'text-margin-y': -8,
-          },
-        },
-        {
-          selector: 'edge.flagged',
-          style: {
-            'line-color': isDark ? '#ef4444' : '#C0392B',
-            'target-arrow-color': isDark ? '#ef4444' : '#C0392B',
-            'width': 2.5,
-            'line-style': 'dashed',
-          },
-        },
-        {
-          selector: ':selected',
-          style: {
-            'border-color': isDark ? '#60a5fa' : '#0067B8',
-            'border-width': 3,
-          },
-        },
-      ],
-      layout: { name: layout, padding: 60, animate: true, animationDuration: 400 } as any,
-    });
-
-    (graph.insights ?? []).forEach((insight: GraphInsight) => {
-      if (insight.severity === 'critical') {
-        if (insight.patient) cy.$(`#patient-${insight.patient}`).addClass('flagged');
-        if (insight.providerId) cy.$(`#${insight.providerId}`).addClass('flagged');
-        insight.claimIds?.forEach(cid => cy.$(`#edge-${cid}`).addClass('flagged'));
-      }
-    });
-
-    cy.on('tap', 'node', evt => {
-      const node = evt.target;
-      setSelectedNode({
-        id: node.id(),
-        label: node.data('label'),
-        type: node.data('type'),
+    if (!cyRef.current) {
+      const cy = cytoscape({
+        container: containerRef.current,
+        elements: [...graph.nodes, ...graph.edges],
+        style: getGraphStyle(isDark),
+        layout: { name: layout, padding: 60, animate: true, animationDuration: 400 } as any,
       });
-    });
+      cyRef.current = cy;
 
-    cy.on('tap', evt => {
-      if (evt.target === cy) setSelectedNode(null);
-    });
+      // Flag insight elements
+      (graph.insights ?? []).forEach((insight: GraphInsight) => {
+        if (insight.severity === 'critical') {
+          if (insight.providerId) {
+            const el = cy.$(`#${insight.providerId}`);
+            if (el.length) el.addClass('flagged');
+          }
+          insight.claimIds?.forEach(cid => {
+            const el = cy.$(`#edge-${cid}`);
+            if (el.length) el.addClass('flagged');
+          });
+        }
+      });
 
-    if (containerRef.current) {
-      containerRef.current.style.backgroundColor = isDark ? '#0F172A' : '#F9FAFB';
+      // Node click handler
+      cy.on('tap', 'node', evt => {
+        const node = evt.target;
+        setSelectedNode({ id: node.id(), label: node.data('label'), type: node.data('type') });
+      });
+      cy.on('tap', evt => {
+        if (evt.target === cy) setSelectedNode(null);
+      });
+    } else {
+      // Update elements without recreating instance
+      cyRef.current.elements().remove();
+      cyRef.current.add([...graph.nodes, ...graph.edges]);
+      (graph.insights ?? []).forEach((insight: GraphInsight) => {
+        if (insight.severity === 'critical') {
+          if (insight.providerId) {
+            const el = cyRef.current!.$(`#${insight.providerId}`);
+            if (el.length) el.addClass('flagged');
+          }
+          insight.claimIds?.forEach(cid => {
+            const el = cyRef.current!.$(`#edge-${cid}`);
+            if (el.length) el.addClass('flagged');
+          });
+        }
+      });
     }
 
-    return () => cy.destroy();
-  }, [graph, theme, layout]);
+    return () => {
+      cyRef.current?.destroy();
+      cyRef.current = null;
+    };
+  }, [graph]);
+
+  // Update styles on theme change without recreating instance
+  useEffect(() => {
+    if (cyRef.current) {
+      (cyRef.current.style() as any).fromJson(getGraphStyle(isDark)).update();
+    }
+  }, [theme]);
+
+  // Update layout without recreating instance
+  const applyLayout = useCallback((name: 'cose' | 'circle' | 'grid') => {
+    setLayout(name);
+    if (cyRef.current) {
+      cyRef.current.layout({ name, padding: 60, animate: true, animationDuration: 400 } as any).run();
+    }
+  }, []);
+
+  const handleZoomIn = () => cyRef.current?.zoom(cyRef.current.zoom() * 1.2);
+  const handleZoomOut = () => cyRef.current?.zoom(cyRef.current.zoom() * 0.8);
+  const handleFit = () => cyRef.current?.fit(undefined, 20);
+
+  if (containerRef.current) {
+    containerRef.current.style.backgroundColor = isDark ? '#0F172A' : '#F9FAFB';
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, height: '100%' }}>
@@ -165,7 +214,7 @@ export function GraphView() {
           {(['cose', 'circle', 'grid'] as const).map(l => (
             <button
               key={l}
-              onClick={() => setLayout(l)}
+              onClick={() => applyLayout(l)}
               style={{
                 padding: '5px 12px', borderRadius: 6, textTransform: 'capitalize',
                 border: `1px solid ${layout === l ? 'var(--accent-primary)' : 'var(--border-default)'}`,
@@ -177,6 +226,16 @@ export function GraphView() {
               {l}
             </button>
           ))}
+          <div style={{ borderLeft: '1px solid var(--border-default)', marginLeft: 4 }} />
+          <button onClick={handleZoomIn} title="Zoom in" style={{ padding: '5px 8px', borderRadius: 6, border: '1px solid var(--border-default)', backgroundColor: 'transparent', cursor: 'pointer', color: 'var(--text-secondary)' }}>
+            <ZoomIn size={14} />
+          </button>
+          <button onClick={handleZoomOut} title="Zoom out" style={{ padding: '5px 8px', borderRadius: 6, border: '1px solid var(--border-default)', backgroundColor: 'transparent', cursor: 'pointer', color: 'var(--text-secondary)' }}>
+            <ZoomOut size={14} />
+          </button>
+          <button onClick={handleFit} title="Fit to screen" style={{ padding: '5px 8px', borderRadius: 6, border: '1px solid var(--border-default)', backgroundColor: 'transparent', cursor: 'pointer', color: 'var(--text-secondary)' }}>
+            <Maximize size={14} />
+          </button>
         </div>
       </div>
 

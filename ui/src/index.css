@@ -17,7 +17,7 @@
 
   --text-primary:     #1A1A1A;
   --text-secondary:   #5A6472;
-  --text-tertiary:    #9AA5B4;
+  --text-tertiary:    #64748B;
   --text-inverse:     #FFFFFF;
   --text-link:        #0067B8;
 
@@ -68,7 +68,7 @@
 
   --text-primary:     #F3F4F6;
   --text-secondary:   #9CA3AF;
-  --text-tertiary:    #6B7280;
+  --text-tertiary:    #9CA3AF;
   --text-inverse:     #111827;
   --text-link:        #60A5FA;
 
@@ -124,6 +124,10 @@
   }
   ::-webkit-scrollbar-thumb:hover {
     background: var(--text-tertiary);
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
   }
 }
 
@@ -193,7 +197,6 @@
     font-family: var(--font-mono);
   }
 
-  /* Assistant message bubble prose overrides */
   .message-bubble-assistant p {
     color: var(--text-primary) !important;
   }
@@ -202,7 +205,6 @@
     background-color: var(--bg-hover) !important;
   }
 
-  /* Disposition report prose overrides */
   .disposition-prose h1,
   .disposition-prose h2,
   .disposition-prose h3,
@@ -223,5 +225,44 @@
   .disposition-prose code {
     color: var(--accent-primary) !important;
     background-color: var(--bg-hover) !important;
+  }
+}
+
+@layer utilities {
+  @media (max-width: 768px) {
+    .sidebar-collapsed {
+      width: 0 !important;
+      overflow: hidden;
+      padding: 0 !important;
+      border-right: none !important;
+    }
+
+    .responsive-grid {
+      grid-template-columns: 1fr !important;
+    }
+
+    .responsive-table th,
+    .responsive-table td {
+      font-size: 11px;
+      padding: 6px 8px;
+    }
+
+    .responsive-hide-mobile {
+      display: none !important;
+    }
+
+    .responsive-padding {
+      padding: 12px !important;
+    }
+
+    .responsive-stack {
+      flex-direction: column !important;
+      gap: 12px !important;
+    }
+
+    .responsive-full {
+      width: 100% !important;
+      max-width: 100% !important;
+    }
   }
 }
