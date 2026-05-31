@@ -23,6 +23,8 @@ export function Sidebar() {
     <aside
       className="w-16 flex flex-col items-center py-4 gap-2 shrink-0"
       style={{ backgroundColor: 'var(--bg-sidebar)', borderRight: '1px solid var(--border-default)' }}
+      role="navigation"
+      aria-label="Main navigation"
     >
       {/* Logo */}
       <div
@@ -42,6 +44,7 @@ export function Sidebar() {
           key={to}
           to={to}
           title={label}
+          aria-label={label}
           className="w-10 h-10 rounded-lg flex items-center justify-center transition-all"
           style={({ isActive }) => ({
             backgroundColor: isActive ? 'var(--bg-active-nav)' : 'transparent',
@@ -57,6 +60,7 @@ export function Sidebar() {
         <NavLink
           to="/admin/data"
           title="Data Management"
+          aria-label="Data Management"
           className="w-10 h-10 rounded-lg flex items-center justify-center transition-all"
           style={({ isActive }) => ({
             backgroundColor: isActive ? 'var(--bg-active-nav)' : 'transparent',

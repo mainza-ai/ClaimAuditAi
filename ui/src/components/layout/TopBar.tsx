@@ -75,6 +75,7 @@ export function TopBar() {
         <button
           onClick={() => seed.mutate()}
           disabled={seed.isPending || seedDone}
+          aria-label={seed.isPending ? 'Seeding sample data...' : seedDone ? 'Sample data seeded' : 'Seed sample data'}
           style={{
             display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 6,
             fontSize: 12, fontFamily: 'var(--font-mono)', fontWeight: 600, cursor: 'pointer',
@@ -98,6 +99,8 @@ export function TopBar() {
         <div ref={roleRef} style={{ position: 'relative' }}>
           <button
             onClick={() => setRoleOpen(!roleOpen)}
+            aria-label="Select role"
+            aria-expanded={roleOpen}
             style={{
               display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 6,
               fontSize: 12, fontFamily: 'var(--font-mono)', fontWeight: 600, cursor: 'pointer',
@@ -143,7 +146,7 @@ export function TopBar() {
             <p style={{ margin: 0, fontSize: 12, fontWeight: 500, color: 'var(--text-primary)' }}>{userName}</p>
             <p style={{ margin: 0, fontSize: 10, color: 'var(--text-tertiary)' }}>{activeRole}</p>
           </div>
-          <button onClick={() => { useRoleStore.getState().clearAuth(); logout(); }} title="Sign out" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', padding: 4 }}>
+          <button onClick={() => { useRoleStore.getState().clearAuth(); logout(); }} title="Sign out" aria-label="Sign out" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', padding: 4 }}>
             <LogOut size={14} />
           </button>
         </div>

@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { getStats, getTrends } from '../api/stats';
+import { getStats, getTrends, getModelPerformance } from '../api/stats';
 import { getHeldClaims } from '../api/claims';
 import { StatCard } from '../components/stats/StatCard';
 import { ClaimRow } from '../components/claims/ClaimRow';
@@ -57,6 +57,12 @@ export function Dashboard() {
     queryKey: ['stats', 'trends'],
     queryFn: getTrends,
     refetchInterval: 30000,
+  });
+
+  const { data: modelPerf } = useQuery({
+    queryKey: ['stats', 'model-performance'],
+    queryFn: getModelPerformance,
+    refetchInterval: 60000,
   });
 
   const allHeld = Array.isArray(response?.data) ? response.data : response?.data ?? [];
@@ -129,6 +135,7 @@ export function Dashboard() {
         <StatCard label="Total Intercepted" value={stats ? stats.interceptedTotal : (loading ? '...' : '\u2014')} icon={Activity} accent="blue" />
         <StatCard label="Total Value Pended" value={stats?.totalValueHeld ? formatCurrency(stats.totalValueHeld) : (loading ? '...' : '$0')} icon={DollarSign} accent="amber" />
         <StatCard label="Model status" value={stats ? stats.modelStatus : (loading ? '...' : '\u2014')} icon={Cpu} accent={stats?.modelStatus === 'healthy' ? 'green' : 'red'} />
+        <StatCard label="F1 Score" value={modelPerf ? (modelPerf.f1 * 100).toFixed(1) + '%' : (loading ? '...' : '\u2014')} icon={Activity} accent={modelPerf && modelPerf.f1 > 0.7 ? 'green' : 'amber'} />
       </div>
 
       {/* Charts grid */}

@@ -6,3 +6,16 @@ export const getStats = (days = 30) =>
 
 export const getTrends = () =>
   apiClient.get<TrendDay[]>('/stats/trends').then((r) => Array.isArray(r.data) ? r.data : []);
+
+export interface ModelPerformance {
+  precision: number;
+  recall: number;
+  f1: number;
+  truePositives: number;
+  falsePositives: number;
+  totalHeld: number;
+  totalApproved: number;
+}
+
+export const getModelPerformance = () =>
+  apiClient.get<ModelPerformance>('/stats/model-performance').then((r) => r.data);

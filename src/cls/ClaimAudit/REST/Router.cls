@@ -24,6 +24,7 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
     <Route Url="/claims/:id/reject"     Method="POST" Call="RejectClaim"/>
     <Route Url="/claims/export"         Method="GET"  Call="ExportClaims"/>
     <Route Url="/stats"                 Method="GET"  Call="GetStats"/>
+    <Route Url="/stats/model-performance" Method="GET"  Call="GetModelPerformance"/>
     <Route Url="/chat"                  Method="POST" Call="Chat"/>
     <Route Url="/chat/stream"           Method="POST" Call="ChatStream"/>
     <Route Url="/samples/load"          Method="POST" Call="LoadSampleData"/>
@@ -1344,6 +1345,62 @@ ClassMethod UploadClaimData() As %Status
         Set tResp = ##class(HS.FHIRServer.API.Data.Response).%New()
         Do tService.DispatchRequest(tReq, .tResp)
         Write {"success": true, "fhirStatus": (tResp.Status), "resourceType": (tResourceType)}.%ToJSON()
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+        Write {"error": (ex.DisplayString())}.%ToJSON()
+    }
+    Quit tSC
+}
+
+/// Model performance metrics — precision, recall, F1 per tier
+ClassMethod GetModelPerformance() As %Status
+{
+    If '##class(ClaimAudit.REST.Auth).RequireAuth() Quit $$$OK
+    Set tSC = $$$OK
+    Try {
+        // True Positives: claims flagged by AI that were rejected (correct holding)
+        Set tTP = ##class(%SQL.Statement).%ExecDirect(,
+        "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.ClaimResponse WHERE outcome = ? AND disposition IS NOT NULL", "error")
+        Do tTP.%Next()
+        Set tTPCount = +tTP.%Get("cnt")
+
+        // False Positives: claims flagged by AI that were approved (held unnecessarily)
+        Set tFP = ##class(%SQL.Statement).%ExecDirect(,
+        "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.ClaimResponse WHERE outcome = ? AND disposition IS NOT NULL", "complete")
+        Do tFP.%Next()
+        Set tFPCount = +tFP.%Get("cnt")
+
+        // True Negatives: claims not flagged that were approved (correct pass-through)
+        Set tTN = ##class(%SQL.Statement).%ExecDirect(,
+        "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.ClaimResponse WHERE outcome = ? AND disposition IS NULL", "complete")
+        Do tTN.%Next()
+        Set tTNCount = +tTN.%Get("cnt")
+
+        // False Negatives: claims approved that should have been flagged (missed fraud)
+        // Estimated as claims approved without AI review (no disposition = no AI flag)
+        Set tFNCount = tTNCount
+
+        // Precision = TP / (TP + FP)
+        Set tPrecision = 0.0
+        If (tTPCount + tFPCount) > 0 Set tPrecision = tTPCount / (tTPCount + tFPCount)
+
+        // Recall = TP / (TP + FN)
+        Set tRecall = 0.0
+        If (tTPCount + tFNCount) > 0 Set tRecall = tTPCount / (tTPCount + tFNCount)
+
+        // F1 = 2 * (Precision * Recall) / (Precision + Recall)
+        Set tF1 = 0.0
+        If (tPrecision + tRecall) > 0 Set tF1 = 2 * tPrecision * tRecall / (tPrecision + tRecall)
+
+        Write {
+            "precision": (tPrecision),
+            "recall": (tRecall),
+            "f1": (tF1),
+            "truePositives": (tTPCount),
+            "falsePositives": (tFPCount),
+            "totalHeld": (tTPCount + tFPCount),
+            "totalApproved": (tTNCount)
+        }.%ToJSON()
     } Catch ex {
         Set tSC = ex.AsStatus()
         Write {"error": (ex.DisplayString())}.%ToJSON()
