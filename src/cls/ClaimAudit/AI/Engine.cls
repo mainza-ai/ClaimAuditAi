@@ -263,6 +263,18 @@ ClassMethod AuditClaim(pClaimJson As %DynamicObject, Output pResult As %DynamicO
         Set pResult.codeCount = codeCount
         Set pResult.serviceDate = serviceDate
         Set pResult.firstCodeDesc = firstCodeDesc
+
+        // Incrementally persist graph nodes and edges for real-time collusion network
+        // (no full SQL rebuild needed — graph is updated on each claim audit)
+        If patientId '= "" {
+            Do ##class(ClaimAudit.Data.GraphStore).UpsertPatient(patientId)
+        }
+        If providerNpi '= "" {
+            Do ##class(ClaimAudit.Data.GraphStore).UpsertProvider(providerNpi, "", "")
+        }
+        If (patientId '= "") && (providerNpi '= "") {
+            Do ##class(ClaimAudit.Data.GraphStore).UpsertEdge(patientId, providerNpi, billedAmount, serviceDate)
+        }
         
     } Catch ex {
         Set sc = ex.AsStatus()

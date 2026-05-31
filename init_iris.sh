@@ -28,6 +28,7 @@ do ##class(ClaimAudit.AI.Engine).Setup()
 // Compile REST Router and Auth so all routes are available
 do $SYSTEM.OBJ.Load("/home/irisowner/dev/src/cls/ClaimAudit/REST/Router.cls", "ck")
 do $SYSTEM.OBJ.Load("/home/irisowner/dev/src/cls/ClaimAudit/REST/Auth.cls", "ck")
+do $SYSTEM.OBJ.Load("/home/irisowner/dev/src/cls/ClaimAudit/Data/GraphStore.cls", "ck")
 
 halt
 EOF

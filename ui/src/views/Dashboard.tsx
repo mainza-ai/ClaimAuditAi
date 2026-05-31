@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import { getStats, getTrends } from '../api/stats';
 import { getHeldClaims } from '../api/claims';
 import { StatCard } from '../components/stats/StatCard';
@@ -38,15 +39,17 @@ const ChartTooltip = ({ active, payload, label }: any) => {
 };
 
 export function Dashboard() {
+  const [days, setDays] = useState(30);
+
   const { data: stats, isLoading: statsLoading, isError: statsError, isFetching: statsFetching } = useQuery({
-    queryKey: ['stats'],
-    queryFn: getStats,
+    queryKey: ['stats', { days }],
+    queryFn: () => getStats(days),
     refetchInterval: 15000,
   });
 
-  const { data: held, isLoading: heldLoading, isError: heldError, isFetching: heldFetching } = useQuery({
+  const { data: response, isLoading: heldLoading, isError: heldError, isFetching: heldFetching } = useQuery({
     queryKey: ['claims', 'held'],
-    queryFn: getHeldClaims,
+    queryFn: () => getHeldClaims(50, 0),
     refetchInterval: 15000,
   });
 
@@ -56,7 +59,8 @@ export function Dashboard() {
     refetchInterval: 30000,
   });
 
-  const allHeld = held ?? [];
+  const allHeld = Array.isArray(response?.data) ? response.data : response?.data ?? [];
+  const totalHeld = response?.total ?? allHeld.length;
   const loading = statsLoading || heldLoading;
   const hasError = statsError || heldError;
 
@@ -75,14 +79,36 @@ export function Dashboard() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, letterSpacing: '0.05em', color: 'var(--text-primary)' }}>
-          System Overview
-        </h1>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', padding: '4px 10px', borderRadius: 6, color: 'var(--text-tertiary)', backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-default)' }}>
-            Refreshes every 15s
-          </span>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, letterSpacing: '0.05em', color: 'var(--text-primary)' }}>
+            System Overview
+          </h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {/* Date range selector */}
+            <div style={{ display: 'flex', borderRadius: 6, border: '1px solid var(--border-default)', overflow: 'hidden' }}>
+              {([7, 30, 90] as const).map((d) => (
+                <button
+                  key={d}
+                  onClick={() => setDays(d)}
+                  style={{
+                    padding: '4px 10px',
+                    fontSize: 11,
+                    fontWeight: 600,
+                    fontFamily: 'var(--font-mono)',
+                    cursor: 'pointer',
+                    border: 'none',
+                    borderRight: d !== 90 ? '1px solid var(--border-default)' : 'none',
+                    backgroundColor: days === d ? 'var(--accent-subtle)' : 'var(--bg-card)',
+                    color: days === d ? 'var(--accent-text)' : 'var(--text-tertiary)',
+                  }}
+                >
+                  {d}d
+                </button>
+              ))}
+            </div>
+            <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', padding: '4px 10px', borderRadius: 6, color: 'var(--text-tertiary)', backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-default)' }}>
+              Refreshes every 15s
+            </span>
           {(statsFetching || heldFetching) && (
             <RefreshCw size={14} style={{ color: 'var(--accent-primary)' }} className="animate-spin" />
           )}
