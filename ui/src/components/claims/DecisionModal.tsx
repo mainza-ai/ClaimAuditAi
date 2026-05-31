@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { apiClient } from '../../api/client';
 import { useUserStore } from '../../store/userStore';
+import { useRoleStore } from '../../store/roleStore';
 import { X, Loader2, CheckCircle } from 'lucide-react';
 
 type ActionType = 'approve' | 'escalate' | 'reject';
@@ -39,6 +40,7 @@ const ACTION_CONFIG = {
 
 export function DecisionModal({ claimId, action, onConfirm, onCancel }: DecisionModalProps) {
   const { name: authorizedBy } = useUserStore();
+  const { activeRole: role } = useRoleStore();
   const config = ACTION_CONFIG[action];
   const [rawReason, setRawReason] = useState('');
   const [aiSummary, setAiSummary] = useState('');
@@ -49,6 +51,7 @@ export function DecisionModal({ claimId, action, onConfirm, onCancel }: Decision
     mutationFn: () =>
       apiClient.post(`/claims/${claimId}/${action}`, {
         authorizedBy,
+        role,
         rationaleRaw: rawReason,
         rationaleSummary: aiSummary,
       }),

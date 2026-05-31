@@ -4,26 +4,18 @@ import { loadSampleData } from '../../api/claims';
 import { useRoleStore, type UserRole } from '../../store/roleStore';
 import { useUserStore } from '../../store/userStore';
 import clsx from 'clsx';
-import { Database, ChevronDown, Loader2, User } from 'lucide-react';
+import { Database, ChevronDown, Loader2, LogOut } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 
 const ROLES: UserRole[] = ['Auditor', 'Director', 'Specialist', 'Tech Owner / Admin'];
+const ROLE_LABELS: Record<string, string> = { auditor: 'Auditor', director: 'Director', specialist: 'Specialist', admin: 'Tech Owner / Admin' };
 
 export function TopBar() {
   const queryClient = useQueryClient();
   const { activeRole, setActiveRole } = useRoleStore();
-  const { name: userName, setUser } = useUserStore();
+  const { name: userName, role: userRole, setUser } = useUserStore();
   const [roleOpen, setRoleOpen] = useState(false);
   const [seedDone, setSeedDone] = useState(false);
-  const [userEditing, setUserEditing] = useState(false);
-  const [userNameInput, setUserNameInput] = useState(userName);
-
-  const handleUserSave = () => {
-    if (userNameInput.trim()) {
-      setUser(userNameInput.trim(), activeRole.toLowerCase() as any);
-    }
-    setUserEditing(false);
-  };
 
   const seed = useMutation({
     mutationFn: loadSampleData,
@@ -133,36 +125,21 @@ export function TopBar() {
           IRIS Core Live
         </span>
 
-        {/* User name */}
-        <div style={{ position: 'relative' }}>
-          {userEditing ? (
-            <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-              <input
-                type="text"
-                value={userNameInput}
-                onChange={e => setUserNameInput(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleUserSave()}
-                placeholder="Your name"
-                autoFocus
-                className="input"
-                style={{ padding: '4px 8px', fontSize: 12, width: 140 }}
-              />
-              <button onClick={handleUserSave} className="btn-primary" style={{ padding: '4px 8px', fontSize: 11 }}>Set</button>
+        {/* User identity badge */}
+        {userName && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ width: 28, height: 28, borderRadius: '50%', backgroundColor: 'var(--accent-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 11, fontWeight: 700 }}>
+              {userName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
             </div>
-          ) : (
-            <button
-              onClick={() => { setUserNameInput(userName); setUserEditing(true); }}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 6,
-                fontSize: 11, fontFamily: 'var(--font-mono)', border: '1px solid var(--border-default)',
-                backgroundColor: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer',
-              }}
-            >
-              <User size={12} />
-              <span style={{ color: 'var(--text-primary)' }}>{userName || 'Set name'}</span>
+            <div>
+              <p style={{ margin: 0, fontSize: 12, fontWeight: 500, color: 'var(--text-primary)' }}>{userName}</p>
+              <p style={{ margin: 0, fontSize: 10, color: 'var(--text-tertiary)' }}>{ROLE_LABELS[userRole] || activeRole}</p>
+            </div>
+            <button onClick={() => setUser('', 'auditor')} title="Switch user" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', padding: 4 }}>
+              <LogOut size={14} />
             </button>
-          )}
-        </div>
+          </div>
+        )}
 
         <ThemeToggle />
       </div>

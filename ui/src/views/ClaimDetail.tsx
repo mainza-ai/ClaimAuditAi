@@ -7,16 +7,13 @@ import { DispositionReader } from '../components/claims/DispositionReader';
 import { RiskBadge } from '../components/claims/RiskBadge';
 import { DecisionModal } from '../components/claims/DecisionModal';
 import { useChatStore } from '../store/chatStore';
-import { useRoleStore, type UserRole } from '../store/roleStore';
+import { useRoleStore } from '../store/roleStore';
+import { PERMISSIONS } from '../utils/permissions';
 import { parseDisposition } from '../utils/dispositionParser';
 import {
   CheckCircle, AlertTriangle, XCircle, ChevronLeft, MessageSquare,
   HeartPulse, Copy, Check, User, Shield,
 } from 'lucide-react';
-
-const CAN_APPROVE: UserRole[] = ['Director', 'Tech Owner / Admin'];
-const CAN_ESCALATE: UserRole[] = ['Auditor', 'Specialist', 'Tech Owner / Admin'];
-const CAN_REJECT: UserRole[] = ['Director', 'Tech Owner / Admin'];
 
 export function ClaimDetail() {
   const { id } = useParams<{ id: string }>();
@@ -75,9 +72,9 @@ export function ClaimDetail() {
     navigate('/queue');
   };
 
-  const userCanApprove = CAN_APPROVE.includes(activeRole) && !claim?.escalated;
-  const userCanEscalate = CAN_ESCALATE.includes(activeRole);
-  const userCanReject = CAN_REJECT.includes(activeRole) && !claim?.escalated;
+  const userCanApprove = PERMISSIONS.canApprove(activeRole) && !claim?.escalated;
+  const userCanEscalate = PERMISSIONS.canEscalate(activeRole);
+  const userCanReject = PERMISSIONS.canReject(activeRole) && !claim?.escalated;
   const canTakeAction = userCanApprove || userCanEscalate || userCanReject;
 
   if (isLoading && !claim) {
@@ -211,51 +208,56 @@ export function ClaimDetail() {
 
       {/* Decision actions */}
       <div style={{ display: 'flex', gap: 12, paddingTop: 16, borderTop: '1px solid var(--border-default)' }}>
-        <button
-          onClick={() => setModal('approve')}
-          disabled={!userCanApprove}
-          title={!userCanApprove ? `Role "${activeRole}" cannot approve claims` : ''}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', borderRadius: 8,
-            fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-mono)', cursor: userCanApprove ? 'pointer' : 'not-allowed',
-            backgroundColor: userCanApprove ? 'var(--color-success)' : 'var(--bg-card)',
-            color: userCanApprove ? '#fff' : 'var(--text-tertiary)',
-            border: userCanApprove ? 'none' : '1px solid var(--border-default)',
-            opacity: userCanApprove ? 1 : 0.5,
-          }}
-        >
-          <CheckCircle size={16} /> Disburse (Approve)
-        </button>
-        <button
-          onClick={() => setModal('escalate')}
-          disabled={!userCanEscalate}
-          title={!userCanEscalate ? `Role "${activeRole}" cannot escalate claims` : ''}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', borderRadius: 8,
-            fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-mono)', cursor: userCanEscalate ? 'pointer' : 'not-allowed',
-            backgroundColor: userCanEscalate ? 'transparent' : 'transparent',
-            color: userCanEscalate ? 'var(--color-warning)' : 'var(--text-tertiary)',
-            border: `1px solid ${userCanEscalate ? 'var(--color-warning-border)' : 'var(--border-default)'}`,
-            opacity: userCanEscalate ? 1 : 0.5,
-          }}
-        >
-          <AlertTriangle size={16} /> Escalate to Director
-        </button>
-        <button
-          onClick={() => setModal('reject')}
-          disabled={!userCanReject}
-          title={!userCanReject ? `Role "${activeRole}" cannot reject claims` : ''}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', borderRadius: 8,
-            fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-mono)', cursor: userCanReject ? 'pointer' : 'not-allowed',
-            backgroundColor: userCanReject ? 'transparent' : 'transparent',
-            color: userCanReject ? 'var(--color-danger)' : 'var(--text-tertiary)',
-            border: `1px solid ${userCanReject ? 'var(--color-danger-border)' : 'var(--border-default)'}`,
-            opacity: userCanReject ? 1 : 0.5,
-          }}
-        >
-          <XCircle size={16} /> Reject Claim
-        </button>
+        {PERMISSIONS.canApprove(activeRole) && (
+          <button
+            onClick={() => setModal('approve')}
+            disabled={!userCanApprove}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', borderRadius: 8,
+              fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-mono)', cursor: userCanApprove ? 'pointer' : 'not-allowed',
+              backgroundColor: userCanApprove ? 'var(--color-success)' : 'var(--bg-card)',
+              color: userCanApprove ? '#fff' : 'var(--text-tertiary)',
+              border: userCanApprove ? 'none' : '1px solid var(--border-default)',
+              opacity: userCanApprove ? 1 : 0.5,
+            }}
+          >
+            <CheckCircle size={16} /> Disburse (Approve)
+          </button>
+        )}
+
+        {PERMISSIONS.canEscalate(activeRole) && (
+          <button
+            onClick={() => setModal('escalate')}
+            disabled={!userCanEscalate}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', borderRadius: 8,
+              fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-mono)', cursor: userCanEscalate ? 'pointer' : 'not-allowed',
+              backgroundColor: 'transparent',
+              color: userCanEscalate ? 'var(--color-warning)' : 'var(--text-tertiary)',
+              border: `1px solid ${userCanEscalate ? 'var(--color-warning-border)' : 'var(--border-default)'}`,
+              opacity: userCanEscalate ? 1 : 0.5,
+            }}
+          >
+            <AlertTriangle size={16} /> Escalate to Director
+          </button>
+        )}
+
+        {PERMISSIONS.canReject(activeRole) && (
+          <button
+            onClick={() => setModal('reject')}
+            disabled={!userCanReject}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', borderRadius: 8,
+              fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-mono)', cursor: userCanReject ? 'pointer' : 'not-allowed',
+              backgroundColor: 'transparent',
+              color: userCanReject ? 'var(--color-danger)' : 'var(--text-tertiary)',
+              border: `1px solid ${userCanReject ? 'var(--color-danger-border)' : 'var(--border-default)'}`,
+              opacity: userCanReject ? 1 : 0.5,
+            }}
+          >
+            <XCircle size={16} /> Reject Claim
+          </button>
+        )}
       </div>
 
       {modal && (

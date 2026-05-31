@@ -1,7 +1,9 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, ShieldAlert, Network, MessageSquare, History, Settings } from 'lucide-react';
+import { LayoutDashboard, ShieldAlert, Network, MessageSquare, History, Settings, HardDrive } from 'lucide-react';
 import { useState } from 'react';
 import { useChatStore } from '../../store/chatStore';
+import { useUserStore } from '../../store/userStore';
+import { PERMISSIONS } from '../../utils/permissions';
 
 const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
@@ -14,6 +16,7 @@ const navItems = [
 export function Sidebar() {
   const togglePanel = useChatStore((s) => s.togglePanel);
   const isOpen = useChatStore((s) => s.isOpen);
+  const { role } = useUserStore();
   const [logoHovered, setLogoHovered] = useState(false);
 
   return (
@@ -49,6 +52,21 @@ export function Sidebar() {
           <Icon size={20} />
         </NavLink>
       ))}
+
+      {PERMISSIONS.canManageData(role) && (
+        <NavLink
+          to="/admin/data"
+          title="Data Management"
+          className="w-10 h-10 rounded-lg flex items-center justify-center transition-all"
+          style={({ isActive }) => ({
+            backgroundColor: isActive ? 'var(--bg-active-nav)' : 'transparent',
+            color: isActive ? 'var(--accent-text)' : 'var(--text-tertiary)',
+            border: isActive ? '1px solid var(--accent-primary)' : '1px solid transparent',
+          })}
+        >
+          <HardDrive size={20} />
+        </NavLink>
+      )}
 
       <div className="flex-1" />
 

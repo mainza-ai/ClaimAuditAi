@@ -1,10 +1,8 @@
 import { useNavigate } from 'react-router-dom';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { approveClaim, escalateClaim } from '../../api/claims';
 import type { HeldClaim } from '../../types/claim';
 import { RiskBadge } from './RiskBadge';
 import { formatDistanceToNow } from 'date-fns';
-import { ChevronRight, Check, AlertTriangle } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import { useState } from 'react';
 
 const RISK_BORDER_LEFT: Record<string, string> = {
@@ -15,23 +13,7 @@ const RISK_BORDER_LEFT: Record<string, string> = {
 
 export function ClaimRow({ claim }: { claim: HeldClaim }) {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const [hovered, setHovered] = useState(false);
-
-  const approve = useMutation({
-    mutationFn: () => approveClaim(claim.id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['claims', 'held'] });
-      queryClient.invalidateQueries({ queryKey: ['stats'] });
-    },
-  });
-
-  const escalate = useMutation({
-    mutationFn: () => escalateClaim(claim.id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['claims', 'held'] });
-    },
-  });
 
   return (
     <div
@@ -58,61 +40,32 @@ export function ClaimRow({ claim }: { claim: HeldClaim }) {
         <div className="min-w-0">
           <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>Claim Response {claim.id}</p>
           <p className="text-xs truncate mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-            Patient {claim.patientId} · CPT {claim.cptCode} · ${claim.totalAmount?.toLocaleString()}
+            Patient {claim.patientName || claim.patientId} \u00b7 CPT {claim.cptCode} \u00b7 ${claim.totalAmount?.toLocaleString()}
           </p>
         </div>
       </div>
       <div className="flex items-center gap-3 shrink-0 ml-4">
         {claim.escalated ? (
           <span style={{
-            fontSize: 10,
-            fontFamily: 'var(--font-mono)',
-            fontWeight: 700,
-            textTransform: 'uppercase',
-            color: 'var(--color-warning)',
-            backgroundColor: 'var(--color-warning-bg)',
-            border: '1px solid var(--color-warning-border)',
-            padding: '2px 8px',
-            borderRadius: 4,
+            fontSize: 10, fontFamily: 'var(--font-mono)', fontWeight: 700, textTransform: 'uppercase',
+            color: 'var(--color-warning)', backgroundColor: 'var(--color-warning-bg)',
+            border: '1px solid var(--color-warning-border)', padding: '2px 8px', borderRadius: 4,
           }}>
             Escalated
           </span>
         ) : null}
-        {hovered && !claim.escalated && (
-          <div className="flex items-center gap-1.5 mr-2">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                approve.mutate();
-              }}
-              disabled={approve.isPending}
-              title="Approve / Disburse funds"
-              className="p-1.5 rounded disabled:opacity-40 transition-all"
-              style={{
-                backgroundColor: 'var(--color-success-bg)',
-                color: 'var(--color-success)',
-                border: '1px solid var(--color-success-border)',
-              }}
-            >
-              <Check size={14} />
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                escalate.mutate();
-              }}
-              disabled={escalate.isPending}
-              title="Escalate to director"
-              className="p-1.5 rounded disabled:opacity-40 transition-all"
-              style={{
-                backgroundColor: 'var(--color-warning-bg)',
-                color: 'var(--color-warning)',
-                border: '1px solid var(--color-warning-border)',
-              }}
-            >
-              <AlertTriangle size={14} />
-            </button>
-          </div>
+
+        {hovered && (
+          <span
+            style={{
+              padding: '5px 12px', borderRadius: 6, border: '1px solid var(--border-default)',
+              backgroundColor: 'transparent', color: 'var(--text-secondary)', fontSize: 12, cursor: 'pointer',
+              fontFamily: 'var(--font-mono)',
+            }}
+            onClick={(e) => { e.stopPropagation(); navigate(`/claims/${claim.id}`); }}
+          >
+            Review \u2192
+          </span>
         )}
 
         <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>

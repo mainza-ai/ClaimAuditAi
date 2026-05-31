@@ -9,7 +9,10 @@ import { ClaimDetail } from './views/ClaimDetail';
 import { GraphView } from './views/GraphView';
 import { Ledger } from './views/Ledger';
 import { LLMSettings } from './views/LLMSettings';
+import { DataManagement } from './views/DataManagement';
+import { UserSetupModal } from './components/layout/UserSetupModal';
 import { useChatStore } from './store/chatStore';
+import { useUserStore } from './store/userStore';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 const queryClient = new QueryClient({
@@ -23,10 +26,12 @@ const queryClient = new QueryClient({
 
 export default function App() {
   const isOpen = useChatStore((s) => s.isOpen);
+  const { name: userName } = useUserStore();
 
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
+        {!userName && <UserSetupModal />}
         <div
           style={{
             display: 'flex',
@@ -58,6 +63,7 @@ export default function App() {
                 <Route path="/graph" element={<GraphView />} />
                 <Route path="/ledger" element={<Ledger />} />
                 <Route path="/settings/llm" element={<LLMSettings />} />
+                <Route path="/admin/data" element={<DataManagement />} />
               </Routes>
               </ErrorBoundary>
             </main>

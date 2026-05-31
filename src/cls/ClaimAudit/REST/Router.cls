@@ -16,6 +16,7 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
     <Route Url="/claims/:id"            Method="GET"  Call="GetClaimDetail"/>
     <Route Url="/claims/:id/approve"    Method="POST" Call="ApproveClaim"/>
     <Route Url="/claims/:id/escalate"   Method="POST" Call="EscalateClaim"/>
+    <Route Url="/claims/:id/reject"     Method="POST" Call="RejectClaim"/>
     <Route Url="/stats"                 Method="GET"  Call="GetStats"/>
     <Route Url="/chat"                  Method="POST" Call="Chat"/>
     <Route Url="/samples/load"          Method="POST" Call="LoadSampleData"/>
@@ -457,6 +458,9 @@ ClassMethod ApproveClaim(id As %String) As %Status
 {
     Set tSC = $$$OK
     Try {
+        Set tBody = ##class(%DynamicObject).%FromJSON(%request.Content)
+        Set tAuthorizedBy = tBody.authorizedBy
+        Set tRationaleSummary = tBody.rationaleSummary
         Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
 
         // 1. Fetch and update ClaimResponse
@@ -470,6 +474,18 @@ ClassMethod ApproveClaim(id As %String) As %Status
         If $IsObject(tResponse.Json) {
             Set tCRJson = tResponse.Json
             Set tCRJson.outcome = "complete"
+
+            // Add authorizer info as extensions
+            If tAuthorizedBy '= "" {
+                Set tExt = tCRJson.extension
+                If '$IsObject(tExt) Set tExt = []
+                Do tExt.%Push({"url": "https://claimauditai.com/fhir/extension/authorized-by", "valueString": (tAuthorizedBy)})
+                If tRationaleSummary '= "" {
+                    Do tExt.%Push({"url": "https://claimauditai.com/fhir/extension/rationale", "valueString": (tRationaleSummary)})
+                }
+                Do tExt.%Push({"url": "https://claimauditai.com/fhir/extension/decision-timestamp", "valueDateTime": ($ZDateTime($Horolog, 3, 1))})
+                Set tCRJson.extension = tExt
+            }
 
             Set tReqPut = ##class(HS.FHIRServer.API.Data.Request).%New()
             Set tReqPut.RequestMethod = "PUT"
@@ -501,6 +517,9 @@ ClassMethod ApproveClaim(id As %String) As %Status
                     If $IsObject(tRespT.Json) {
                         Set tTaskJson = tRespT.Json
                         Set tTaskJson.status = "completed"
+                        If tAuthorizedBy '= "" {
+                            Set tTaskJson.owner = {"reference": ("Practitioner/" _ tAuthorizedBy)}
+                        }
 
                         Set tReqTPut = ##class(HS.FHIRServer.API.Data.Request).%New()
                         Set tReqTPut.RequestMethod = "PUT"
@@ -513,7 +532,7 @@ ClassMethod ApproveClaim(id As %String) As %Status
                 }
             }
         }
-        Write {"status": "success"}.%ToJSON()
+        Write {"status": "success", "authorizedBy": (tAuthorizedBy)}.%ToJSON()
     } Catch ex {
         Set tSC = ex.AsStatus()
         Write {"error": (ex.DisplayString())}.%ToJSON()
@@ -521,11 +540,14 @@ ClassMethod ApproveClaim(id As %String) As %Status
     Quit tSC
 }
 
-/// Escalate a held claim — sets Task priority to urgent/stat
+/// Escalate a held claim — sets Task priority to stat
 ClassMethod EscalateClaim(id As %String) As %Status
 {
     Set tSC = $$$OK
     Try {
+        Set tBody = ##class(%DynamicObject).%FromJSON(%request.Content)
+        Set tAuthorizedBy = tBody.authorizedBy
+        Set tRationaleSummary = tBody.rationaleSummary
         Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
 
         // 1. Fetch ClaimResponse
@@ -538,6 +560,27 @@ ClassMethod EscalateClaim(id As %String) As %Status
 
         If $IsObject(tResponse.Json) {
             Set tCRJson = tResponse.Json
+
+            // Add escalation extensions
+            If tAuthorizedBy '= "" {
+                Set tExt = tCRJson.extension
+                If '$IsObject(tExt) Set tExt = []
+                Do tExt.%Push({"url": "https://claimauditai.com/fhir/extension/authorized-by", "valueString": (tAuthorizedBy)})
+                If tRationaleSummary '= "" {
+                    Do tExt.%Push({"url": "https://claimauditai.com/fhir/extension/rationale", "valueString": (tRationaleSummary)})
+                }
+                Do tExt.%Push({"url": "https://claimauditai.com/fhir/extension/decision-timestamp", "valueDateTime": ($ZDateTime($Horolog, 3, 1))})
+                Set tCRJson.extension = tExt
+            }
+
+            Set tReqPut = ##class(HS.FHIRServer.API.Data.Request).%New()
+            Set tReqPut.RequestMethod = "PUT"
+            Set tReqPut.RequestPath = "/ClaimResponse/" _ id
+            Set tReqPut.Interaction = "update"
+            Set tReqPut.Json = tCRJson
+            Set tRespPut = ##class(HS.FHIRServer.API.Data.Response).%New()
+            Do tService.DispatchRequest(tReqPut, .tRespPut)
+
             Set tRequestRef = tCRJson.request.reference
             Set tClaimId = $Piece(tRequestRef, "/", 2)
 
@@ -559,6 +602,9 @@ ClassMethod EscalateClaim(id As %String) As %Status
                     If $IsObject(tRespT.Json) {
                         Set tTaskJson = tRespT.Json
                         Set tTaskJson.priority = "stat"
+                        If tAuthorizedBy '= "" {
+                            Set tTaskJson.owner = {"reference": ("Practitioner/" _ tAuthorizedBy)}
+                        }
 
                         Set tReqTPut = ##class(HS.FHIRServer.API.Data.Request).%New()
                         Set tReqTPut.RequestMethod = "PUT"
@@ -571,7 +617,93 @@ ClassMethod EscalateClaim(id As %String) As %Status
                 }
             }
         }
-        Write {"status": "success"}.%ToJSON()
+        Write {"status": "success", "authorizedBy": (tAuthorizedBy)}.%ToJSON()
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+        Write {"error": (ex.DisplayString())}.%ToJSON()
+    }
+    Quit tSC
+}
+
+/// Reject a held claim — sets ClaimResponse outcome to error and updates Task to cancelled
+ClassMethod RejectClaim(id As %String) As %Status
+{
+    Set tSC = $$$OK
+    Try {
+        Set tBody = ##class(%DynamicObject).%FromJSON(%request.Content)
+        Set tAuthorizedBy = tBody.authorizedBy
+        Set tRationaleSummary = tBody.rationaleSummary
+        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
+
+        // 1. Fetch and update ClaimResponse
+        Set tRequest = ##class(HS.FHIRServer.API.Data.Request).%New()
+        Set tRequest.RequestMethod = "GET"
+        Set tRequest.RequestPath = "/ClaimResponse/" _ id
+        Set tRequest.Interaction = "read"
+        Set tResponse = ##class(HS.FHIRServer.API.Data.Response).%New()
+        Do tService.DispatchRequest(tRequest, .tResponse)
+
+        If $IsObject(tResponse.Json) {
+            Set tCRJson = tResponse.Json
+            Set tCRJson.outcome = "error"
+            Set tCRJson.status = "cancelled"
+
+            If tAuthorizedBy '= "" {
+                Set tExt = tCRJson.extension
+                If '$IsObject(tExt) Set tExt = []
+                Do tExt.%Push({"url": "https://claimauditai.com/fhir/extension/authorized-by", "valueString": (tAuthorizedBy)})
+                If tRationaleSummary '= "" {
+                    Do tExt.%Push({"url": "https://claimauditai.com/fhir/extension/rationale", "valueString": (tRationaleSummary)})
+                }
+                Do tExt.%Push({"url": "https://claimauditai.com/fhir/extension/decision-timestamp", "valueDateTime": ($ZDateTime($Horolog, 3, 1))})
+                Set tCRJson.extension = tExt
+            }
+
+            Set tReqPut = ##class(HS.FHIRServer.API.Data.Request).%New()
+            Set tReqPut.RequestMethod = "PUT"
+            Set tReqPut.RequestPath = "/ClaimResponse/" _ id
+            Set tReqPut.Interaction = "update"
+            Set tReqPut.Json = tCRJson
+            Set tRespPut = ##class(HS.FHIRServer.API.Data.Response).%New()
+            Do tService.DispatchRequest(tReqPut, .tRespPut)
+
+            Set tRequestRef = tCRJson.request.reference
+            Set tClaimId = $Piece(tRequestRef, "/", 2)
+
+            // 2. Cancel linked Task
+            If tClaimId '= "" {
+                Set tTRS = ##class(%SQL.Statement).%ExecDirect(,
+                "SELECT Key FROM HSFHIR_X0001_S.Task WHERE focus = ?", "Claim/" _ tClaimId)
+                If tTRS.%Next() {
+                    Set tTaskKey = tTRS.%Get("Key")
+                    Set tTaskId = $Piece(tTaskKey, "/", 2)
+
+                    Set tReqT = ##class(HS.FHIRServer.API.Data.Request).%New()
+                    Set tReqT.RequestMethod = "GET"
+                    Set tReqT.RequestPath = "/Task/" _ tTaskId
+                    Set tReqT.Interaction = "read"
+                    Set tRespT = ##class(HS.FHIRServer.API.Data.Response).%New()
+                    Do tService.DispatchRequest(tReqT, .tRespT)
+
+                    If $IsObject(tRespT.Json) {
+                        Set tTaskJson = tRespT.Json
+                        Set tTaskJson.status = "cancelled"
+                        If tAuthorizedBy '= "" {
+                            Set tTaskJson.owner = {"reference": ("Practitioner/" _ tAuthorizedBy)}
+                        }
+
+                        Set tReqTPut = ##class(HS.FHIRServer.API.Data.Request).%New()
+                        Set tReqTPut.RequestMethod = "PUT"
+                        Set tReqTPut.RequestPath = "/Task/" _ tTaskId
+                        Set tReqTPut.Interaction = "update"
+                        Set tReqTPut.Json = tTaskJson
+                        Set tRespTPut = ##class(HS.FHIRServer.API.Data.Response).%New()
+                        Do tService.DispatchRequest(tReqTPut, .tRespTPut)
+                    }
+                }
+            }
+        }
+        Write {"status": "success", "authorizedBy": (tAuthorizedBy)}.%ToJSON()
     } Catch ex {
         Set tSC = ex.AsStatus()
         Write {"error": (ex.DisplayString())}.%ToJSON()
