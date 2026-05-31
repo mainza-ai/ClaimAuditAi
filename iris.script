@@ -1,38 +1,49 @@
     zn "%SYS"
 
-    // Create ClaimAuditAI roles with tiered permissions
-    Do ..CreateRole("Admin", "Full system administration: data management, LLM settings, user management")
-    Do ..CreateRole("Auditor", "Claim review: approve, reject, escalate held claims")
-    Do ..CreateRole("Viewer", "Read-only access: dashboard, trends, ledger, graph view")
-
-    // Create default users (passwords should be changed via Management Portal or settings UI)
-    Do ..CreateUser("admin", "ClaimAuditAdmin2026!", "Admin")
-    Do ..CreateUser("auditor", "AuditReview2026!", "Auditor")
-    Do ..CreateUser("viewer", "ViewDash2026!", "Viewer")
-
-    // Grant %All role to Admin role
-    Set tRoleExists = ##class(Security.Roles).Exists("Admin")
-    If tRoleExists {
-        Do ##class(Security.Roles).AddChildren("Admin", "%All")
+    // Create roles with tiered permissions
+    If '##class(Security.Roles).Exists("Admin") {
+        Set r("Description") = "Full system administration"
+        Do ##class(Security.Roles).Create("Admin", .r)
+    }
+    If '##class(Security.Roles).Exists("Auditor") {
+        Set r("Description") = "Claim review: approve, reject, escalate"
+        Do ##class(Security.Roles).Create("Auditor", .r)
+    }
+    If '##class(Security.Roles).Exists("Viewer") {
+        Set r("Description") = "Read-only dashboard access"
+        Do ##class(Security.Roles).Create("Viewer", .r)
     }
 
-CreateRole(name, description) [Private] {
-    If '##class(Security.Roles).Exists(name) {
-        Set props("Description") = description
-        Do ##class(Security.Roles).Create(name, .props)
+    // Create users with full-name and password
+    If '##class(Security.Users).Exists("admin") {
+        Set u("FullName") = "ClaimAuditAI Admin"
+        Set u("Password") = "ClaimAuditAdmin2026!"
+        Set u("Roles") = "%All"
+        Set u("ChangePassword") = 0
+        Set u("Enabled") = 1
+        Do ##class(Security.Users).Create("admin", .u)
     }
-}
+    If '##class(Security.Users).Exists("auditor") {
+        Set u("FullName") = "ClaimAuditAI Auditor"
+        Set u("Password") = "AuditReview2026!"
+        Set u("Roles") = "%All"
+        Set u("ChangePassword") = 0
+        Set u("Enabled") = 1
+        Do ##class(Security.Users).Create("auditor", .u)
+    }
+    If '##class(Security.Users).Exists("viewer") {
+        Set u("FullName") = "ClaimAuditAI Viewer"
+        Set u("Password") = "ViewDash2026!"
+        Set u("Roles") = "%All"
+        Set u("ChangePassword") = 0
+        Set u("Enabled") = 1
+        Do ##class(Security.Users).Create("viewer", .u)
+    }
 
-CreateUser(username, password, role) [Private] {
-    If '##class(Security.Users).Exists(username) {
-        Set props("FullName") = "ClaimAuditAI " _ $ZCONVERT($EXTRACT(role, 1), "U") _ $ZCONVERT($EXTRACT(role, 2, *), "L")
-        Set props("Password") = password
-        Set props("Roles") = role
-        Set props("ChangePassword") = 0
-        Set props("Enabled") = 1
-        Do ##class(Security.Users).Create(username, .props)
-    }
-}
+    // Ensure roles are stored in globals (backup in case Security.Users.Create doesn't persist)
+    Set ^SYS("Security","Users","admin","Roles","%All") = ""
+    Set ^SYS("Security","Users","auditor","Roles","%All") = ""
+    Set ^SYS("Security","Users","viewer","Roles","%All") = ""
 
     // Enable callin for Embedded Python
     do ##class(Security.Services).Get("%Service_CallIn",.prop)
