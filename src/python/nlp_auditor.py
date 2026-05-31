@@ -1,5 +1,6 @@
 import os
 import sys
+import threading
 import numpy as np
 from sentence_transformers import SentenceTransformer
 
@@ -9,19 +10,23 @@ try:
 except ImportError:
     iris = None
 
-# Thread-safe model loader
+# Thread-safe model loader with locking
 _model_instance = None
+_model_lock = threading.Lock()
 
 def get_model():
     global _model_instance
-    if _model_instance is None:
-        # Load local lightweight model
-        # Sets cache dir inside workspace to avoid writing to system directories
+    if _model_instance is not None:
+        return _model_instance
+
+    with _model_lock:
+        if _model_instance is not None:
+            return _model_instance
         cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "model_cache")
         os.makedirs(cache_dir, exist_ok=True)
         os.environ["SENTENCE_TRANSFORMERS_HOME"] = cache_dir
         _model_instance = SentenceTransformer('all-MiniLM-L6-v2', cache_folder=cache_dir)
-    return _model_instance
+        return _model_instance
 
 def vectorize_text(text: str) -> list:
     """Vectorize input text using SentenceTransformer and return as a flat float list."""

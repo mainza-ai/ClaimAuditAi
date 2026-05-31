@@ -23,12 +23,12 @@ export function HoldQueue() {
   const [searchFocused, setSearchFocused] = useState(false);
   const [sortFocused, setSortFocused] = useState(false);
 
-  const { data: claims, isLoading, isError } = useQuery({
+  const { data: response, isLoading, isError } = useQuery({
     queryKey: ['claims', 'held'],
-    queryFn: getHeldClaims,
+    queryFn: () => getHeldClaims(50, 0),
   });
 
-  const allClaims = claims ?? [];
+  const allClaims = response?.data ?? [];
 
   const filtered = useMemo(() => {
     const f = allClaims.filter(

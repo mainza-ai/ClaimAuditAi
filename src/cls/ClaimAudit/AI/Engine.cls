@@ -170,13 +170,23 @@ ClassMethod AuditClaim(pClaimJson As %DynamicObject, Output pResult As %DynamicO
             Set serviceDate = $EXTRACT(pClaimJson.created, 1, 10)
         }
         
-        // Default autoencoder features (specialty, age, duration) are not
-        // directly available in standard FHIR Claim resources. In production,
-        // these would be enriched from Patient/Encounter/custom extensions.
-        // Seed data populates ClaimAudit.ClaimProjections with these values.
+        // Enrich autoencoder features from ClaimProjections table when available.
+        // Falls back to sensible defaults for claims without projection data.
         Set specialtyCode = 1
         Set patientAge = 45
         Set durationDays = 1
+        If patientId '= "" {
+            Try {
+                Set tCPRS = ##class(%SQL.Statement).%ExecDirect(,
+                "SELECT SpecialtyCode, PatientAge, DurationDays "_
+                "FROM ClaimAudit.ClaimProjections WHERE PatientKey = ?", patientId)
+                If tCPRS.%Next() {
+                    Set specialtyCode = +tCPRS.%Get("SpecialtyCode")
+                    Set patientAge = +tCPRS.%Get("PatientAge")
+                    Set durationDays = +tCPRS.%Get("DurationDays")
+                }
+            } Catch {}
+        }
         
         // TIER 1: Semantic NLP Vector Search
         Set nlp = ##class(%SYS.Python).Import("nlp_auditor")

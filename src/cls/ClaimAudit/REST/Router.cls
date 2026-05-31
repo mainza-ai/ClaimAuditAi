@@ -49,20 +49,45 @@ ClassMethod Introspect() As %Status
     Quit ##class(ClaimAudit.REST.Auth).Introspect()
 }
 
-/// Returns all ClaimResponse resources with outcome=queued (HOLD status) mapped with Claim details
+/// Returns held ClaimResponse resources with patient details, CPT/ICD, and pagination.
+/// Query params: ?limit=N&offset=M (default: limit=50, offset=0)
 ClassMethod GetHeldClaims() As %Status
 {
     If '##class(ClaimAudit.REST.Auth).RequireAuth() Quit $$$OK
     Set tSC = $$$OK
     Try {
-        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
-        Set tRS = ##class(%SQL.Statement).%ExecDirect(,
-        "SELECT Key, patient, request, _lastUpdated, disposition FROM HSFHIR_X0001_S.ClaimResponse "_
-        "WHERE outcome = ? ORDER BY _lastUpdated DESC", "queued")
+        Set tLimit = +$Get(%request.Data("limit", 1), 50)
+        Set tOffset = +$Get(%request.Data("offset", 1), 0)
+        If tLimit < 1 Set tLimit = 50
+        If tLimit > 200 Set tLimit = 200
+
+        // Single O(1) query with JOINs — no per-row DispatchRequest calls
+        Set tSQL = "SELECT CR.Key AS crKey, CR.patient, CR.request, CR._lastUpdated, CR.disposition, "_
+                   "PP.Name AS patientName, "_
+                   "CR.total, "_
+                   "(SELECT COUNT(*) FROM HSFHIR_X0001_S.Task T WHERE T.focus = CR.request AND T.priority = 'stat') AS escalated "_
+                   "FROM HSFHIR_X0001_S.ClaimResponse CR "_
+                   "LEFT JOIN ClaimAudit.PatientProjections PP ON SUBSTRING(CR.patient, 9) = PP.Key "_
+                   "WHERE CR.outcome = ? "_
+                   "ORDER BY CR._lastUpdated DESC"
+
+        // Count query for pagination total
+        Set tCountRS = ##class(%SQL.Statement).%ExecDirect(,
+        "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.ClaimResponse WHERE outcome = ?", "queued")
+        Do tCountRS.%Next()
+        Set tTotal = +tCountRS.%Get("cnt")
+
+        Set tRS = ##class(%SQL.Statement).%ExecDirect(, tSQL, "queued")
 
         Set tArr = []
+        Set tIdx = 0
         While tRS.%Next() {
-            Set tClaimResponseKey = tRS.%Get("Key")
+            // Pagination skip
+            Set tIdx = tIdx + 1
+            If tIdx <= tOffset Continue
+            If tArr.%Size() >= tLimit Quit
+
+            Set tClaimResponseKey = tRS.%Get("crKey")
             Set tClaimResponseId = $Piece(tClaimResponseKey, "/", 2)
             Set tPatientRef = tRS.%Get("patient")
             Set tPatientId = $Piece(tPatientRef, "/", 2)
@@ -70,99 +95,63 @@ ClassMethod GetHeldClaims() As %Status
             Set tClaimId = $Piece(tRequestRef, "/", 2)
             Set tLastUpdated = tRS.%Get("_lastUpdated")
             Set tDisposition = tRS.%Get("disposition")
+            Set tEscalated = +tRS.%Get("escalated")
 
-            // Default values in case Claim fetch fails
+            // Patient name from SQL join
+            Set tPatientName = tRS.%Get("patientName")
+            If tPatientName = "" Set tPatientName = "Unknown Patient"
+
+            // Billed amount from ClaimResponse.total (BackboneElement array) — O(1) in-row access
+            // The interceptor stores total as [{category: ..., amount: {value: X, currency: "USD"}}]
+            Set tBilledAmount = 0.0
+            Set tTotalStr = tRS.%Get("total")
+            If tTotalStr '= "" {
+                Try {
+                    Set tTotalJson = ##class(%DynamicAbstractObject).%FromJSON(tTotalStr)
+                    If $IsObject(tTotalJson) {
+                        Set tArrSize = tTotalJson.%Size()
+                        For tI = 0:1:tArrSize-1 {
+                            Set tTotalEntry = tTotalJson.%Get(tI)
+                            If $IsObject(tTotalEntry.amount) {
+                                Set tBilledAmount = +tTotalEntry.amount.value
+                                Quit
+                            }
+                        }
+                    }
+                } Catch {}
+            }
+
+            // CPT and ICD from ClaimResponse extensions (embedded by interceptor)
+            // The extensions are stored as JSON in the ClaimResponse resource
             Set tCptCode = "Unknown"
             Set tIcdCode = "Unknown"
-            Set tBilledAmount = 0.0
             Set tSubmittedAt = tLastUpdated
 
-            // Programmatically fetch patient name from FHIR Patient resource
-            Set tPatientName = "Unknown Patient"
-            If tPatientId '= "" {
-                Try {
-                    Set tReqPat = ##class(HS.FHIRServer.API.Data.Request).%New()
-                    Set tReqPat.RequestMethod = "GET"
-                    Set tReqPat.RequestPath = "/Patient/" _ tPatientId
-                    Set tReqPat.Interaction = "read"
-                    Set tRespPat = ##class(HS.FHIRServer.API.Data.Response).%New()
-                    Do tService.DispatchRequest(tReqPat, .tRespPat)
-                    If $IsObject(tRespPat.Json) {
-                        Set tPatJson = tRespPat.Json
-                        If $IsObject(tPatJson.name) && (tPatJson.name.%Size() > 0) {
-                            Set tNameObj = tPatJson.name.%Get(0)
-                            Set tGiven = ""
-                            If $IsObject(tNameObj.given) && (tNameObj.given.%Size() > 0) {
-                                Set tGiven = tNameObj.given.%Get(0)
+            Try {
+                Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
+                Set tReqCR = ##class(HS.FHIRServer.API.Data.Request).%New()
+                Set tReqCR.RequestMethod = "GET"
+                Set tReqCR.RequestPath = "/ClaimResponse/" _ tClaimResponseId
+                Set tReqCR.Interaction = "read"
+                Set tRespCR = ##class(HS.FHIRServer.API.Data.Response).%New()
+                Do tService.DispatchRequest(tReqCR, .tRespCR)
+                If $IsObject(tRespCR.Json) {
+                    If tRespCR.Json.created '= "" Set tSubmittedAt = tRespCR.Json.created
+                    If $IsObject(tRespCR.Json.extension) {
+                        Set tExtIter = tRespCR.Json.extension.%GetIterator()
+                        While tExtIter.%GetNext(.tK, .tExt) {
+                            If tExt.url = "https://claimauditai.com/fhir/extension/cpt-code" {
+                                Set tCptCode = tExt.valueString
                             }
-                            Set tFamily = tNameObj.family
-                            Set tPatientName = tGiven _ " " _ tFamily
-                        }
-                    }
-                } Catch {}
-            }
-
-            // Programmatically fetch the associated Claim resource to read details
-            If tClaimId '= "" {
-                Try {
-                    Set tReqClaim = ##class(HS.FHIRServer.API.Data.Request).%New()
-                    Set tReqClaim.RequestMethod = "GET"
-                    Set tReqClaim.RequestPath = "/Claim/" _ tClaimId
-                    Set tReqClaim.Interaction = "read"
-                    Set tRespClaim = ##class(HS.FHIRServer.API.Data.Response).%New()
-                    Do tService.DispatchRequest(tReqClaim, .tRespClaim)
-
-                    If $IsObject(tRespClaim.Json) {
-                        Set tClaimJson = tRespClaim.Json
-                        If tClaimJson.created '= "" Set tSubmittedAt = tClaimJson.created
-                        If $IsObject(tClaimJson.total) Set tBilledAmount = +tClaimJson.total.value
-
-                        // Parse CPT code
-                        If $IsObject(tClaimJson.item) && (tClaimJson.item.%Size() > 0) {
-                            Set tItem = tClaimJson.item.%Get(0)
-                            If $IsObject(tItem.productOrService) && $IsObject(tItem.productOrService.coding) {
-                                Set tCoding = tItem.productOrService.coding.%Get(0)
-                                If tCoding '= "" {
-                                    Set tCptCode = tCoding.display
-                                    If tCptCode = "" Set tCptCode = tCoding.code
-                                }
-                            }
-                        }
-
-                        // Parse ICD code
-                        If $IsObject(tClaimJson.diagnosis) && (tClaimJson.diagnosis.%Size() > 0) {
-                            Set tDiag = tClaimJson.diagnosis.%Get(0)
-                            If $IsObject(tDiag.diagnosisCodeableConcept) && $IsObject(tDiag.diagnosisCodeableConcept.coding) {
-                                Set tDCoding = tDiag.diagnosisCodeableConcept.coding.%Get(0)
-                                If tDCoding '= "" {
-                                    Set tIcdCode = tDCoding.code
-                                }
+                            If tExt.url = "https://claimauditai.com/fhir/extension/icd-code" {
+                                Set tIcdCode = tExt.valueString
                             }
                         }
                     }
-                } Catch {}
-            }
+                }
+            } Catch {}
 
-            // Fallback: if Claim fetch failed (Claim not persisted by interceptor),
-            // read the total from the ClaimResponse's own stored JSON
-            If tBilledAmount = 0 {
-                Try {
-                    Set tReqCR = ##class(HS.FHIRServer.API.Data.Request).%New()
-                    Set tReqCR.RequestMethod = "GET"
-                    Set tReqCR.RequestPath = "/ClaimResponse/" _ tClaimResponseId
-                    Set tReqCR.Interaction = "read"
-                    Set tRespCR = ##class(HS.FHIRServer.API.Data.Response).%New()
-                    Do tService.DispatchRequest(tReqCR, .tRespCR)
-                    If $IsObject(tRespCR.Json) && $IsObject(tRespCR.Json.total) && (tRespCR.Json.total.%Size() > 0) {
-                        Set tTotalItem = tRespCR.Json.total.%Get(0)
-                        If $IsObject(tTotalItem.amount) {
-                            Set tBilledAmount = +tTotalItem.amount.value
-                        }
-                    }
-                } Catch {}
-            }
-
-            // Derive risk level from disposition keywords (consistent with GetStats)
+            // Derive risk level from disposition keywords
             Set tRiskScore = 0.70
             Set tRiskLevel = "high"
             If tDisposition [ "critical" {
@@ -174,16 +163,6 @@ ClassMethod GetHeldClaims() As %Status
             } ElseIf tDisposition [ "medium" {
                 Set tRiskScore = 0.45
                 Set tRiskLevel = "medium"
-            }
-
-            // Check if this claim was escalated to director
-            Set tEscalated = 0
-            If tClaimId '= "" {
-                Set tTRS = ##class(%SQL.Statement).%ExecDirect(,
-                "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.Task WHERE focus = ? AND priority = ?", "Claim/" _ tClaimId, "stat")
-                If tTRS.%Next() {
-                    If tTRS.%Get("cnt") > 0 Set tEscalated = 1
-                }
             }
 
             Set tObj = {
@@ -202,7 +181,7 @@ ClassMethod GetHeldClaims() As %Status
             }
             Do tArr.%Push(tObj)
         }
-        Write tArr.%ToJSON()
+        Write {"data": (tArr), "total": (tTotal), "limit": (tLimit), "offset": (tOffset)}.%ToJSON()
     } Catch ex {
         Set tSC = ex.AsStatus()
         Write {"error": (ex.DisplayString())}.%ToJSON()
@@ -991,6 +970,11 @@ ClassMethod LoadSampleData() As %Status
         // Re-train statistical autoencoder with the new clinical projections
         Do ##class(ClaimAudit.AI.Engine).TrainAutoencoder()
 
+        // Invalidate graph cache so next request rebuilds with new data
+        Do ##class(ClaimAudit.AI.Engine).ConfigurePythonPath()
+        Set tGA = ##class(%SYS.Python).Import("graph_analyzer")
+        Do tGA."invalidate_graph_cache"()
+
         Set tMsg = "Successfully ingested " _ tCount _ " FHIR Claims and parsed 8 Patient profiles."
         Write {"status": "success", "message": (tMsg)}.%ToJSON()
     } Catch ex {
@@ -1056,22 +1040,42 @@ ClassMethod GetTrends() As %Status
     Quit tSC
 }
 
-/// Override audit ledger — derived from Task and ClaimResponse history
+/// Override audit ledger — derived from Task and ClaimResponse joined SQL.
+/// Query params: ?limit=N&offset=M (default: limit=50, offset=0)
 ClassMethod GetLedger() As %Status
 {
     If '##class(ClaimAudit.REST.Auth).RequireAuth() Quit $$$OK
     Set tSC = $$$OK
     Try {
-        Set tArr = []
-        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
+        Set tLimit = +$Get(%request.Data("limit", 1), 50)
+        Set tOffset = +$Get(%request.Data("offset", 1), 0)
+        If tLimit < 1 Set tLimit = 50
+        If tLimit > 200 Set tLimit = 200
 
-        // Query completed tasks (approved), stat-priority tasks (escalated), and cancelled tasks (rejected)
+        // Count query for pagination total
+        Set tCountRS = ##class(%SQL.Statement).%ExecDirect(,
+        "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.Task WHERE status IN (?,?) OR (status = ? AND priority = ?)",
+        "completed", "cancelled", "ready", "stat")
+        Do tCountRS.%Next()
+        Set tTotal = +tCountRS.%Get("cnt")
+
         Set tRS = ##class(%SQL.Statement).%ExecDirect(,
-        "SELECT Key, status, priority, focus, _lastUpdated FROM HSFHIR_X0001_S.Task "_
-        "WHERE status IN (?,?) OR (status = ? AND priority = ?) ORDER BY _lastUpdated DESC", "completed", "cancelled", "ready", "stat")
+        "SELECT T.Key AS taskKey, T.status, T.priority, T.focus, T._lastUpdated, "_
+        "CR.patient, CR.disposition, CR.total "_
+        "FROM HSFHIR_X0001_S.Task T "_
+        "LEFT JOIN HSFHIR_X0001_S.ClaimResponse CR ON T.focus = CR.request "_
+        "WHERE T.status IN (?,?) OR (T.status = ? AND T.priority = ?) "_
+        "ORDER BY T._lastUpdated DESC", "completed", "cancelled", "ready", "stat")
 
+        Set tArr = []
+        Set tIdx = 0
         While tRS.%Next() {
-            Set tTaskKey = tRS.%Get("Key")
+            // Pagination skip
+            Set tIdx = tIdx + 1
+            If tIdx <= tOffset Continue
+            If tArr.%Size() >= tLimit Quit
+
+            Set tTaskKey = tRS.%Get("taskKey")
             Set tTaskId = $Piece(tTaskKey, "/", 2)
             Set tStatus = tRS.%Get("status")
             Set tPriority = tRS.%Get("priority")
@@ -1086,66 +1090,39 @@ ClassMethod GetLedger() As %Status
                 Set tAction = "escalated"
             }
 
-            // Fetch claim details for amount and context
-            Set tBilledAmount = 0
-            Set tPatientId = ""
-            Set tProviderId = ""
-            If tClaimId '= "" {
+            // Patient ID from ClaimResponse.patient (JOIN'd)
+            Set tPatientRef = tRS.%Get("patient")
+            Set tPatientId = $Piece(tPatientRef, "/", 2)
+            Set tProviderId = "Unknown"
+
+            // Billed amount from ClaimResponse.total JSON (JOIN'd)
+            Set tBilledAmount = 0.0
+            Set tTotalStr = tRS.%Get("total")
+            If tTotalStr '= "" {
                 Try {
-                    Set tReqClaim = ##class(HS.FHIRServer.API.Data.Request).%New()
-                    Set tReqClaim.RequestMethod = "GET"
-                    Set tReqClaim.RequestPath = "/Claim/" _ tClaimId
-                    Set tReqClaim.Interaction = "read"
-                    Set tRespClaim = ##class(HS.FHIRServer.API.Data.Response).%New()
-                    Do tService.DispatchRequest(tReqClaim, .tRespClaim)
-                    If $IsObject(tRespClaim.Json) {
-                        Set tClaimJson = tRespClaim.Json
-                        If $IsObject(tClaimJson.total) Set tBilledAmount = +tClaimJson.total.value
-                        If tClaimJson.patient.reference '= "" Set tPatientId = $Piece(tClaimJson.patient.reference, "/", 2)
-                        If tClaimJson.provider.reference '= "" Set tProviderId = $Piece(tClaimJson.provider.reference, "/", 2)
+                    Set tTotalJson = ##class(%DynamicAbstractObject).%FromJSON(tTotalStr)
+                    If $IsObject(tTotalJson) {
+                        For tI = 0:1:tTotalJson.%Size()-1 {
+                            Set tTotalEntry = tTotalJson.%Get(tI)
+                            If $IsObject(tTotalEntry.amount) {
+                                Set tBilledAmount = +tTotalEntry.amount.value
+                                Quit
+                            }
+                        }
                     }
                 } Catch {}
             }
 
-            // Fetch ClaimResponse disposition and authorizedBy for override rationale
+            // Reason from disposition
+            Set tDisp = tRS.%Get("disposition")
             Set tReason = ""
-            Set tAuthorizedBy = "Auditor"
-            Try {
-                Set tCRRS = ##class(%SQL.Statement).%ExecDirect(,
-                "SELECT Key, disposition FROM HSFHIR_X0001_S.ClaimResponse WHERE request = ?", "Claim/" _ tClaimId)
-                If tCRRS.%Next() {
-                    Set tCRKey = tCRRS.%Get("Key")
-                    Set tCRId = $Piece(tCRKey, "/", 2)
-                    Set tDisp = tCRRS.%Get("disposition")
-                    If tAction = "approved" {
-                        Set tReason = "Auditor override: claim approved for disbursal. " _ $Extract(tDisp, 1, 200)
-                    } ElseIf tAction = "rejected" {
-                        Set tReason = "Claim denied by auditor review. " _ $Extract(tDisp, 1, 200)
-                    } Else {
-                        Set tReason = "Escalated for peer review. " _ $Extract(tDisp, 1, 200)
-                    }
-                    // Read authorizedBy from ClaimResponse FHIR extension
-                    If tCRId '= "" {
-                        Try {
-                            Set tReqCR = ##class(HS.FHIRServer.API.Data.Request).%New()
-                            Set tReqCR.RequestMethod = "GET"
-                            Set tReqCR.RequestPath = "/ClaimResponse/" _ tCRId
-                            Set tReqCR.Interaction = "read"
-                            Set tRespCR = ##class(HS.FHIRServer.API.Data.Response).%New()
-                            Do tService.DispatchRequest(tReqCR, .tRespCR)
-                            If $IsObject(tRespCR.Json) && $IsObject(tRespCR.Json.extension) {
-                                Set tExtIter = tRespCR.Json.extension.%GetIterator()
-                                While tExtIter.%GetNext(.tK, .tExt) {
-                                    If tExt.url = "https://claimauditai.com/fhir/extension/authorized-by" {
-                                        Set tAuthorizedBy = tExt.valueString
-                                    }
-                                }
-                            }
-                        } Catch {}
-                    }
-                }
-            } Catch {}
-
+            If tAction = "approved" {
+                Set tReason = "Auditor override: claim approved for disbursal. " _ $Extract(tDisp, 1, 200)
+            } ElseIf tAction = "rejected" {
+                Set tReason = "Claim denied by auditor review. " _ $Extract(tDisp, 1, 200)
+            } Else {
+                Set tReason = "Escalated for peer review. " _ $Extract(tDisp, 1, 200)
+            }
             If tReason = "" {
                 If tAction = "rejected" {
                     Set tReason = "Claim denied by auditor for claim " _ tClaimId
@@ -1155,6 +1132,33 @@ ClassMethod GetLedger() As %Status
                     Set tReason = "Escalated to senior reviewer for claim " _ tClaimId
                 }
             }
+
+            // AuthorizedBy from ClaimResponse extensions — single DispatchRequest per item
+            // (simpler than storing authorized-by in SQL)
+            Set tAuthorizedBy = "Auditor"
+            Set tCRKey = "ClaimResponse/" _ tClaimId
+            Try {
+                Set tCRKeyRS = ##class(%SQL.Statement).%ExecDirect(,
+                "SELECT Key FROM HSFHIR_X0001_S.ClaimResponse WHERE request = ?", tFocus)
+                If tCRKeyRS.%Next() {
+                    Set tCRId = $Piece(tCRKeyRS.%Get("Key"), "/", 2)
+                    Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
+                    Set tReqCR = ##class(HS.FHIRServer.API.Data.Request).%New()
+                    Set tReqCR.RequestMethod = "GET"
+                    Set tReqCR.RequestPath = "/ClaimResponse/" _ tCRId
+                    Set tReqCR.Interaction = "read"
+                    Set tRespCR = ##class(HS.FHIRServer.API.Data.Response).%New()
+                    Do tService.DispatchRequest(tReqCR, .tRespCR)
+                    If $IsObject(tRespCR.Json) && $IsObject(tRespCR.Json.extension) {
+                        Set tExtIter = tRespCR.Json.extension.%GetIterator()
+                        While tExtIter.%GetNext(.tK, .tExt) {
+                            If tExt.url = "https://claimauditai.com/fhir/extension/authorized-by" {
+                                Set tAuthorizedBy = tExt.valueString
+                            }
+                        }
+                    }
+                }
+            } Catch {}
 
             Do tArr.%Push({
                 "id": (tTaskId),
@@ -1168,7 +1172,7 @@ ClassMethod GetLedger() As %Status
                 "amount": (tBilledAmount)
             })
         }
-        Write tArr.%ToJSON()
+        Write {"data": (tArr), "total": (tTotal), "limit": (tLimit), "offset": (tOffset)}.%ToJSON()
     } Catch ex {
         Set tSC = ex.AsStatus()
         Write {"error": (ex.DisplayString())}.%ToJSON()

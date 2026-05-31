@@ -1,10 +1,16 @@
 import sys
+import time
+import threading
 import networkx as nx
 
 try:
     import iris
 except ImportError:
     iris = None
+
+# Module-level graph cache with TTL to avoid rebuilding on every claim audit
+_graph_cache = {"graph": None, "timestamp": 0, "ttl": 30}
+_graph_lock = threading.Lock()
 
 def build_relational_graph() -> nx.DiGraph:
     """Query IRIS database relations and construct a NetworkX DiGraph representing entity connections."""
@@ -87,10 +93,27 @@ def build_relational_graph() -> nx.DiGraph:
         sys.stderr.write(f"Graph Construction Error: {str(e)}\n")
         return G
 
+def _get_cached_graph(force_rebuild: bool = False) -> nx.DiGraph:
+    """Get the relational graph from cache or rebuild if TTL expired."""
+    with _graph_lock:
+        now = time.time()
+        if not force_rebuild and _graph_cache["graph"] is not None and (now - _graph_cache["timestamp"]) < _graph_cache["ttl"]:
+            return _graph_cache["graph"]
+        G = build_relational_graph()
+        _graph_cache["graph"] = G
+        _graph_cache["timestamp"] = now
+        return G
+
+def invalidate_graph_cache():
+    """Force graph rebuild on next call — call after data changes."""
+    with _graph_lock:
+        _graph_cache["graph"] = None
+        _graph_cache["timestamp"] = 0
+
 def check_collusion_network(patient_id: str, provider_npi: str, service_date: str) -> dict:
     """Analyze transaction graph topologies to identify address overlaps, geo-temporal leaps, and kickback rings."""
     try:
-        G = build_relational_graph()
+        G = _get_cached_graph()
         flagged = False
         findings = []
         
@@ -177,7 +200,7 @@ def export_graph_for_ui() -> str:
     """
     import json
 
-    G = build_relational_graph()
+    G = _get_cached_graph()
     nodes = []
     edges = []
     insights = []

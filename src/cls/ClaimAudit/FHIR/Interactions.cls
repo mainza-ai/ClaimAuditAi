@@ -41,6 +41,26 @@ Method AuditSingleClaim(pClaimJson As %DynamicObject) [ Private ]
         Set ^||ClaimAuditFlag("flagged") = 1
         Set ^||ClaimAuditFlag("summary") = summary
         Set ^||ClaimAuditFlag("score") = tAuditResult.score
+
+        // Store CPT/ICD from claim JSON so they can be embedded as ClaimResponse extensions
+        // (Claims are not persisted by the interceptor, so we carry codes forward here)
+        If $IsObject(pClaimJson.item) && (pClaimJson.item.%Size() > 0) {
+            Set tItem = pClaimJson.item.%Get(0)
+            If $IsObject(tItem.productOrService) && $IsObject(tItem.productOrService.coding) {
+                Set tCoding = tItem.productOrService.coding.%Get(0)
+                If tCoding '= "" {
+                    Set ^||ClaimAuditFlag("cptCode") = tCoding.display
+                    If ^||ClaimAuditFlag("cptCode") = "" Set ^||ClaimAuditFlag("cptCode") = tCoding.code
+                }
+            }
+        }
+        If $IsObject(pClaimJson.diagnosis) && (pClaimJson.diagnosis.%Size() > 0) {
+            Set tDiag = pClaimJson.diagnosis.%Get(0)
+            If $IsObject(tDiag.diagnosisCodeableConcept) && $IsObject(tDiag.diagnosisCodeableConcept.coding) {
+                Set tDCoding = tDiag.diagnosisCodeableConcept.coding.%Get(0)
+                If tDCoding '= "" Set ^||ClaimAuditFlag("icdCode") = tDCoding.code
+            }
+        }
     }
 }
 
@@ -194,6 +214,20 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
                     "amount": (claimJson.total)
                 }
                 Set claimResponse.total = [tTotalObj]
+            }
+
+            // Embed CPT and ICD codes as extensions so they can be read without the Claim resource
+            Set tExtensions = []
+            Set tCptCode = $Get(^||ClaimAuditFlag("cptCode"))
+            Set tIcdCode = $Get(^||ClaimAuditFlag("icdCode"))
+            If tCptCode '= "" {
+                Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/cpt-code", "valueString": (tCptCode)})
+            }
+            If tIcdCode '= "" {
+                Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/icd-code", "valueString": (tIcdCode)})
+            }
+            If tExtensions.%Size() > 0 {
+                Set claimResponse.extension = tExtensions
             }
 
             Set tRequestCR = ##class(HS.FHIRServer.API.Data.Request).%New()

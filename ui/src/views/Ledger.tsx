@@ -4,11 +4,13 @@ import { ShieldCheck, AlertTriangle, UserCheck, Clock } from 'lucide-react';
 import { format } from 'date-fns';
 
 export function Ledger() {
-const { data: entries = [], isLoading, isError } = useQuery({
+const { data: response, isLoading, isError } = useQuery({
 queryKey: ['ledger'],
-queryFn: getLedger,
+queryFn: () => getLedger(50, 0),
 refetchInterval: 30000,
 });
+
+const entries = response?.data ?? [];
 
 if (isError) {
   return (
