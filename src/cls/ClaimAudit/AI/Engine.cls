@@ -68,6 +68,16 @@ ClassMethod Setup() As %Status
         Set trainResult = ##class(ClaimAudit.AI.Engine).TrainAutoencoder()
         Write "Autoencoder Model: ", trainResult, !
 
+        // Pre-load NLP sentence transformer model (~80MB download on first use)
+        Try {
+            Do ..ConfigurePythonPath()
+            Set tNLP = ##class(%SYS.Python).Import("nlp_auditor")
+            Set tDummy = tNLP."vectorize_text"("warmup")
+            Write "NLP model pre-loaded.", !
+        } Catch ex {
+            Write "NLP pre-load skipped: ", ex.DisplayString(), !
+        }
+
     } Catch ex {
         Set sc = ex.AsStatus()
         Write "Setup Error: ", ex.DisplayString(), !

@@ -34,8 +34,25 @@ Method AuditSingleClaim(pClaimJson As %DynamicObject) [ Private ]
     Set tSC = ##class(ClaimAudit.AI.Engine).AuditClaim(pClaimJson, .tAuditResult)
     If tAuditResult.flagged = 1 {
         
-        // Invoke AI Hub Agent to author explainable hold disposition
-        Set summary = ##class(ClaimAudit.AI.Agent).GenerateHoldSummary(tAuditResult.patientId, tAuditResult.providerNpi, tAuditResult.billedAmount, tAuditResult.codeCount, tAuditResult.serviceDate, tAuditResult.firstCodeDesc, tAuditResult.reasons)
+        // Use tier reasons directly if LLM generation should be skipped (fast-seed mode)
+        // LLM takes 5-10s per claim — use reasons array for bulk seeding
+        Set tReasons = tAuditResult.reasons
+        Set tReasonStr = ""
+        Set tReasonIter = tReasons.%GetIterator()
+        While tReasonIter.%GetNext(.tK, .tVR) {
+            If tReasonStr '= "" Set tReasonStr = tReasonStr _ " | "
+            Set tReasonStr = tReasonStr _ tVR
+        }
+        
+        Set summary = "Payment Integrity Adjudication HOLD Notification. " _ tReasonStr
+        
+        // Invoke AI Hub Agent to author explainable hold disposition (optional)
+        Try {
+            Set llmSummary = ##class(ClaimAudit.AI.Agent).GenerateHoldSummary(tAuditResult.patientId, tAuditResult.providerNpi, tAuditResult.billedAmount, tAuditResult.codeCount, tAuditResult.serviceDate, tAuditResult.firstCodeDesc, tAuditResult.reasons)
+            If llmSummary '= "" {
+                Set summary = llmSummary
+            }
+        } Catch {}
         
         // Record audit flags and summaries in thread-safe process memory
         Set ^||ClaimAuditFlag("flagged") = 1

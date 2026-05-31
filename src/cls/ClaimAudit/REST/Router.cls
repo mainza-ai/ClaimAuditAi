@@ -253,14 +253,13 @@ ClassMethod GetHeldClaims() As %Status
                 }
             } Catch {}
 
-            // Map score to risk level
-            Set tRiskLevel = "high"
-            If tRiskScore >= 0.70 {
+            // Map score to risk level based on tier count:
+            // 3 tiers (1.0): critical | 2 tiers (0.65-0.70): high | 1 tier (0.30-0.35): medium
+            Set tRiskLevel = "medium"
+            If tRiskScore >= 0.86 {
                 Set tRiskLevel = "critical"
             } ElseIf tRiskScore >= 0.50 {
                 Set tRiskLevel = "high"
-            } ElseIf tRiskScore >= 0.35 {
-                Set tRiskLevel = "medium"
             }
 
             Set tObj = {
@@ -913,19 +912,41 @@ ClassMethod GetStats() As %Status
             Set tValueHeld = +tValueRS.%Get("totalValue")
         }
 
-        // Risk distribution from disposition text patterns
-        Set tCrit = ##class(%SQL.Statement).%ExecDirect(,
-        "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.ClaimResponse WHERE outcome=? AND disposition [ ?", "queued", "critical")
-        Do tCrit.%Next()
-        Set tHigh = ##class(%SQL.Statement).%ExecDirect(,
-        "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.ClaimResponse WHERE outcome=? AND (disposition [ ? OR disposition [ ?)", "queued", "high", "0.35")
-        Do tHigh.%Next()
-        Set tMed = tHeldCount - tCrit.%Get("cnt") - tHigh.%Get("cnt")
-        If tMed < 0 Set tMed = 0
+        // Risk distribution from actual risk scores (consistent with GetHeldClaims)
+        // Read the risk-score extension from each held ClaimResponse and classify
+        Set tCrit = 0
+        Set tHigh = 0
+        Set tMed = 0
+        Set tHeldRS = ##class(%SQL.Statement).%ExecDirect(,
+        "SELECT Key FROM HSFHIR_X0001_S.ClaimResponse WHERE outcome = ?", "queued")
+        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
+        While tHeldRS.%Next() {
+            Set tCRKey = tHeldRS.%Get("Key")
+            Set tCRId = $Piece(tCRKey, "/", 2)
+            Try {
+                Set tReq = ##class(HS.FHIRServer.API.Data.Request).%New()
+                Set tReq.RequestMethod = "GET"
+                Set tReq.RequestPath = "/ClaimResponse/" _ tCRId
+                Set tReq.Interaction = "read"
+                Set tResp = ##class(HS.FHIRServer.API.Data.Response).%New()
+                Do tService.DispatchRequest(tReq, .tResp)
+                If $IsObject(tResp.Json) && $IsObject(tResp.Json.extension) {
+                    Set tExtIter = tResp.Json.extension.%GetIterator()
+                    While tExtIter.%GetNext(.tK, .tExt) {
+                        If tExt.url = "https://claimauditai.com/fhir/extension/risk-score" {
+                            Set tScore = +tExt.valueDecimal
+                            If tScore >= 0.86 { Set tCrit = tCrit + 1
+                            } ElseIf tScore >= 0.50 { Set tHigh = tHigh + 1
+                            } Else { Set tMed = tMed + 1 }
+                        }
+                    }
+                }
+            } Catch {}
+        }
 
         Set tRiskDist = []
-        Do tRiskDist.%Push({"level": "critical", "count": (+tCrit.%Get("cnt"))})
-        Do tRiskDist.%Push({"level": "high", "count": (+tHigh.%Get("cnt"))})
+        Do tRiskDist.%Push({"level": "critical", "count": (tCrit)})
+        Do tRiskDist.%Push({"level": "high", "count": (tHigh)})
         Do tRiskDist.%Push({"level": "medium", "count": (tMed)})
 
         // Daily counts for last 7 days
@@ -1053,6 +1074,17 @@ ClassMethod LoadSampleData() As %Status
     If '##class(ClaimAudit.REST.Auth).RequireAuth("Admin") Quit $$$OK
     Set tSC = $$$OK
     Try {
+        // Warm up Python models before seeding (avoids cold-start timeout)
+        Do ##class(ClaimAudit.AI.Engine).ConfigurePythonPath()
+        Try {
+            Set tNLP = ##class(%SYS.Python).Import("nlp_auditor")
+            Do tNLP."get_model"()
+        } Catch {}
+        Try {
+            Set tAE = ##class(%SYS.Python).Import("autoencoder_train")
+            Set tDummy = tAE."evaluate_claim_anomaly"(500.0, 1.0, 1.0, 45.0, 1.0)
+        } Catch {}
+
         // 1. Wipe existing tables for a clean state
         Do ##class(%SQL.Statement).%ExecDirect(, "DELETE FROM HSFHIR_X0001_S.ClaimResponse")
         Do ##class(%SQL.Statement).%ExecDirect(, "DELETE FROM HSFHIR_X0001_S.Claim")
@@ -1150,10 +1182,7 @@ ClassMethod LoadSampleData() As %Status
             }
         }
 
-        // Re-train statistical autoencoder with the new clinical projections
-        Do ##class(ClaimAudit.AI.Engine).TrainAutoencoder()
-
-        // Invalidate graph cache so next request rebuilds with new data
+        // Invalidate caches so next request rebuilds with new data
         Do ##class(ClaimAudit.AI.Engine).ConfigurePythonPath()
         Set tGA = ##class(%SYS.Python).Import("graph_analyzer")
         Do tGA."invalidate_graph_cache"()

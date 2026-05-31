@@ -13,7 +13,17 @@ export function TopBar() {
   const { activeRole, setActiveRole, userName } = useRoleStore();
   const [roleOpen, setRoleOpen] = useState(false);
   const [seedDone, setSeedDone] = useState(false);
+  const [seedElapsed, setSeedElapsed] = useState(0);
   const roleRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setInterval>;
+    if (seed.isPending) {
+      setSeedElapsed(0);
+      timer = setInterval(() => setSeedElapsed((p) => p + 1), 1000);
+    }
+    return () => clearInterval(timer);
+  }, [seed.isPending]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -92,7 +102,7 @@ export function TopBar() {
           ) : (
             <Database size={13} />
           )}
-          {seed.isPending ? 'Seeding...' : seedDone ? 'Seeded!' : 'Seed Sample Data'}
+          {seed.isPending ? `Seeding... (${seedElapsed}s)` : seedDone ? 'Seeded!' : 'Seed Sample Data'}
         </button>
 
         {/* Role selector */}
