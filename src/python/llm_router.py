@@ -118,6 +118,35 @@ def generate(prompt: str, max_tokens: int = 2048) -> str:
         max_tokens=max_tokens,
     )
 
+
+def chat_stream(system_prompt: str, messages_json: str, max_tokens: int = 1024):
+    """Generator that yields streaming chunks via OpenAI SSE for IRIS SSE passthrough.
+    Each yielded string is a complete SSE 'data: ...' line."""
+    client, model = _get_client_and_model()
+    try:
+        messages_list = json.loads(messages_json)
+    except Exception:
+        messages_list = []
+
+    full_messages = [{"role": "system", "content": system_prompt}] + messages_list
+
+    try:
+        stream = client.chat.completions.create(
+            model=model,
+            messages=full_messages,
+            max_tokens=max_tokens,
+            temperature=0.3,
+            timeout=60.0,
+            stream=True,
+        )
+        for chunk in stream:
+            if chunk.choices and chunk.choices[0].delta.content:
+                content = clean_non_bmp(chunk.choices[0].delta.content)
+                if content:
+                    yield content
+    except Exception as e:
+        yield f"\n\n[Streaming error: {str(e)}]"
+
 def summarize_user_reason(action: str, user_text: str) -> str:
     action_labels = {
         "approve": "approval override",

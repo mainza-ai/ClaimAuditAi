@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import type { ChatMessage } from '../types/chat';
 
 interface ChatState {
@@ -13,28 +14,36 @@ interface ChatState {
   clearHistory: (claimId: string) => void;
 }
 
-export const useChatStore = create<ChatState>((set, get) => ({
-  histories: {},
-  isOpen: false,
-  isLoading: false,
+export const useChatStore = create<ChatState>()(
+  persist(
+    (set, get) => ({
+      histories: {},
+      isOpen: false,
+      isLoading: false,
 
-  addMessage: (claimId, message) =>
-    set((state) => ({
-      histories: {
-        ...state.histories,
-        [claimId]: [...(state.histories[claimId] || []), message],
-      },
-    })),
+      addMessage: (claimId, message) =>
+        set((state) => ({
+          histories: {
+            ...state.histories,
+            [claimId]: [...(state.histories[claimId] || []), message],
+          },
+        })),
 
-  setLoading: (isLoading) => set({ isLoading }),
+      setLoading: (isLoading) => set({ isLoading }),
 
-  togglePanel: () => set((state) => ({ isOpen: !state.isOpen })),
+      togglePanel: () => set((state) => ({ isOpen: !state.isOpen })),
 
-  getHistory: (claimId) => get().histories[claimId] || [],
+      getHistory: (claimId) => get().histories[claimId] || [],
 
-  clearHistory: (claimId) =>
-    set((state) => {
-      const { [claimId]: _, ...rest } = state.histories;
-      return { histories: rest };
+      clearHistory: (claimId) =>
+        set((state) => {
+          const { [claimId]: _, ...rest } = state.histories;
+          return { histories: rest };
+        }),
     }),
-}));
+    {
+      name: 'claimauditai-chat',
+      partialize: (state) => ({ histories: state.histories }),
+    },
+  ),
+);

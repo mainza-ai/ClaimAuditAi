@@ -24,6 +24,7 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
     <Route Url="/claims/:id/reject"     Method="POST" Call="RejectClaim"/>
     <Route Url="/stats"                 Method="GET"  Call="GetStats"/>
     <Route Url="/chat"                  Method="POST" Call="Chat"/>
+    <Route Url="/chat/stream"           Method="POST" Call="ChatStream"/>
     <Route Url="/samples/load"          Method="POST" Call="LoadSampleData"/>
     <Route Url="/graph"                 Method="GET"  Call="GetCollusionGraph"/>
     <Route Url="/settings/llm"              Method="GET"  Call="GetLLMSettings"/>
@@ -864,6 +865,53 @@ ClassMethod Chat() As %Status
     } Catch ex {
         Set tSC = ex.AsStatus()
         Write {"error": (ex.DisplayString())}.%ToJSON()
+    }
+    Quit tSC
+}
+
+/// SSE streaming chat — sends response chunks as Server-Sent Events
+ClassMethod ChatStream() As %Status
+{
+    If '##class(ClaimAudit.REST.Auth).RequireAuth() Quit $$$OK
+    Set tSC = $$$OK
+    Try {
+        Set tBody = %request.Content
+        Set tPayload = ##class(%DynamicObject).%FromJSON(tBody)
+        Set tMessages = tPayload.messages
+        Set tClaimContext = tPayload.claimContext
+
+        Set tSystemPrompt = "You are an expert healthcare fraud analyst assistant "_
+        "for ClaimAuditAI. You help auditors understand AI-generated "_
+        "adjudication decisions. Be precise, cite specific findings, "_
+        "and explain technical terms in plain language."
+        If tClaimContext '= "" {
+            Set tSystemPrompt = tSystemPrompt _ " Current claim context: " _ tClaimContext
+        }
+
+        // SSE headers
+        Set %response.ContentType = "text/event-stream"
+        Set %response.Headers("Cache-Control") = "no-cache"
+        Set %response.Headers("Connection") = "keep-alive"
+        Set %response.Headers("X-Accel-Buffering") = "no"
+
+        Do ##class(ClaimAudit.AI.Engine).ConfigurePythonPath()
+        Set tLLM = ##class(%SYS.Python).Import("llm_router")
+        Set tStream = tLLM."chat_stream"(tSystemPrompt, tMessages.%ToJSON(), 1024)
+
+        // Yield chunks as SSE data lines
+        Set tIter = tStream."__iter__"()
+        While tIter."__next__"(, .tChunk) {
+            If tChunk '= "" {
+                Write "data: ", $ZCONVERT(tChunk, "O", "UTF8"), $CHAR(13,10), $CHAR(13,10)
+                Do %response.Flush()
+            }
+        }
+        Write "data: [DONE]", $CHAR(13,10), $CHAR(13,10)
+
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+        Write "event: error", $CHAR(13,10)
+        Write "data: ", $ZCONVERT("Chat streaming error: "_ex.DisplayString(), "O", "UTF8"), $CHAR(13,10), $CHAR(13,10)
     }
     Quit tSC
 }

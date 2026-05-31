@@ -2,7 +2,7 @@ import { useRef, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useChatStore } from '../../store/chatStore';
-import { sendChatMessage } from '../../api/chat';
+import { streamChatMessage } from '../../api/chat';
 import { getClaimDetail } from '../../api/claims';
 import { MessageBubble } from './MessageBubble';
 import { AssistantInput } from './AssistantInput';
@@ -69,24 +69,39 @@ export function AuditAssistant() {
     addMessage(effectiveClaimId, userMsg);
     setLoading(true);
 
+    // Add placeholder for streaming response
+    const assistantPlaceholder: ChatMessage = {
+      role: 'assistant',
+      content: '',
+      timestamp: new Date().toISOString(),
+    };
+    addMessage(effectiveClaimId, assistantPlaceholder);
+
     try {
       const updatedHistory = [...history, userMsg];
-      const response = await sendChatMessage(updatedHistory, claimContext);
+      let fullContent = '';
 
-      addMessage(effectiveClaimId, {
-        role: 'assistant',
-        content: response,
-        timestamp: new Date().toISOString(),
-      });
-} catch (err) {
-const message = err instanceof Error ? err.message : '';
-addMessage(effectiveClaimId, {
-role: 'assistant',
-content: message
-? `Error: ${message}`
-: 'Sorry, I encountered an error reaching the LLM provider. Check your .env configuration.',
-timestamp: new Date().toISOString(),
-});
+      for await (const chunk of streamChatMessage(updatedHistory, claimContext)) {
+        fullContent += chunk;
+        // Update the last assistant message with accumulated content
+        const histories = useChatStore.getState().histories;
+        const current = [...(histories[effectiveClaimId] || [])];
+        if (current.length > 0) {
+          current[current.length - 1] = { ...current[current.length - 1], content: fullContent };
+          useChatStore.setState({ histories: { ...histories, [effectiveClaimId]: current } });
+        }
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Connection error';
+      const histories = useChatStore.getState().histories;
+      const current = [...(histories[effectiveClaimId] || [])];
+      if (current.length > 0) {
+        current[current.length - 1] = {
+          ...current[current.length - 1],
+          content: message ? `Error: ${message}` : 'Sorry, I encountered an error reaching the LLM provider.',
+        };
+        useChatStore.setState({ histories: { ...histories, [effectiveClaimId]: current } });
+      }
     } finally {
       setLoading(false);
     }
