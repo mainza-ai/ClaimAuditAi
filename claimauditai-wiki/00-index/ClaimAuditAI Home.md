@@ -80,6 +80,16 @@ ClaimAuditAI shifts the payment integrity paradigm from retrospective "pay-and-c
 - [[Claim Amounts Always $0]] — Claim resources not persisted by interceptor; total not stored in ClaimResponse.
 - [[ClaimResponse FHIR Validation]] — `total` field must use BackboneElement array, not Money object.
 - [[LLM Provider Connection Failures]] — NVIDIA_API_KEY invisible to Embedded Python; runtime settings via `.llm_settings.json`.
+- [[Claim Actions Silently Fail]] — FHIR datetime extension format causes silent PUT rejection.
+- [[Rejected Claims Missing From Ledger]] — GetLedger excluded `status='cancelled'` tasks.
+- [[Dashboard Metrics Stale After Actions]] — Missing `refetchInterval`, stale cache on navigation.
+- [[Dashboard Daily Counts Always Zero]] — `CAST(_lastUpdated AS DATE)` incompatibility.
+- [[Theme Not Applied on Page Load]] — `applyTheme()` not called on store initialization.
+- [[Admin Routes Return 401]] — IRIS CSP blocks `/admin/` path prefix.
+- [[LLM API Key Lost on Save]] — Settings file overwrite and key name mismatch.
+- [[Autoencoder Trains on Random Noise]] — Synthetic noise fallback when < 10 real claims.
+- [[Bundle Claims Not Intercepted]] — OnBeforeRequest only checks `Type="Claim"`.
+- [[Collusion Graph Performance Degradation]] — Unbounded `nx.simple_cycles()` exponential blowup.
 
 ### 📂 10 - Platform Security
 - [[Security Overview]] — Safeguarding PHI and local configuration keys.

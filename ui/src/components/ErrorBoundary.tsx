@@ -24,15 +24,23 @@ export class ErrorBoundary extends Component<Props, State> {
     if (!this.state.hasError) return this.props.children;
 
     return (
-      <div className="flex flex-col items-center justify-center h-full text-gray-400 font-mono p-8 text-center">
-        <span className="text-red-400 text-3xl mb-4">!</span>
-        <p className="text-sm mb-2">Something went wrong</p>
-        <p className="text-xs text-gray-600 max-w-md mb-4">
+      <div style={{
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        height: '100%', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)',
+        padding: 32, textAlign: 'center',
+      }}>
+        <span style={{ color: 'var(--color-danger)', fontSize: 32, marginBottom: 16 }}>!</span>
+        <p style={{ fontSize: 14, marginBottom: 8 }}>Something went wrong</p>
+        <p style={{ fontSize: 12, color: 'var(--text-tertiary)', maxWidth: 448, marginBottom: 16 }}>
           {this.state.error?.message}
         </p>
         <button
           onClick={() => this.setState({ hasError: false, error: null })}
-          className="text-xs px-3 py-1.5 bg-gray-800 border border-gray-700 rounded hover:border-gray-600 transition-colors"
+          style={{
+            fontSize: 12, padding: '6px 12px', cursor: 'pointer',
+            backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-default)',
+            borderRadius: 6, color: 'var(--text-secondary)',
+          }}
         >
           Try again
         </button>

@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
+import { approveClaim, escalateClaim, rejectClaim } from '../../api/claims';
 import { apiClient } from '../../api/client';
 import { useUserStore } from '../../store/userStore';
-import { useRoleStore } from '../../store/roleStore';
 import { X, Loader2, CheckCircle } from 'lucide-react';
 
 type ActionType = 'approve' | 'escalate' | 'reject';
@@ -40,7 +40,6 @@ const ACTION_CONFIG = {
 
 export function DecisionModal({ claimId, action, onConfirm, onCancel }: DecisionModalProps) {
   const { name: authorizedBy } = useUserStore();
-  const { activeRole: role } = useRoleStore();
   const config = ACTION_CONFIG[action];
   const [rawReason, setRawReason] = useState('');
   const [aiSummary, setAiSummary] = useState('');
@@ -49,12 +48,12 @@ export function DecisionModal({ claimId, action, onConfirm, onCancel }: Decision
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const submit = useMutation({
-    mutationFn: () =>
-      apiClient.post(`/claims/${claimId}/${action}`, {
-        authorizedBy,
-        role,
-        rationaleSummary: summaryReady ? aiSummary : rawReason,
-      }),
+    mutationFn: () => {
+      const body = { authorizedBy, rationaleSummary: summaryReady ? aiSummary : rawReason };
+      if (action === 'approve') return approveClaim(claimId, body);
+      if (action === 'escalate') return escalateClaim(claimId, body);
+      return rejectClaim(claimId, body);
+    },
     onSuccess: onConfirm,
     onError: (err: any) => {
       setSubmitError(err?.response?.data?.error || err?.message || 'Submission failed');

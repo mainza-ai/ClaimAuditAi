@@ -164,10 +164,19 @@ ClassMethod AuditClaim(pClaimJson As %DynamicObject, Output pResult As %DynamicO
             }
         }
         
-        Set specialtyCode = 1 // Default specialty
-        Set patientAge = 45 // Default age
-        Set durationDays = 1 // Default duration
-        Set serviceDate = $ZDate($Horolog, 3) // Current date YYYY-MM-DD
+        // Extract service date from claim, default to today
+        Set serviceDate = $ZDate($Horolog, 3)
+        If pClaimJson.created '= "" {
+            Set serviceDate = $EXTRACT(pClaimJson.created, 1, 10)
+        }
+        
+        // Default autoencoder features (specialty, age, duration) are not
+        // directly available in standard FHIR Claim resources. In production,
+        // these would be enriched from Patient/Encounter/custom extensions.
+        // Seed data populates ClaimAudit.ClaimProjections with these values.
+        Set specialtyCode = 1
+        Set patientAge = 45
+        Set durationDays = 1
         
         // TIER 1: Semantic NLP Vector Search
         Set nlp = ##class(%SYS.Python).Import("nlp_auditor")

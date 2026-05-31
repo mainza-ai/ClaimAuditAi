@@ -4,7 +4,7 @@ import { getHeldClaims } from '../api/claims';
 import { StatCard } from '../components/stats/StatCard';
 import { ClaimRow } from '../components/claims/ClaimRow';
 import { formatCurrency } from '../utils/formatCurrency';
-import { ShieldAlert, CheckCircle, Activity, Cpu, DollarSign, TrendingUp, RefreshCw } from 'lucide-react';
+import { ShieldAlert, CheckCircle, Activity, Cpu, DollarSign, RefreshCw } from 'lucide-react';
 
 import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
@@ -60,10 +60,6 @@ export function Dashboard() {
   const loading = statsLoading || heldLoading;
   const hasError = statsError || heldError;
 
-  const totalCapitalHeld = allHeld.reduce((sum, c) => sum + (c.totalAmount || 0), 0);
-  const leakageRate = stats?.leakageRate ?? 0;
-  const avoidedLeakage = totalCapitalHeld * leakageRate;
-
   const riskData = stats?.riskDistribution ?? [];
   const dailyData = stats?.dailyInterceptedCounts ?? [];
 
@@ -105,8 +101,7 @@ export function Dashboard() {
         <StatCard label="Claims on hold" value={stats ? stats.held : (loading ? '...' : '\u2014')} icon={ShieldAlert} accent="red" />
         <StatCard label="Approved today" value={stats ? stats.approvedToday : (loading ? '...' : '\u2014')} icon={CheckCircle} accent="green" />
         <StatCard label="Total Intercepted" value={stats ? stats.interceptedTotal : (loading ? '...' : '\u2014')} icon={Activity} accent="blue" />
-        <StatCard label="Total Capital Held" value={stats?.totalValueHeld ? formatCurrency(stats.totalValueHeld) : (loading ? '...' : '$0')} icon={DollarSign} accent="amber" />
-        <StatCard label="Prevented Leakage" value={avoidedLeakage > 0 ? formatCurrency(avoidedLeakage) : (loading ? '...' : '$0')} icon={TrendingUp} accent="green" />
+        <StatCard label="Total Value Pended" value={stats?.totalValueHeld ? formatCurrency(stats.totalValueHeld) : (loading ? '...' : '$0')} icon={DollarSign} accent="amber" />
         <StatCard label="Model status" value={stats ? stats.modelStatus : (loading ? '...' : '\u2014')} icon={Cpu} accent={stats?.modelStatus === 'healthy' ? 'green' : 'red'} />
       </div>
 

@@ -17,8 +17,8 @@
 | `POST` | `/api/chat` | AI audit assistant | `{"response": "..."}` |
 | `POST` | `/api/samples/load` | Seed FHIR sample data | `{"status": "success", "message": "..."}` |
 | `GET` | `/api/graph` | Collusion network graph | `{"nodes": [...], "edges": [...], "insights": [...], "nodeCount": N, "edgeCount": N, "insightCount": N}` |
-| `GET` | `/api/settings/llm` | Current LLM provider config | `{"provider": "nvidia|ollama|openai", "nvidiaModel": "...", "nvidiaKeySet": 0|1, ...}` |
-| `POST` | `/api/settings/llm` | Update LLM provider config | Writes to `.llm_settings.json`, immediately active |
+| `GET` | `/api/settings/llm` | Current LLM provider config | `{"provider": "nvidia|ollama|openai", "nvidiaModel": "...", "nvidiaBaseUrl": "...", ...}` |
+| `POST` | `/api/settings/llm` | Update LLM provider config | Merges with existing `.llm_settings.json` (API keys survive partial updates). Immediately active. |
 | `GET` | `/api/settings/llm/ollama/models` | List Ollama models | `["model1", "model2", ...]` |
 | `POST` | `/api/claims/summarize-rationale` | AI-summarize audit rationale | Accepts `{"action": "approve|escalate|reject", "userText": "..."}`, returns `{"summary": "..."}` |
 | `POST` | `/api/system/clear` | Clear all FHIR test data | `{"success": true, "message": "..."}` |
@@ -70,4 +70,4 @@ All errors follow this JSON structure:
 When the error originates from IRIS, it may include additional `errors` array and `summary` fields.
 
 ## See Also
-[[Blank UI Due to API Error Responses]] · [[ObjectScript SQL Single-Quote Consumption]] · [[Claim Amounts Always $0]] · [[LLM Provider Connection Failures]]
+[[Blank UI Due to API Error Responses]] · [[ObjectScript SQL Single-Quote Consumption]] · [[Claim Amounts Always $0]] · [[LLM Provider Connection Failures]] · [[LLM API Key Lost on Save]]

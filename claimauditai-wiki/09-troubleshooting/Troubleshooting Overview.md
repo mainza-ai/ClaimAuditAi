@@ -25,6 +25,10 @@ If your installation encounters errors, locate the symptom in the table below to
 | **Trend chart day names all show "Sun"** | $ZDATE format 11 returns weekday abbreviation string, not number; LISTGET index off-by-one | [[Dashboard Daily Counts Always Zero]] |
 | **Dark mode does not persist on page refresh** | `applyTheme()` not called during Zustand store initialization | [[Theme Not Applied on Page Load]] |
 | **Admin endpoints (/api/admin/*) return 401 Unauthorized** | IRIS CSP web application blocks the `/admin/` path prefix | [[Admin Routes Return 401]] |
+| **LLM API key lost after saving settings** | UpdateLLMSettings overwrites file; key name mismatch between frontend and backend | [[LLM API Key Lost on Save]] |
+| **Autoencoder flags claims randomly** | Model trained on 200 synthetic random noise claims when real data < 10 | [[Autoencoder Trains on Random Noise]] |
+| **Claims in Bundles are not audited** | OnBeforeRequest only checks `Type="Claim"`, not `Type="Bundle"` | [[Bundle Claims Not Intercepted]] |
+| **Collusion graph hangs with many claims** | Unbounded `nx.simple_cycles()` causes exponential blowup | [[Collusion Graph Performance Degradation]] |
 
 ## Key Details
 - **Primary Diagnostic Command**: `docker logs --tail 100 claimaudit-iris`
@@ -32,4 +36,4 @@ If your installation encounters errors, locate the symptom in the table below to
 - **CSP Cache Flush**: Force cache flushes by running `kill ^%cspSession` in `%SYS`.
 
 ## See Also
-[[Container Startup Failures]] · [[FHIR Server 404]] · [[InteractionsStrategy Not Firing]] · [[Blank UI Due to API Error Responses]] · [[ObjectScript SQL Single-Quote Consumption]]
+[[Container Startup Failures]] · [[FHIR Server 404]] · [[InteractionsStrategy Not Firing]] · [[Blank UI Due to API Error Responses]] · [[ObjectScript SQL Single-Quote Consumption]] · [[Claim Actions Silently Fail]] · [[Rejected Claims Missing From Ledger]] · [[Dashboard Metrics Stale After Actions]] · [[Dashboard Daily Counts Always Zero]] · [[Theme Not Applied on Page Load]] · [[Admin Routes Return 401]] · [[LLM API Key Lost on Save]] · [[Autoencoder Trains on Random Noise]] · [[Bundle Claims Not Intercepted]] · [[Collusion Graph Performance Degradation]]

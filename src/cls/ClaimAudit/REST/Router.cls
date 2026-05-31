@@ -144,25 +144,18 @@ ClassMethod GetHeldClaims() As %Status
                 } Catch {}
             }
 
-            // Estimate risk levels from scores
+            // Derive risk level from disposition keywords (consistent with GetStats)
             Set tRiskScore = 0.70
             Set tRiskLevel = "high"
-            If tDisposition [ "577.46" {
-                Set tRiskScore = 0.70
+            If tDisposition [ "critical" {
+                Set tRiskScore = 0.92
                 Set tRiskLevel = "critical"
-            } ElseIf tDisposition [ "0.33" {
-                Set tRiskScore = 0.35
+            } ElseIf tDisposition [ "high" {
+                Set tRiskScore = 0.70
                 Set tRiskLevel = "high"
-            } Else {
-                // Distribute risk levels across sample claims for demo diversity
-                Set tSeq = $EXTRACT(tPatientId, $LENGTH(tPatientId))
-                If (tSeq = "1") || (tSeq = "8") {
-                    Set tRiskScore = 0.92
-                    Set tRiskLevel = "critical"
-                } ElseIf (tSeq = "3") || (tSeq = "6") {
-                    Set tRiskScore = 0.45
-                    Set tRiskLevel = "medium"
-                }
+            } ElseIf tDisposition [ "medium" {
+                Set tRiskScore = 0.45
+                Set tRiskLevel = "medium"
             }
 
             // Check if this claim was escalated to director
@@ -223,12 +216,10 @@ ClassMethod GetLLMSettings() As %Status
         Set tSettings = {
             "provider":      ($System.Util.GetEnviron("LLM_PROVIDER")),
             "nvidiaModel":   ($System.Util.GetEnviron("NVIDIA_MODEL")),
-            "nvidiaKeySet":  ($SELECT($System.Util.GetEnviron("NVIDIA_API_KEY")'="":1,1:0)),
             "nvidiaBaseUrl": ($System.Util.GetEnviron("NVIDIA_BASE_URL")),
             "ollamaBaseUrl": ($System.Util.GetEnviron("OLLAMA_BASE_URL")),
             "ollamaModel":   ($System.Util.GetEnviron("OLLAMA_MODEL")),
-            "openaiModel":   ($System.Util.GetEnviron("OPENAI_MODEL")),
-            "openaiKeySet":  ($SELECT($System.Util.GetEnviron("OPENAI_API_KEY")'="":1,1:0))
+            "openaiModel":   ($System.Util.GetEnviron("OPENAI_MODEL"))
         }
         Write tSettings.%ToJSON()
     } Catch ex {
@@ -244,9 +235,22 @@ ClassMethod UpdateLLMSettings() As %Status
     Set tSC = $$$OK
     Try {
         Set tBody = ##class(%DynamicObject).%FromJSON(%request.Content)
+        // Merge with existing settings so API keys survive when not re-entered
+        Set tSettingsPath = "/home/irisowner/dev/.llm_settings.json"
+        Set tExisting = {}
+        Set tFileEx = ##class(%Stream.FileCharacter).%New()
+        Try {
+            Do tFileEx.LinkToFile(tSettingsPath)
+            Set tExisting = ##class(%DynamicObject).%FromJSON(tFileEx.Read(tFileEx.Size))
+        } Catch {}
+        Set tMerged = tExisting
+        Set tIter = tBody.%GetIterator()
+        While tIter.%GetNext(.tKey, .tVal) {
+            Do tMerged.%Set(tKey, tVal)
+        }
         Set tFile = ##class(%Stream.FileCharacter).%New()
-        Set tFile.Filename = "/home/irisowner/dev/.llm_settings.json"
-        Do tFile.Write(tBody.%ToJSON())
+        Set tFile.Filename = tSettingsPath
+        Do tFile.Write(tMerged.%ToJSON())
         Do tFile.%Save()
         Write {"status": "success", "message": "LLM settings saved"}.%ToJSON()
     } Catch ex {
@@ -371,12 +375,15 @@ ClassMethod GetClaimDetail(id As %String) As %Status
         // Calculate risk levels
         Set tRiskScore = 0.70
         Set tRiskLevel = "high"
-        If tDisposition [ "577.46" {
-            Set tRiskScore = 0.70
+        If tDisposition [ "critical" {
+            Set tRiskScore = 0.92
             Set tRiskLevel = "critical"
-        } ElseIf tDisposition [ "0.33" {
-            Set tRiskScore = 0.35
+        } ElseIf tDisposition [ "high" {
+            Set tRiskScore = 0.70
             Set tRiskLevel = "high"
+        } ElseIf tDisposition [ "medium" {
+            Set tRiskScore = 0.45
+            Set tRiskLevel = "medium"
         }
 
         // Fetch patient name
@@ -487,6 +494,12 @@ ClassMethod ApproveClaim(id As %String) As %Status
             Quit
         }
         Set tCRJson = tResponse.Json
+
+        // Idempotency: skip if already approved
+        If tCRJson.outcome = "complete" {
+            Write {"status": "success", "authorizedBy": (tAuthorizedBy), "note": "Claim already approved"}.%ToJSON()
+            Quit
+        }
         Set tCRJson.outcome = "complete"
 
         // Add authorizer info as extensions
@@ -657,6 +670,12 @@ ClassMethod RejectClaim(id As %String) As %Status
             Quit
         }
         Set tCRJson = tResponse.Json
+
+        // Idempotency: skip if already rejected
+        If tCRJson.outcome = "error" {
+            Write {"status": "success", "authorizedBy": (tAuthorizedBy), "note": "Claim already rejected"}.%ToJSON()
+            Quit
+        }
         Set tCRJson.outcome = "error"
         Set tCRJson.status = "cancelled"
 
@@ -745,47 +764,15 @@ ClassMethod GetStats() As %Status
         Do tTotal.%Next()
         Set tTotalCount = tTotal.%Get("cnt")
 
-        // Total value held (sum of claim amounts for held claims)
+        // Total value held: sum BilledAmount from ClaimProjections for held claim patients.
+        // Uses SQL aggregation instead of per-claim FHIR DispatchRequest calls (O(1) vs O(N)).
         Set tValueHeld = 0
-        Set tHeldRS = ##class(%SQL.Statement).%ExecDirect(,
-        "SELECT Key, request FROM HSFHIR_X0001_S.ClaimResponse WHERE outcome=?", "queued")
-        While tHeldRS.%Next() {
-            Set tFocus = tHeldRS.%Get("request")
-            Set tCRKey = tHeldRS.%Get("Key")
-            Set tCRId = $Piece(tCRKey, "/", 2)
-            Set tCID = $Piece(tFocus, "/", 2)
-            Set tClaimFound = 0
-            If tCID '= "" {
-                Try {
-                    Set tReqC = ##class(HS.FHIRServer.API.Data.Request).%New()
-                    Set tReqC.RequestMethod = "GET"
-                    Set tReqC.RequestPath = "/Claim/" _ tCID
-                    Set tReqC.Interaction = "read"
-                    Set tRespC = ##class(HS.FHIRServer.API.Data.Response).%New()
-                    Do tService.DispatchRequest(tReqC, .tRespC)
-                    If $IsObject(tRespC.Json) && $IsObject(tRespC.Json.total) {
-                        Set tValueHeld = tValueHeld + +tRespC.Json.total.value
-                        Set tClaimFound = 1
-                    }
-                } Catch {}
-            }
-            // Fallback: read total from ClaimResponse
-            If 'tClaimFound {
-                Try {
-                    Set tReqCR = ##class(HS.FHIRServer.API.Data.Request).%New()
-                    Set tReqCR.RequestMethod = "GET"
-                    Set tReqCR.RequestPath = "/ClaimResponse/" _ tCRId
-                    Set tReqCR.Interaction = "read"
-                    Set tRespCR = ##class(HS.FHIRServer.API.Data.Response).%New()
-                    Do tService.DispatchRequest(tReqCR, .tRespCR)
-                    If $IsObject(tRespCR.Json) && $IsObject(tRespCR.Json.total) && (tRespCR.Json.total.%Size() > 0) {
-                        Set tTotalItem = tRespCR.Json.total.%Get(0)
-                        If $IsObject(tTotalItem.amount) {
-                            Set tValueHeld = tValueHeld + +tTotalItem.amount.value
-                        }
-                    }
-                } Catch {}
-            }
+        Set tValueRS = ##class(%SQL.Statement).%ExecDirect(,
+        "SELECT COALESCE(SUM(CP.BilledAmount), 0) AS totalValue "_
+        "FROM ClaimAudit.ClaimProjections CP "_
+        "WHERE CP.PatientKey IN (SELECT DISTINCT SUBSTRING(patient, 9) FROM HSFHIR_X0001_S.ClaimResponse WHERE outcome = ?)", "queued")
+        If tValueRS.%Next() {
+            Set tValueHeld = +tValueRS.%Get("totalValue")
         }
 
         // Risk distribution from disposition text patterns
@@ -1224,6 +1211,7 @@ ClassMethod UploadClaimData() As %Status
         Set tReq = ##class(HS.FHIRServer.API.Data.Request).%New()
         Set tReq.RequestMethod = "POST"
         Set tReq.Json = tJson
+        Set tReq.Type = tResourceType
         If tResourceType = "Bundle" {
             Set tReq.RequestPath = "/"
             Set tReq.Interaction = "transaction"

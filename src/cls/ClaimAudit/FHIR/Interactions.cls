@@ -5,34 +5,47 @@ Class ClaimAudit.FHIR.Interactions Extends HS.FHIRServer.Storage.Json.Interactio
 Method OnBeforeRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As HS.FHIRServer.API.Data.Request, pTimeout As %Integer)
 {
     // Clean process private flag variables for this thread only for new Claim requests
-    If pFHIRRequest.Type = "Claim" {
+    If (pFHIRRequest.Type = "Claim") || (pFHIRRequest.Type = "Bundle") {
         Kill ^||ClaimAuditFlag
     }
     
-    // Intercept POST/PUT Claim creations
-    If (pFHIRRequest.Type = "Claim") && $IsObject(pFHIRRequest.Json) {
-        Set claimJson = pFHIRRequest.Json
-        
-        // Execute dynamic audit engine checks (NLP, Autoencoder, Graph Tiers)
-        Set tSC = ##class(ClaimAudit.AI.Engine).AuditClaim(claimJson, .tAuditResult)
-        If $$$ISOK(tSC) && (tAuditResult.flagged = 1) {
-            
-            // Invoke AI Hub Agent to author explainable hold disposition
-            Set summary = ##class(ClaimAudit.AI.Agent).GenerateHoldSummary(tAuditResult.patientId, tAuditResult.providerNpi, tAuditResult.billedAmount, tAuditResult.codeCount, tAuditResult.serviceDate, tAuditResult.firstCodeDesc, tAuditResult.reasons)
-            
-            // Record audit flags and summaries in thread-safe process memory
-            Set ^||ClaimAuditFlag("flagged") = 1
-            Set ^||ClaimAuditFlag("summary") = summary
-            Set ^||ClaimAuditFlag("score") = tAuditResult.score
+    // Intercept POST/PUT Claim creations (direct or inside Bundle entries)
+    If $IsObject(pFHIRRequest.Json) {
+        If pFHIRRequest.Type = "Claim" {
+            Do ..AuditSingleClaim(pFHIRRequest.Json)
+        } ElseIf (pFHIRRequest.Type = "Bundle") && $IsObject(pFHIRRequest.Json.entry) {
+            Set tIter = pFHIRRequest.Json.entry.%GetIterator()
+            While tIter.%GetNext(.tKey, .tEntry) {
+                If $IsObject(tEntry.resource) && (tEntry.resource.resourceType = "Claim") {
+                    Do ..AuditSingleClaim(tEntry.resource)
+                }
+            }
         }
     }
     
     // Continue standard interceptor processing
-    Do ##super(pFHIRService, pFHIRRequest, pTimeout)
+
+    Quit $$$OK
 }
 
-/// Mutate responses and create related audit trail records after the resource is committed
-Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As HS.FHIRServer.API.Data.Request, pFHIRResponse As HS.FHIRServer.API.Data.Response)
+/// Run the three-tier audit engine on a single Claim JSON object and record flags
+Method AuditSingleClaim(pClaimJson As %DynamicObject) [ Private ]
+{
+    Set tSC = ##class(ClaimAudit.AI.Engine).AuditClaim(pClaimJson, .tAuditResult)
+    If $$$ISOK(tSC) && (tAuditResult.flagged = 1) {
+        
+        // Invoke AI Hub Agent to author explainable hold disposition
+        Set summary = ##class(ClaimAudit.AI.Agent).GenerateHoldSummary(tAuditResult.patientId, tAuditResult.providerNpi, tAuditResult.billedAmount, tAuditResult.codeCount, tAuditResult.serviceDate, tAuditResult.firstCodeDesc, tAuditResult.reasons)
+        
+        // Record audit flags and summaries in thread-safe process memory
+        Set ^||ClaimAuditFlag("flagged") = 1
+        Set ^||ClaimAuditFlag("summary") = summary
+        Set ^||ClaimAuditFlag("score") = tAuditResult.score
+    }
+}
+
+/// Intercept requests AFTER they have been processed by the storage engine
+Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As HS.FHIRServer.API.Data.Request, pFHIRResponse As HS.FHIRServer.API.Data.Response, pTimeout As %Integer)
 {
     // Execute standard post-processing
     Do ##super(pFHIRService, pFHIRRequest, pFHIRResponse)

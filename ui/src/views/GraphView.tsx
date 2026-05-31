@@ -141,7 +141,7 @@ export function GraphView() {
     });
 
     if (containerRef.current) {
-      containerRef.current.style.backgroundColor = isDark ? '#030712' : '#F5F7F9';
+      containerRef.current.style.backgroundColor = isDark ? '#0F172A' : '#F9FAFB';
     }
 
     return () => cy.destroy();

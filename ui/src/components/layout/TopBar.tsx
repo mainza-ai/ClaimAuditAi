@@ -3,7 +3,6 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { loadSampleData } from '../../api/claims';
 import { useRoleStore, type UserRole } from '../../store/roleStore';
 import { useUserStore } from '../../store/userStore';
-import clsx from 'clsx';
 import { Database, ChevronDown, Loader2, LogOut } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 
@@ -25,6 +24,8 @@ export function TopBar() {
       queryClient.invalidateQueries({ queryKey: ['claims'], refetchType: 'active' });
       queryClient.invalidateQueries({ queryKey: ['stats'], refetchType: 'active' });
       queryClient.invalidateQueries({ queryKey: ['stats', 'trends'], refetchType: 'active' });
+      queryClient.invalidateQueries({ queryKey: ['ledger'] });
+      queryClient.invalidateQueries({ queryKey: ['graph'] });
     },
   });
 
@@ -50,12 +51,12 @@ export function TopBar() {
 
       <div className="flex items-center gap-3">
         {/* FHIR R4 badge */}
-        <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+        <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', fontWeight: 700, padding: '2px 8px', borderRadius: 4, backgroundColor: 'var(--color-success-bg)', color: 'var(--color-success)', border: '1px solid var(--color-success-border)' }}>
           FHIR R4
         </span>
 
         {/* InterSystems IRIS badge */}
-        <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
+        <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', fontWeight: 700, padding: '2px 8px', borderRadius: 4, backgroundColor: 'var(--accent-subtle)', color: 'var(--accent-text)', border: '1px solid var(--border-focus)' }}>
           InterSystems IRIS
         </span>
 
@@ -63,12 +64,14 @@ export function TopBar() {
         <button
           onClick={() => seed.mutate()}
           disabled={seed.isPending || seedDone}
-          className={clsx(
-            "flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-mono font-semibold transition-all disabled:opacity-50 border",
-            seedDone
-              ? "bg-green-600/15 text-green-400 border-green-500/30 shadow-[0_0_8px_rgba(34,197,94,0.2)]"
-              : "bg-violet-600/15 text-violet-400 border-violet-500/30 hover:bg-violet-600/25 hover:border-violet-500/50"
-          )}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 6,
+            fontSize: 12, fontFamily: 'var(--font-mono)', fontWeight: 600, cursor: 'pointer',
+            border: '1px solid var(--accent-primary)',
+            backgroundColor: seedDone ? 'var(--color-success-bg)' : 'var(--accent-subtle)',
+            color: seedDone ? 'var(--color-success)' : 'var(--accent-text)',
+            opacity: (seed.isPending || seedDone) ? 0.6 : 1,
+          }}
         >
           {seed.isPending ? (
             <Loader2 size={13} className="animate-spin" />
@@ -81,25 +84,37 @@ export function TopBar() {
         </button>
 
         {/* Role selector */}
-        <div className="relative">
+        <div style={{ position: 'relative' }}>
           <button
             onClick={() => setRoleOpen(!roleOpen)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-mono font-semibold bg-gray-800 text-gray-300 border border-gray-700 hover:border-gray-600 hover:text-gray-100 transition-all"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 6,
+              fontSize: 12, fontFamily: 'var(--font-mono)', fontWeight: 600, cursor: 'pointer',
+              backgroundColor: 'var(--bg-card)', color: 'var(--text-secondary)',
+              border: '1px solid var(--border-default)',
+            }}
           >
             {activeRole}
-            <ChevronDown size={13} className={`transition-transform ${roleOpen ? 'rotate-180' : ''}`} />
+            <ChevronDown size={13} style={{ transform: roleOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
           </button>
           {roleOpen && (
-            <div className="absolute right-0 top-full mt-1 w-48 bg-gray-900 border border-gray-800 rounded-lg shadow-2xl z-50 overflow-hidden">
+            <div style={{
+              position: 'absolute', right: 0, top: '100%', marginTop: 4, width: 192,
+              backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-default)',
+              borderRadius: 8, boxShadow: 'var(--shadow-modal)', zIndex: 50, overflow: 'hidden',
+            }}>
               {ROLES.map((role) => (
                 <button
                   key={role}
                   onClick={() => { setActiveRole(role); setRoleOpen(false); }}
-                  className={`w-full text-left px-3 py-2 text-xs font-mono transition-colors ${
-                    activeRole === role
-                      ? 'bg-blue-600/20 text-blue-400 font-bold'
-                      : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200'
-                  }`}
+                  style={{
+                    width: '100%', textAlign: 'left', padding: '8px 12px',
+                    fontSize: 12, fontFamily: 'var(--font-mono)', cursor: 'pointer',
+                    backgroundColor: activeRole === role ? 'var(--accent-subtle)' : 'transparent',
+                    color: activeRole === role ? 'var(--accent-text)' : 'var(--text-secondary)',
+                    fontWeight: activeRole === role ? 700 : 400,
+                    border: 'none',
+                  }}
                 >
                   {role}
                 </button>

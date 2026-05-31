@@ -81,25 +81,11 @@ def train_autoencoder() -> str:
                     float(row[4])  # DurationDays
                 ])
         
-        # If database is empty or not running inside IRIS, populate with synthetic historical claims for ZPM testing
-        if len(historical_claims) < 10:
-            np.random.seed(42)
-            n_samples = 200
-            billed_amount = np.random.normal(150, 40, n_samples)
-            item_count = np.random.poisson(2, n_samples) + 1
-            specialty_code = np.random.randint(1, 10, n_samples)
-            patient_age = np.random.normal(50, 15, n_samples)
-            duration_days = np.random.poisson(1, n_samples)
-            
-            # Form dataset
-            for i in range(n_samples):
-                historical_claims.append([
-                    max(10.0, float(billed_amount[i])),
-                    max(1.0, float(item_count[i])),
-                    float(specialty_code[i]),
-                    max(0.0, float(patient_age[i])),
-                    float(duration_days[i])
-                ])
+        # Require a minimum of 5 real claims to train a meaningful model.
+        # Synthetic noise-based training produces an arbitrary threshold that
+        # cannot distinguish genuine anomalies.
+        if len(historical_claims) < 5:
+            return {"status": "skipped", "message": f"Insufficient training data ({len(historical_claims)} < 5)."}
 
         data = np.array(historical_claims, dtype=np.float32)
         

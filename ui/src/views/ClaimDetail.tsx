@@ -32,7 +32,7 @@ export function ClaimDetail() {
   });
 
   const claim = rawClaim
-    ? { ...rawClaim, ...parseDisposition(rawClaim.disposition) }
+    ? { ...parseDisposition(rawClaim.disposition), ...rawClaim }
     : null;
 
   const handleCopyDisputeNotice = () => {

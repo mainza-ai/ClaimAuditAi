@@ -12,7 +12,7 @@ const ACTIVE_CHIP_STYLES: Record<string, { color: string; borderColor: string; b
   all:      { color: 'var(--accent-primary)', borderColor: 'var(--border-focus)', backgroundColor: 'var(--accent-subtle)', boxShadow: '0 0 12px var(--accent-subtle)' },
   critical: { color: 'var(--color-danger)', borderColor: 'var(--color-danger-border)', backgroundColor: 'var(--color-danger-bg)', boxShadow: '0 0 12px var(--color-danger-bg)' },
   high:     { color: 'var(--color-warning)', borderColor: 'var(--color-warning-border)', backgroundColor: 'var(--color-warning-bg)', boxShadow: '0 0 12px var(--color-warning-bg)' },
-  medium:   { color: 'var(--color-warning)', borderColor: 'var(--color-warning-border)', backgroundColor: 'var(--color-warning-bg)', boxShadow: '0 0 12px var(--color-warning-bg)' },
+  medium:   { color: 'var(--color-success)', borderColor: 'var(--color-success-border)', backgroundColor: 'var(--color-success-bg)', boxShadow: '0 0 12px var(--color-success-bg)' },
 };
 
 export function HoldQueue() {
@@ -42,7 +42,14 @@ export function HoldQueue() {
     const RISK_ORDER = { critical: 0, high: 1, medium: 2 };
     f.sort((a, b) => {
       if (sortKey === 'risk') return (RISK_ORDER[a.riskLevel] ?? 1) - (RISK_ORDER[b.riskLevel] ?? 1);
-      if (sortKey === 'date') return new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime();
+      if (sortKey === 'date') {
+        const aDate = new Date(b.lastModified).getTime();
+        const bDate = new Date(a.lastModified).getTime();
+        if (isNaN(bDate) && isNaN(aDate)) return 0;
+        if (isNaN(bDate)) return 1;
+        if (isNaN(aDate)) return -1;
+        return aDate - bDate;
+      }
       return (b.totalAmount ?? 0) - (a.totalAmount ?? 0);
     });
     return f;

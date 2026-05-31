@@ -8,12 +8,10 @@ type Provider = 'nvidia' | 'ollama' | 'openai';
 interface LLMSettingsData {
   provider: Provider;
   nvidiaModel: string;
-  nvidiaKeySet: boolean;
   nvidiaBaseUrl: string;
   ollamaBaseUrl: string;
   ollamaModel: string;
   openaiModel: string;
-  openaiKeySet: boolean;
 }
 
 export function LLMSettings() {
@@ -176,11 +174,11 @@ export function LLMSettings() {
           </p>
           <div>
             <label style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>
-              API Key {settings?.nvidiaKeySet && <span style={{ color: 'var(--color-success)' }}>\u2713 Set in .env</span>}
+              API Key
             </label>
             <input
               type="password"
-              placeholder={settings?.nvidiaKeySet ? 'Leave blank to keep existing key' : 'nvapi-...'}
+              placeholder="Leave blank to keep existing key"
               value={nvidiaKey}
               onChange={e => setNvidiaKey(e.target.value)}
               className="input"
@@ -251,9 +249,9 @@ export function LLMSettings() {
           </p>
           <div>
             <label style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>
-              API Key {settings?.openaiKeySet && <span style={{ color: 'var(--color-success)' }}>\u2713 Set in .env</span>}
+              API Key
             </label>
-            <input type="password" placeholder={settings?.openaiKeySet ? 'Leave blank to keep existing key' : 'sk-...'} value={openaiKey} onChange={e => setOpenaiKey(e.target.value)} className="input" />
+            <input type="password" placeholder="Leave blank to keep existing key" value={openaiKey} onChange={e => setOpenaiKey(e.target.value)} className="input" />
           </div>
           <div>
             <label style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>Model</label>

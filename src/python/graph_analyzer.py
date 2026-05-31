@@ -142,9 +142,11 @@ def check_collusion_network(patient_id: str, provider_npi: str, service_date: st
                             f"({prov2_addr}). Geographically impossible same-day treatments."
                         )
 
-        # Verification 3: Referral Ring Cycle Analysis
-        # Check if the graph contains any directed cycles representing structured patient steering or referral loops
-        cycles = list(nx.simple_cycles(G))
+        # Verification 3: Referral Ring Cycle Analysis (bounded for performance)
+        try:
+            cycles = list(nx.simple_cycles(G, length_bound=5))
+        except Exception:
+            cycles = []
         for cycle in cycles:
             if provider_npi in cycle or patient_id in cycle:
                 flagged = True

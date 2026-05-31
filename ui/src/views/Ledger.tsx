@@ -7,19 +7,26 @@ export function Ledger() {
 const { data: entries = [], isLoading, isError } = useQuery({
 queryKey: ['ledger'],
 queryFn: getLedger,
+refetchInterval: 30000,
 });
+
+if (isError) {
+  return (
+    <div className="space-y-6">
+      <div style={{
+        padding: 24, borderRadius: 8, backgroundColor: 'var(--color-danger-bg)',
+        border: '1px solid var(--color-danger-border)', color: 'var(--color-danger)',
+        fontSize: 14, textAlign: 'center',
+      }}>
+        <AlertTriangle size={24} style={{ marginBottom: 8 }} />
+        <p>Failed to load audit ledger. The ledger service may be unavailable.</p>
+      </div>
+    </div>
+  );
+}
 
 return (
 <div className="space-y-6">
-{isError && (
-  <div style={{
-    padding: 16, borderRadius: 8, backgroundColor: 'var(--color-danger-bg)',
-    border: '1px solid var(--color-danger-border)', color: 'var(--color-danger)',
-    fontSize: 13,
-  }}>
-    Failed to load audit ledger. The ledger service may be unavailable.
-  </div>
-)}
 <div
   className="flex items-center justify-between pb-4"
   style={{ borderBottom: '1px solid var(--border-default)' }}
@@ -85,15 +92,19 @@ No override records yet. Approve or escalate held claims to populate the audit l
 <td className="px-5 py-4">
 <span
   className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-xs border uppercase tracking-wide font-semibold"
-  style={entry.action === 'approved' ? {
-    color: 'var(--color-success)',
-    backgroundColor: 'var(--color-success-bg)',
-    borderColor: 'var(--color-success-border)',
-  } : {
-    color: 'var(--color-warning)',
-    backgroundColor: 'var(--color-warning-bg)',
-    borderColor: 'var(--color-warning-border)',
-  }}
+          style={entry.action === 'approved' ? {
+            color: 'var(--color-success)',
+            backgroundColor: 'var(--color-success-bg)',
+            borderColor: 'var(--color-success-border)',
+          } : entry.action === 'rejected' ? {
+            color: 'var(--color-danger)',
+            backgroundColor: 'var(--color-danger-bg)',
+            borderColor: 'var(--color-danger-border)',
+          } : {
+            color: 'var(--color-warning)',
+            backgroundColor: 'var(--color-warning-bg)',
+            borderColor: 'var(--color-warning-border)',
+          }}
 >
 {entry.action === 'approved' ? <UserCheck size={12} /> : <AlertTriangle size={12} />}
 {entry.action}
