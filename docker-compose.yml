@@ -14,6 +14,18 @@ services:
       - "8080:8080"
     volumes:
       - ./:/home/irisowner/dev
+    healthcheck:
+      test: ["CMD", "iris", "session", "IRIS", "-U", "INTEROP", "write 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 4g
+        reservations:
+          memory: 2g
 
   ui:
     build:

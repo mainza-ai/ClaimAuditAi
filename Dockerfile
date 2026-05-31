@@ -33,3 +33,6 @@ COPY --chmod=755 --chown=${ISC_PACKAGE_MGRUSER}:${ISC_PACKAGE_IRISGROUP} init_ir
 RUN iris start IRIS && \
     iris session IRIS < iris.script && \
     iris stop IRIS quietly
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD iris session IRIS -U INTEROP "write 1" || exit 1

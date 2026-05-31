@@ -25,6 +25,8 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
     <Route Url="/claims/export"         Method="GET"  Call="ExportClaims"/>
     <Route Url="/stats"                 Method="GET"  Call="GetStats"/>
     <Route Url="/stats/model-performance" Method="GET"  Call="GetModelPerformance"/>
+    <Route Url="/metrics"               Method="GET"  Call="GetMetrics"/>
+    <Route Url="/fhir/metadata"         Method="GET"  Call="GetCapabilityStatement"/>
     <Route Url="/chat"                  Method="POST" Call="Chat"/>
     <Route Url="/chat/stream"           Method="POST" Call="ChatStream"/>
     <Route Url="/samples/load"          Method="POST" Call="LoadSampleData"/>
@@ -1352,7 +1354,100 @@ ClassMethod UploadClaimData() As %Status
     Quit tSC
 }
 
-/// Model performance metrics — precision, recall, F1 per tier
+/// FHIR CapabilityStatement for SMART on FHIR compliance
+ClassMethod GetCapabilityStatement() As %Status
+{
+    Set tSC = $$$OK
+    Try {
+        Set %response.ContentType = "application/fhir+json"
+        Write {
+            "resourceType": "CapabilityStatement",
+            "status": "active",
+            "date": "2026-05-31",
+            "kind": "instance",
+            "fhirVersion": "4.0.1",
+            "format": ["json"],
+            "rest": [{
+                "mode": "server",
+                "security": {
+                    "cors": true,
+                    "service": [{
+                        "coding": [{
+                            "system": "http://terminology.hl7.org/CodeSystem/restful-security-service",
+                            "code": "SMART-on-FHIR"
+                        }]
+                    }]
+                },
+                "resource": [
+                    {"type": "Claim", "interaction": [{"code": "create"}]},
+                    {"type": "ClaimResponse", "interaction": [{"code": "read"}, {"code": "update"}]},
+                    {"type": "Task", "interaction": [{"code": "read"}, {"code": "update"}]},
+                    {"type": "Patient", "interaction": [{"code": "read"}]}
+                ]
+            }]
+        }.%ToJSON()
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+        Write {"resourceType": "OperationOutcome", "issue": [{"severity": "error", "code": "exception", "diagnostics": (ex.DisplayString())}]}.%ToJSON()
+    }
+    Quit tSC
+}
+ClassMethod GetMetrics() As %Status
+{
+    Set tSC = $$$OK
+    Try {
+        Set %response.ContentType = "text/plain; version=0.0.4"
+
+        // Claim throughput metrics
+        Set tHeld = ##class(%SQL.Statement).%ExecDirect(,
+        "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.ClaimResponse WHERE outcome = ?", "queued")
+        Do tHeld.%Next()
+        Set tApproved = ##class(%SQL.Statement).%ExecDirect(,
+        "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.ClaimResponse WHERE outcome = ?", "complete")
+        Do tApproved.%Next()
+        Set tRejected = ##class(%SQL.Statement).%ExecDirect(,
+        "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.ClaimResponse WHERE outcome = ?", "error")
+        Do tRejected.%Next()
+        Set tTotal = ##class(%SQL.Statement).%ExecDirect(,
+        "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.ClaimResponse")
+        Do tTotal.%Next()
+
+        Write "# HELP claimaudit_claims_held Current claims pending review", !
+        Write "# TYPE claimaudit_claims_held gauge", !
+        Write "claimaudit_claims_held ", +tHeld.%Get("cnt"), !
+
+        Write "# HELP claimaudit_claims_approved Total claims approved", !
+        Write "# TYPE claimaudit_claims_approved counter", !
+        Write "claimaudit_claims_approved ", +tApproved.%Get("cnt"), !
+
+        Write "# HELP claimaudit_claims_rejected Total claims rejected", !
+        Write "# TYPE claimaudit_claims_rejected counter", !
+        Write "claimaudit_claims_rejected ", +tRejected.%Get("cnt"), !
+
+        Write "# HELP claimaudit_claims_total Total claims processed", !
+        Write "# TYPE claimaudit_claims_total counter", !
+        Write "claimaudit_claims_total ", +tTotal.%Get("cnt"), !
+
+        // Circuit breaker status from Python tier orchestrator
+        Try {
+            Do ##class(ClaimAudit.AI.Engine).ConfigurePythonPath()
+            Set tOrch = ##class(%SYS.Python).Import("tier_orchestrator")
+            Set tStatus = tOrch."get_circuit_status"()
+            Write "# HELP claimaudit_circuit_breaker_failures Consecutive failures per AI tier", !
+            Write "# TYPE claimaudit_circuit_breaker_failures gauge", !
+            Set tKeys = tStatus."keys"()
+            Set tKeyIter = tKeys."__iter__"()
+            While tKeyIter."__next__"(, .tKey) {
+                Set tState = tStatus."get"(tKey)
+                Write "claimaudit_circuit_breaker_failures{tier=""", tKey, """} ", tState."get"("failures"), !
+                Write "claimaudit_circuit_breaker_open{tier=""", tKey, """} ", $Select(tState."get"("is_open"):1, 1:0), !
+            }
+        } Catch {}
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+    }
+    Quit tSC
+}
 ClassMethod GetModelPerformance() As %Status
 {
     If '##class(ClaimAudit.REST.Auth).RequireAuth() Quit $$$OK
