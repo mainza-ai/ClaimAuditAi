@@ -236,8 +236,9 @@ ClassMethod AuditClaim(pClaimJson As %DynamicObject, Output pResult As %DynamicO
         
     } Catch ex {
         Set sc = ex.AsStatus()
-        Set pResult.flagged = 0
-        Do pResult.reasons.%Push("Adjudication engine failed: " _ ex.DisplayString())
+        Do pResult.reasons.%Push("Adjudication engine failure: " _ ex.DisplayString() _ ". Claim requires manual review.")
+        Set pResult.score = 0.35
+        Set pResult.flagged = 1
     }
     Quit sc
 }

@@ -68,6 +68,8 @@ def chat(system_prompt: str, messages_json: str, max_tokens: int = 1024) -> str:
         temperature=0.3,
         timeout=60.0,
     )
+    if not response.choices:
+        raise ValueError("LLM returned empty response — no choices available")
     return clean_non_bmp(response.choices[0].message.content)
 
 def generate(prompt: str, max_tokens: int = 2048) -> str:
@@ -88,8 +90,11 @@ def summarize_user_reason(action: str, user_text: str) -> str:
     user_msg = f"Auditor action: {label}\nAuditor's stated reason: {user_text}"
     return chat(system_prompt=system, messages_json=json.dumps([{"role": "user", "content": user_msg}]), max_tokens=256)
 
-def list_ollama_models(base_url: str = None) -> list[str]:
-    url = (base_url or os.environ.get("OLLAMA_BASE_URL", "http://host.docker.internal:11434")).rstrip("/v1").rstrip("/")
+def list_ollama_models(base_url: str = None) -> list:
+    url = (base_url or os.environ.get("OLLAMA_BASE_URL", "http://host.docker.internal:11434"))
+    if url.endswith("/v1"):
+        url = url[:-3]
+    url = url.rstrip("/")
     try:
         req = urllib.request.Request(f"{url}/api/tags")
         with urllib.request.urlopen(req, timeout=3) as resp:

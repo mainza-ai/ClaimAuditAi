@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { approveClaim, escalateClaim, rejectClaim } from '../../api/claims';
 import { apiClient } from '../../api/client';
-import { useUserStore } from '../../store/userStore';
+import { useRoleStore } from '../../store/roleStore';
 import { X, Loader2, CheckCircle } from 'lucide-react';
 
 type ActionType = 'approve' | 'escalate' | 'reject';
@@ -39,13 +39,43 @@ const ACTION_CONFIG = {
 };
 
 export function DecisionModal({ claimId, action, onConfirm, onCancel }: DecisionModalProps) {
-  const { name: authorizedBy } = useUserStore();
+  const { userName: authorizedBy } = useRoleStore();
   const config = ACTION_CONFIG[action];
   const [rawReason, setRawReason] = useState('');
   const [aiSummary, setAiSummary] = useState('');
   const [summarizing, setSummarizing] = useState(false);
   const [summaryReady, setSummaryReady] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    textareaRef.current?.focus();
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = ''; };
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCancel();
+      if (e.key === 'Tab' && modalRef.current) {
+        const focusable = modalRef.current.querySelectorAll<HTMLElement>(
+          'button, textarea, [tabindex]:not([tabindex="-1"])'
+        );
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last?.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first?.focus();
+        }
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onCancel]);
 
   const submit = useMutation({
     mutationFn: () => {
@@ -80,6 +110,10 @@ export function DecisionModal({ claimId, action, onConfirm, onCancel }: Decision
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={config.title}
+      ref={modalRef}
       style={{
         position: 'fixed',
         inset: 0,
@@ -89,8 +123,10 @@ export function DecisionModal({ claimId, action, onConfirm, onCancel }: Decision
         justifyContent: 'center',
         zIndex: 100,
       }}
+      onClick={(e) => { if (e.target === e.currentTarget) onCancel(); }}
     >
       <div
+        role="document"
         className="card"
         style={{ width: 540, maxWidth: '90vw', padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}
       >
@@ -101,6 +137,7 @@ export function DecisionModal({ claimId, action, onConfirm, onCancel }: Decision
           <button
             onClick={onCancel}
             style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)' }}
+            aria-label="Close modal"
           >
             <X size={20} />
           </button>
@@ -114,12 +151,17 @@ export function DecisionModal({ claimId, action, onConfirm, onCancel }: Decision
         </div>
 
         <div>
-          <label style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>
+          <label
+            htmlFor="decision-rationale"
+            style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}
+          >
             {config.label} <span style={{ color: 'var(--color-danger)' }}>*</span>
           </label>
           <textarea
+            id="decision-rationale"
+            ref={textareaRef}
             value={rawReason}
-            onChange={e => { setRawReason(e.target.value); }}
+            onChange={e => { setRawReason(e.target.value); setSummaryReady(false); setAiSummary(''); }}
             placeholder={config.placeholder}
             rows={4}
             style={{
@@ -181,6 +223,7 @@ export function DecisionModal({ claimId, action, onConfirm, onCancel }: Decision
               value={aiSummary}
               onChange={e => setAiSummary(e.target.value)}
               rows={3}
+              aria-label="AI-generated rationale"
               style={{
                 width: '100%',
                 resize: 'vertical',
@@ -200,7 +243,7 @@ export function DecisionModal({ claimId, action, onConfirm, onCancel }: Decision
         )}
 
         {submitError && (
-          <div style={{ padding: 10, borderRadius: 6, backgroundColor: 'var(--color-danger-bg)', border: '1px solid var(--color-danger-border)' }}>
+          <div role="alert" style={{ padding: 10, borderRadius: 6, backgroundColor: 'var(--color-danger-bg)', border: '1px solid var(--color-danger-border)' }}>
             <p style={{ margin: 0, fontSize: 13, color: 'var(--color-danger)' }}>{submitError}</p>
           </div>
         )}

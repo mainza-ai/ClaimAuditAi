@@ -1,15 +1,38 @@
     zn "%SYS"
 
-    // Unexpire passwords and set up passwordless mode to simplify dev use.
-    do ##class(Security.Users).UnExpireUserPasswords("*")
+    // Create ClaimAuditAI roles with tiered permissions
+    Do ..CreateRole("Admin", "Full system administration: data management, LLM settings, user management")
+    Do ..CreateRole("Auditor", "Claim review: approve, reject, escalate held claims")
+    Do ..CreateRole("Viewer", "Read-only access: dashboard, trends, ledger, graph view")
 
-    // Install ZPM Package Manager
-    set tURL = "https://pm.community.intersystems.com/packages/zpm/latest/installer"
-    set r = ##class(%Net.HttpRequest).%New()
-    set r.Server = "pm.community.intersystems.com"
-    set r.SSLConfiguration = "ISC.FeatureTracker.SSL.Config"
-    do r.Get("/packages/zpm/latest/installer")
-    do $system.OBJ.LoadStream(r.HttpResponse.Data,"c")
+    // Create default users (passwords should be changed via Management Portal or settings UI)
+    Do ..CreateUser("admin", "ClaimAuditAdmin2026!", "Admin")
+    Do ..CreateUser("auditor", "AuditReview2026!", "Auditor")
+    Do ..CreateUser("viewer", "ViewDash2026!", "Viewer")
+
+    // Grant %All role to Admin role
+    Set tRoleExists = ##class(Security.Roles).Exists("Admin")
+    If tRoleExists {
+        Do ##class(Security.Roles).AddChildren("Admin", "%All")
+    }
+
+CreateRole(name, description) [Private] {
+    If '##class(Security.Roles).Exists(name) {
+        Set props("Description") = description
+        Do ##class(Security.Roles).Create(name, .props)
+    }
+}
+
+CreateUser(username, password, role) [Private] {
+    If '##class(Security.Users).Exists(username) {
+        Set props("FullName") = "ClaimAuditAI " _ $ZCONVERT($EXTRACT(role, 1), "U") _ $ZCONVERT($EXTRACT(role, 2, *), "L")
+        Set props("Password") = password
+        Set props("Roles") = role
+        Set props("ChangePassword") = 0
+        Set props("Enabled") = 1
+        Do ##class(Security.Users).Create(username, .props)
+    }
+}
 
     // Enable callin for Embedded Python
     do ##class(Security.Services).Get("%Service_CallIn",.prop)

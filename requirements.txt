@@ -1,7 +1,5 @@
-pandas>=2.0.2
-networkx>=3.1
-sentence-transformers>=2.2.2
-openai>=1.0.0
-mcp>=1.0.0
-scikit-learn>=1.2.2
-numpy<2.0.0
+torch>=2.1.0
+networkx==3.2.1
+sentence-transformers==2.7.0
+openai==1.30.5
+numpy==1.26.4

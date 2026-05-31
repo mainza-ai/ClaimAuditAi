@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom';
 import { LayoutDashboard, ShieldAlert, Network, MessageSquare, History, Settings, HardDrive } from 'lucide-react';
 import { useState } from 'react';
 import { useChatStore } from '../../store/chatStore';
-import { useUserStore } from '../../store/userStore';
+import { useRoleStore } from '../../store/roleStore';
 import { PERMISSIONS } from '../../utils/permissions';
 
 const navItems = [
@@ -16,7 +16,7 @@ const navItems = [
 export function Sidebar() {
   const togglePanel = useChatStore((s) => s.togglePanel);
   const isOpen = useChatStore((s) => s.isOpen);
-  const { role } = useUserStore();
+  const { activeRole } = useRoleStore();
   const [logoHovered, setLogoHovered] = useState(false);
 
   return (
@@ -53,7 +53,7 @@ export function Sidebar() {
         </NavLink>
       ))}
 
-      {PERMISSIONS.canManageData(role) && (
+      {PERMISSIONS.canManageData(activeRole) && (
         <NavLink
           to="/admin/data"
           title="Data Management"

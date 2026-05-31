@@ -10,6 +10,11 @@ Parameter HandleCorsRequest = 1;
 XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
 {
     <Routes>
+    <!-- Public auth endpoints -->
+    <Route Url="/auth/login"      Method="POST" Call="Login"/>
+    <Route Url="/auth/introspect" Method="POST" Call="Introspect"/>
+
+    <!-- Protected endpoints -->
     <Route Url="/stats/trends" Method="GET" Call="GetTrends"/>
     <Route Url="/ledger" Method="GET" Call="GetLedger"/>
     <Route Url="/claims/held" Method="GET" Call="GetHeldClaims"/>
@@ -32,9 +37,22 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
     </Routes>
 }
 
+/// SMART on FHIR OAuth2 login endpoint — public (no auth required)
+ClassMethod Login() As %Status
+{
+    Quit ##class(ClaimAudit.REST.Auth).Login()
+}
+
+/// SMART on FHIR token introspection — public (no auth required)
+ClassMethod Introspect() As %Status
+{
+    Quit ##class(ClaimAudit.REST.Auth).Introspect()
+}
+
 /// Returns all ClaimResponse resources with outcome=queued (HOLD status) mapped with Claim details
 ClassMethod GetHeldClaims() As %Status
 {
+    If '##class(ClaimAudit.REST.Auth).RequireAuth() Quit $$$OK
     Set tSC = $$$OK
     Try {
         Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
@@ -195,6 +213,7 @@ ClassMethod GetHeldClaims() As %Status
 /// Return collusion graph as JSON from graph_analyzer.py
 ClassMethod GetCollusionGraph() As %Status
 {
+    If '##class(ClaimAudit.REST.Auth).RequireAuth() Quit $$$OK
     Set tSC = $$$OK
     Try {
         Do ##class(ClaimAudit.AI.Engine).ConfigurePythonPath()
@@ -211,6 +230,7 @@ ClassMethod GetCollusionGraph() As %Status
 /// Returns current LLM provider configuration (redacts actual API key values)
 ClassMethod GetLLMSettings() As %Status
 {
+    If '##class(ClaimAudit.REST.Auth).RequireAuth() Quit $$$OK
     Set tSC = $$$OK
     Try {
         Set tSettings = {
@@ -232,6 +252,7 @@ ClassMethod GetLLMSettings() As %Status
 /// Persist LLM provider overrides to .llm_settings.json (read by Python at runtime)
 ClassMethod UpdateLLMSettings() As %Status
 {
+    If '##class(ClaimAudit.REST.Auth).RequireAuth("Admin") Quit $$$OK
     Set tSC = $$$OK
     Try {
         Set tBody = ##class(%DynamicObject).%FromJSON(%request.Content)
@@ -263,6 +284,7 @@ ClassMethod UpdateLLMSettings() As %Status
 /// List Ollama models from the configured Ollama base URL
 ClassMethod GetOllamaModels() As %Status
 {
+    If '##class(ClaimAudit.REST.Auth).RequireAuth() Quit $$$OK
     Set tSC = $$$OK
     Try {
         Set tBaseUrl = %request.Get("baseUrl")
@@ -284,6 +306,7 @@ ClassMethod GetOllamaModels() As %Status
 /// AI-summarize a user's free-text rationale for the audit ledger
 ClassMethod SummarizeRationale() As %Status
 {
+    If '##class(ClaimAudit.REST.Auth).RequireAuth() Quit $$$OK
     Set tSC = $$$OK
     Try {
         Set tBody = ##class(%DynamicObject).%FromJSON(%request.Content)
@@ -302,6 +325,7 @@ ClassMethod SummarizeRationale() As %Status
 
 ClassMethod GetClaimDetail(id As %String) As %Status
 {
+    If '##class(ClaimAudit.REST.Auth).RequireAuth() Quit $$$OK
     Set tSC = $$$OK
     Try {
         Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
@@ -427,8 +451,10 @@ ClassMethod GetClaimDetail(id As %String) As %Status
                 }
             }
 
+            // Escape LIKE wildcards in claimId to prevent pattern injection
+            Set tEscapedClaimId = $REPLACE($REPLACE($REPLACE(tClaimId, "\", "\\"), "%", "\%"), "_", "\_")
             Set tCRS = ##class(%SQL.Statement).%ExecDirect(,
-            "SELECT Key FROM HSFHIR_X0001_S.CommunicationRequest WHERE about LIKE ?", "%Claim/" _ tClaimId _ "%")
+            "SELECT Key FROM HSFHIR_X0001_S.CommunicationRequest WHERE about LIKE ? ESCAPE '\'", "%Claim/" _ tEscapedClaimId _ "%")
             If tCRS.%Next() {
                 Set tCommId = $Piece(tCRS.%Get("Key"), "/", 2)
             }
@@ -473,6 +499,7 @@ ClassMethod GetClaimDetail(id As %String) As %Status
 /// Approve a held claim — sets ClaimResponse outcome to complete and updates Task
 ClassMethod ApproveClaim(id As %String) As %Status
 {
+    If '##class(ClaimAudit.REST.Auth).RequireAuth("Auditor") Quit $$$OK
     Set tSC = $$$OK
     Try {
         Set tBody = ##class(%DynamicObject).%FromJSON(%request.Content)
@@ -565,6 +592,7 @@ ClassMethod ApproveClaim(id As %String) As %Status
 /// Escalate a held claim — sets Task priority to stat, keeps ClaimResponse queued with escalated flag
 ClassMethod EscalateClaim(id As %String) As %Status
 {
+    If '##class(ClaimAudit.REST.Auth).RequireAuth("Auditor") Quit $$$OK
     Set tSC = $$$OK
     Try {
         Set tBody = ##class(%DynamicObject).%FromJSON(%request.Content)
@@ -649,6 +677,7 @@ ClassMethod EscalateClaim(id As %String) As %Status
 /// Reject a held claim — sets ClaimResponse outcome to error and updates Task to cancelled
 ClassMethod RejectClaim(id As %String) As %Status
 {
+    If '##class(ClaimAudit.REST.Auth).RequireAuth("Auditor") Quit $$$OK
     Set tSC = $$$OK
     Try {
         Set tBody = ##class(%DynamicObject).%FromJSON(%request.Content)
@@ -741,6 +770,7 @@ ClassMethod RejectClaim(id As %String) As %Status
 /// System metrics: held count, approved today, throughput, model health
 ClassMethod GetStats() As %Status
 {
+    If '##class(ClaimAudit.REST.Auth).RequireAuth() Quit $$$OK
     Set tSC = $$$OK
     Try {
         Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
@@ -826,6 +856,7 @@ ClassMethod GetStats() As %Status
 /// Persistent AI chat — routes through existing LLM_PROVIDER env var logic
 ClassMethod Chat() As %Status
 {
+    If '##class(ClaimAudit.REST.Auth).RequireAuth() Quit $$$OK
     Set tSC = $$$OK
     Try {
         Set tBody = %request.Content
@@ -857,6 +888,7 @@ ClassMethod Chat() As %Status
 /// Dynamic uploader to wipe existing test data and reload expanded patient bundles and claims bundles
 ClassMethod LoadSampleData() As %Status
 {
+    If '##class(ClaimAudit.REST.Auth).RequireAuth("Admin") Quit $$$OK
     Set tSC = $$$OK
     Try {
         // 1. Wipe existing tables for a clean state
@@ -971,6 +1003,7 @@ ClassMethod LoadSampleData() As %Status
 /// Weekly trend data for dashboard charts — computed from actual FHIR ClaimResponse records
 ClassMethod GetTrends() As %Status
 {
+    If '##class(ClaimAudit.REST.Auth).RequireAuth() Quit $$$OK
     Set tSC = $$$OK
     Try {
         Set tArr = []
@@ -1026,6 +1059,7 @@ ClassMethod GetTrends() As %Status
 /// Override audit ledger — derived from Task and ClaimResponse history
 ClassMethod GetLedger() As %Status
 {
+    If '##class(ClaimAudit.REST.Auth).RequireAuth() Quit $$$OK
     Set tSC = $$$OK
     Try {
         Set tArr = []
@@ -1145,6 +1179,7 @@ ClassMethod GetLedger() As %Status
 /// Simple test method for admin routes  
 ClassMethod AdminTest() As %Status
 {
+    If '##class(ClaimAudit.REST.Auth).RequireAuth("Admin") Quit $$$OK
     Write {"status": "ok", "message": "AdminTest works!"}.%ToJSON()
     Quit $$$OK
 }
@@ -1152,6 +1187,7 @@ ClassMethod AdminTest() As %Status
 /// Clear all FHIR test data (ClaimResponse, Task, CommunicationRequest)
 ClassMethod ClearAllData() As %Status
 {
+    If '##class(ClaimAudit.REST.Auth).RequireAuth("Admin") Quit $$$OK
     Set tSC = $$$OK
     Try {
         Do ##class(%SQL.Statement).%ExecDirect(, "DELETE FROM HSFHIR_X0001_S.ClaimResponse")
@@ -1175,6 +1211,7 @@ ClassMethod ClearAllData() As %Status
 /// Return resource counts for admin data status
 ClassMethod GetDataStatus() As %Status
 {
+    If '##class(ClaimAudit.REST.Auth).RequireAuth("Admin") Quit $$$OK
     Set tSC = $$$OK
     Try {
         Set tCR = ##class(%SQL.Statement).%ExecDirect(, "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.ClaimResponse")
@@ -1198,6 +1235,7 @@ ClassMethod GetDataStatus() As %Status
 /// Upload external FHIR data by forwarding raw JSON body to the FHIR endpoint
 ClassMethod UploadClaimData() As %Status
 {
+    If '##class(ClaimAudit.REST.Auth).RequireAuth("Admin") Quit $$$OK
     Set tSC = $$$OK
     Try {
         Set tBody = %request.Content.Read(%request.Content.Size)

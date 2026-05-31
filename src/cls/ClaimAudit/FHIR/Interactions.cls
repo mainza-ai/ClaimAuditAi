@@ -50,9 +50,9 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
     // Execute standard post-processing
     Do ##super(pFHIRService, pFHIRRequest, pFHIRResponse)
     
-    Set ^ClaimAuditLog("type") = pFHIRRequest.Type
-    Set ^ClaimAuditLog("status") = pFHIRResponse.Status
-    Set ^ClaimAuditLog("isjson") = $IsObject(pFHIRRequest.Json)
+    Set ^ClaimAuditLog($HOROLOG, "type") = pFHIRRequest.Type
+    Set ^ClaimAuditLog($HOROLOG, "status") = pFHIRResponse.Status
+    Set ^ClaimAuditLog($HOROLOG, "isjson") = $IsObject(pFHIRRequest.Json)
     
     // Intercept POST/PUT DocumentReference creations to index progress notes
     If (pFHIRRequest.Type = "DocumentReference") && $IsObject(pFHIRRequest.Json) && ($Extract(pFHIRResponse.Status, 1) = "2") {
@@ -83,14 +83,14 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
                 // Index the note in the vector database
                 Set tSC = ##class(ClaimAudit.AI.Engine).IndexNote(patientId, docId, decodedNote)
                 If $$$ISERR(tSC) {
-                    Set ^ClaimAuditIndexError = $System.Status.GetErrorText(tSC)
+                    Set ^ClaimAuditIndexError($HOROLOG) = $System.Status.GetErrorText(tSC)
                 }
             }
         } Catch ex {
-            Set ^ClaimAuditIndexError = ex.DisplayString()
+            Set ^ClaimAuditIndexError($HOROLOG) = ex.DisplayString()
         }
     }
-    
+
     // If the request was a Bundle, unpack and index any DocumentReference resources inside
     If $IsObject(pFHIRRequest.Json) && (pFHIRRequest.Json.resourceType = "Bundle") && ($Extract(pFHIRResponse.Status, 1) = "2") {
         Try {
@@ -136,17 +136,17 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
     // If claim was flagged as an anomaly, mutate response and save audit records
     If (pFHIRRequest.Type = "Claim") && ($Get(^||ClaimAuditFlag("flagged")) = 1) {
         Try {
-            // Retrieve summary and score from flags first, then clear flags to prevent infinite recursion in internal ProcessRequest calls
+            // Retrieve summary and score from flags first, then clear flags to prevent infinite recursion
             Set summary = $Get(^||ClaimAuditFlag("summary"))
             Set score = $Get(^||ClaimAuditFlag("score"))
             Kill ^||ClaimAuditFlag
-            
+
             Set claimId = pFHIRResponse.Id
             If claimId = "" Set claimId = $Piece(pFHIRResponse.ETag, "/", 1)
             If claimId = "" Set claimId = pFHIRRequest.Json.id
-            
+
             Set claimJson = pFHIRRequest.Json
-            
+
             // Resolve Patient reference
             Set patientRef = ""
             If $IsObject(claimJson.patient) {
@@ -154,9 +154,9 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
             } Else {
                 Set patientRef = { "reference": "Patient/unknown" }
             }
-            
+
             Set createdTime = $Translate($ZDateTime($Horolog, 3, 1), " ", "T") _ "Z"
-            
+
             // Resolve Claim Type for ClaimResponse
             Set claimType = ""
             If $IsObject(claimJson.type) {
@@ -172,6 +172,9 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
                 }
             }
 
+            // Transaction-safe creation of all 3 FHIR resources (ClaimResponse + Task + CommunicationRequest)
+            TSTART
+
             // 1. Create FHIR ClaimResponse resource with "outcome" = "queued" (PENDED/HOLD status)
             Set claimResponse = {
                 "resourceType": "ClaimResponse",
@@ -185,7 +188,6 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
                 "disposition": (summary),
                 "request": { "reference": ("Claim/" _ claimId) }
             }
-            // Copy total from incoming Claim so it's retrievable without the Claim resource
             If $IsObject(claimJson.total) {
                 Set tTotalObj = {
                     "category": {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/adjudication", "code": "submitted"}]},
@@ -193,7 +195,7 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
                 }
                 Set claimResponse.total = [tTotalObj]
             }
-            
+
             Set tRequestCR = ##class(HS.FHIRServer.API.Data.Request).%New()
             Set tRequestCR.RequestMethod = "POST"
             Set tRequestCR.Type = "ClaimResponse"
@@ -202,12 +204,20 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
             Set tRequestCR.Json = claimResponse
             Set tResponseCR = ##class(HS.FHIRServer.API.Data.Response).%New()
             Do pFHIRService.DispatchRequest(tRequestCR, .tResponseCR)
-            
-            Set ^ClaimAuditStatusLog("CR", "status") = tResponseCR.Status
-            Set ^ClaimAuditStatusLog("CR", "id") = tResponseCR.Id
-            If $IsObject(tResponseCR.Json) { Set ^ClaimAuditStatusLog("CR", "json") = tResponseCR.Json.%ToJSON() }
+
+            If ($Extract(tResponseCR.Status, 1) '= "2") {
+                Set ^ClaimAuditStatusLog($HOROLOG, "CR", "status") = tResponseCR.Status
+                TROLLBACK
+                Set pFHIRResponse.Status = 500
+                Set pFHIRResponse.Json = {"error": "Failed to create ClaimResponse"}
+                Kill ^||ClaimAuditFlag
+                Quit
+            }
+
+            Set ^ClaimAuditStatusLog($HOROLOG, "CR", "status") = tResponseCR.Status
+            Set ^ClaimAuditStatusLog($HOROLOG, "CR", "id") = tResponseCR.Id
             Set claimResponseId = tResponseCR.Id
-            
+
             // 2. Create FHIR Task resource to route to manual audit review queues
             Set auditTask = {
                 "resourceType": "Task",
@@ -227,7 +237,7 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
                 "owner": { "reference": "Practitioner/claimaudit-auditor" },
                 "description": ("Adjudication Score: " _ score _ ". Risk Reasons: " _ summary)
             }
-            
+
             Set tRequestT = ##class(HS.FHIRServer.API.Data.Request).%New()
             Set tRequestT.RequestMethod = "POST"
             Set tRequestT.Type = "Task"
@@ -236,11 +246,19 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
             Set tRequestT.Json = auditTask
             Set tResponseT = ##class(HS.FHIRServer.API.Data.Response).%New()
             Do pFHIRService.DispatchRequest(tRequestT, .tResponseT)
-            
-            Set ^ClaimAuditStatusLog("Task", "status") = tResponseT.Status
-            Set ^ClaimAuditStatusLog("Task", "id") = tResponseT.Id
-            If $IsObject(tResponseT.Json) { Set ^ClaimAuditStatusLog("Task", "json") = tResponseT.Json.%ToJSON() }
-            
+
+            If ($Extract(tResponseT.Status, 1) '= "2") {
+                Set ^ClaimAuditStatusLog($HOROLOG, "Task", "status") = tResponseT.Status
+                TROLLBACK
+                Set pFHIRResponse.Status = 500
+                Set pFHIRResponse.Json = {"error": "Failed to create Task"}
+                Kill ^||ClaimAuditFlag
+                Quit
+            }
+
+            Set ^ClaimAuditStatusLog($HOROLOG, "Task", "status") = tResponseT.Status
+            Set ^ClaimAuditStatusLog($HOROLOG, "Task", "id") = tResponseT.Id
+
             // 3. Create FHIR CommunicationRequest containing Hold Notification for Provider
             Set commRequest = {
                 "resourceType": "CommunicationRequest",
@@ -266,7 +284,7 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
                     { "reference": ("ClaimResponse/" _ claimResponseId) }
                 ]
             }
-            
+
             Set tRequestComm = ##class(HS.FHIRServer.API.Data.Request).%New()
             Set tRequestComm.RequestMethod = "POST"
             Set tRequestComm.Type = "CommunicationRequest"
@@ -275,22 +293,30 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
             Set tRequestComm.Json = commRequest
             Set tResponseComm = ##class(HS.FHIRServer.API.Data.Response).%New()
             Do pFHIRService.DispatchRequest(tRequestComm, .tResponseComm)
-            
-            Set ^ClaimAuditStatusLog("Comm", "status") = tResponseComm.Status
-            Set ^ClaimAuditStatusLog("Comm", "id") = tResponseComm.Id
-            If $IsObject(tResponseComm.Json) { Set ^ClaimAuditStatusLog("Comm", "json") = tResponseComm.Json.%ToJSON() }
-            
+
+            If ($Extract(tResponseComm.Status, 1) '= "2") {
+                Set ^ClaimAuditStatusLog($HOROLOG, "Comm", "status") = tResponseComm.Status
+                TROLLBACK
+                Set pFHIRResponse.Status = 500
+                Set pFHIRResponse.Json = {"error": "Failed to create CommunicationRequest"}
+                Kill ^||ClaimAuditFlag
+                Quit
+            }
+
+            TCOMMIT
+
+            Set ^ClaimAuditStatusLog($HOROLOG, "Comm", "status") = tResponseComm.Status
+            Set ^ClaimAuditStatusLog($HOROLOG, "Comm", "id") = tResponseComm.Id
+
             // Mutate outgoing response HTTP payload to return the queued ClaimResponse to submitting provider
             Set pFHIRResponse.Json = claimResponse
-            Set pFHIRResponse.Status = 202 // Accepted/Queued for Hold
-            
+            Set pFHIRResponse.Status = 202
+
         } Catch ex {
-            // Write error to system logs to prevent crash, fallback to standard claim output
-            Set ^ClaimAuditError = ex.DisplayString()
+            TROLLBACK
+            Set ^ClaimAuditError($HOROLOG) = ex.DisplayString()
+            Kill ^||ClaimAuditFlag
         }
-        
-        // Clean thread flags
-        Kill ^||ClaimAuditFlag
     }
 }
 

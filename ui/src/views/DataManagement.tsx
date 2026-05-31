@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../api/client';
-import { useUserStore } from '../store/userStore';
+import { useRoleStore } from '../store/roleStore';
 import { PERMISSIONS } from '../utils/permissions';
 import { Trash2, Database, Upload, RefreshCw, CheckCircle, AlertTriangle, FileJson } from 'lucide-react';
 
@@ -12,14 +12,14 @@ interface DataStatus {
 }
 
 export function DataManagement() {
-  const { role } = useUserStore();
+  const { activeRole } = useRoleStore();
   const qc = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [uploadMessage, setUploadMessage] = useState('');
   const [confirmClear, setConfirmClear] = useState(false);
 
-  if (!PERMISSIONS.canManageData(role)) {
+  if (!PERMISSIONS.canManageData(activeRole)) {
     return (
       <div style={{ padding: 40, textAlign: 'center' }}>
         <AlertTriangle size={32} style={{ color: 'var(--color-warning)', marginBottom: 16 }} />

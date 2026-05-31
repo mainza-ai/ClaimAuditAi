@@ -149,7 +149,7 @@ def evaluate_claim_anomaly(billed_amount: float, item_count: float, specialty_co
         
         # Model initialization
         model = ClaimAutoencoder(input_dim=5)
-        model.load_state_dict(torch.load(MODEL_PATH))
+        model.load_state_dict(torch.load(MODEL_PATH, weights_only=True))
         model.eval()
         
         # Features array
@@ -181,4 +181,9 @@ def evaluate_claim_anomaly(billed_amount: float, item_count: float, specialty_co
         
     except Exception as e:
         sys.stderr.write(f"Error in evaluate_claim_anomaly: {str(e)}\n")
-        return {"loss": 0.0, "threshold": 0.1, "flagged": False, "reason": f"Evaluation error: {str(e)}"}
+        return {
+            "loss": 0.0,
+            "threshold": 0.1,
+            "flagged": True,
+            "reason": f"Tier 2 autoencoder evaluation error: {str(e)}. Claim requires manual adjudication review."
+        }

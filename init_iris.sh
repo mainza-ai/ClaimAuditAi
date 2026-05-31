@@ -25,8 +25,9 @@ if tRS.%Get("cnt") = 0 {
 // Run Engine.Setup() to create audit tables and train models (idempotent)
 do ##class(ClaimAudit.AI.Engine).Setup()
 
-// Compile REST Router so all routes (including /system/*) are available
+// Compile REST Router and Auth so all routes are available
 do $SYSTEM.OBJ.Load("/home/irisowner/dev/src/cls/ClaimAudit/REST/Router.cls", "ck")
+do $SYSTEM.OBJ.Load("/home/irisowner/dev/src/cls/ClaimAudit/REST/Auth.cls", "ck")
 
 halt
 EOF

@@ -1,20 +1,31 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { loadSampleData } from '../../api/claims';
+import { logout } from '../../api/auth';
 import { useRoleStore, type UserRole } from '../../store/roleStore';
-import { useUserStore } from '../../store/userStore';
 import { Database, ChevronDown, Loader2, LogOut } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 
 const ROLES: UserRole[] = ['Auditor', 'Director', 'Specialist', 'Tech Owner / Admin'];
-const ROLE_LABELS: Record<string, string> = { auditor: 'Auditor', director: 'Director', specialist: 'Specialist', admin: 'Tech Owner / Admin' };
 
 export function TopBar() {
   const queryClient = useQueryClient();
-  const { activeRole, setActiveRole } = useRoleStore();
-  const { name: userName, role: userRole, setUser } = useUserStore();
+  const { activeRole, setActiveRole, userName } = useRoleStore();
   const [roleOpen, setRoleOpen] = useState(false);
   const [seedDone, setSeedDone] = useState(false);
+  const roleRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (roleRef.current && !roleRef.current.contains(e.target as Node)) {
+        setRoleOpen(false);
+      }
+    };
+    if (roleOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [roleOpen]);
 
   const seed = useMutation({
     mutationFn: loadSampleData,
@@ -84,7 +95,7 @@ export function TopBar() {
         </button>
 
         {/* Role selector */}
-        <div style={{ position: 'relative' }}>
+        <div ref={roleRef} style={{ position: 'relative' }}>
           <button
             onClick={() => setRoleOpen(!roleOpen)}
             style={{
@@ -123,38 +134,19 @@ export function TopBar() {
           )}
         </div>
 
-        {/* Live status */}
-        <span style={{
-          fontSize: 11,
-          color: 'var(--color-success)',
-          fontFamily: 'var(--font-mono)',
-          padding: '3px 10px',
-          borderRadius: 6,
-          backgroundColor: 'var(--color-success-bg)',
-          border: '1px solid var(--color-success-border)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-        }}>
-          <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: 'var(--color-success)' }} />
-          IRIS Core Live
-        </span>
-
         {/* User identity badge */}
-        {userName && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ width: 28, height: 28, borderRadius: '50%', backgroundColor: 'var(--accent-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 11, fontWeight: 700 }}>
-              {userName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-            </div>
-            <div>
-              <p style={{ margin: 0, fontSize: 12, fontWeight: 500, color: 'var(--text-primary)' }}>{userName}</p>
-              <p style={{ margin: 0, fontSize: 10, color: 'var(--text-tertiary)' }}>{ROLE_LABELS[userRole] || activeRole}</p>
-            </div>
-            <button onClick={() => setUser('', 'auditor')} title="Switch user" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', padding: 4 }}>
-              <LogOut size={14} />
-            </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ width: 28, height: 28, borderRadius: '50%', backgroundColor: 'var(--accent-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 11, fontWeight: 700 }}>
+            {userName.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
           </div>
-        )}
+          <div>
+            <p style={{ margin: 0, fontSize: 12, fontWeight: 500, color: 'var(--text-primary)' }}>{userName}</p>
+            <p style={{ margin: 0, fontSize: 10, color: 'var(--text-tertiary)' }}>{activeRole}</p>
+          </div>
+          <button onClick={() => { useRoleStore.getState().clearAuth(); logout(); }} title="Sign out" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', padding: 4 }}>
+            <LogOut size={14} />
+          </button>
+        </div>
 
         <ThemeToggle />
       </div>

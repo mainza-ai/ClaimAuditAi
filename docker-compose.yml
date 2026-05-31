@@ -10,7 +10,6 @@ services:
     environment:
       - ISC_CPF_MERGE_FILE=/home/irisowner/dev/merge.cpf
     ports:
-      - "1972:1972"
       - "52773:52773"
       - "8080:8080"
     volumes:

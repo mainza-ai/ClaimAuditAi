@@ -113,4 +113,9 @@ def verify_clinical_validity(patient_id: str, code_description: str) -> dict:
         
     except Exception as e:
         sys.stderr.write(f"Error in verify_clinical_validity: {str(e)}\n")
-        return {"similarity": 1.0, "evidence": f"Error during search: {str(e)}", "flagged": False}
+        return {
+            "similarity": 0.0,
+            "evidence": f"Tier 1 NLP audit engine error: {str(e)}. Manual review required.",
+            "flagged": True,
+            "reason": f"NLP semantic audit failure: {str(e)}. Claim requires manual adjudication review."
+        }
