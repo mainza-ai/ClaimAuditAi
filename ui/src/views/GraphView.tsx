@@ -122,7 +122,7 @@ export function GraphView() {
       const cy = cytoscape({
         container: containerRef.current,
         elements: [...graph.nodes, ...graph.edges],
-        style: getGraphStyle(isDark),
+        style: getGraphStyle(isDark) as any,
         layout: { name: layout, padding: 60, animate: true, animationDuration: 400 } as any,
       });
       cyRef.current = cy;

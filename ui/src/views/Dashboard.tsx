@@ -66,7 +66,6 @@ export function Dashboard() {
   });
 
   const allHeld = Array.isArray(response?.data) ? response.data : response?.data ?? [];
-  const totalHeld = response?.total ?? allHeld.length;
   const loading = statsLoading || heldLoading;
   const hasError = statsError || heldError;
 
