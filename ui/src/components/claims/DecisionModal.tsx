@@ -60,7 +60,7 @@ export function DecisionModal({ claimId, action, onConfirm, onCancel }: Decision
       if (e.key === 'Escape') onCancel();
       if (e.key === 'Tab' && modalRef.current) {
         const focusable = modalRef.current.querySelectorAll<HTMLElement>(
-          'button, textarea, [tabindex]:not([tabindex="-1"])'
+          'button, textarea, input, select, [tabindex]:not([tabindex="-1"])'
         );
         const first = focusable[0];
         const last = focusable[focusable.length - 1];

@@ -89,15 +89,14 @@ ClassMethod Login() As %Status
         }
 
         // Validate credentials using IRIS login system
-        // Validate credentials by checking user existence and attempting token issuance
         zn "%SYS"
-        If '##class(Security.Users).Exists(tUsername) {
-            zn "INTEROP"
+        Set tSCVal = ##class(Security.Users).Validate(tUsername, tPassword)
+        zn "INTEROP"
+        If $$$ISERR(tSCVal) {
             Set %response.Status = 401
             Write {"error": "invalid_grant", "error_description": "Invalid credentials"}.%ToJSON()
             Quit
         }
-        zn "INTEROP"
 
         Set tToken = ##class(ClaimAudit.REST.Auth).IssueSmartOnFHIRToken(tUsername, tClientId)
         If tToken = "" {

@@ -18,7 +18,7 @@
     If '##class(Security.Users).Exists("admin") {
         Set u("FullName") = "ClaimAuditAI Admin"
         Set u("Password") = "ClaimAuditAdmin2026!"
-        Set u("Roles") = "%All"
+        Set u("Roles") = "Admin"
         Set u("ChangePassword") = 0
         Set u("Enabled") = 1
         Do ##class(Security.Users).Create("admin", .u)
@@ -26,7 +26,7 @@
     If '##class(Security.Users).Exists("auditor") {
         Set u("FullName") = "ClaimAuditAI Auditor"
         Set u("Password") = "AuditReview2026!"
-        Set u("Roles") = "%All"
+        Set u("Roles") = "Auditor"
         Set u("ChangePassword") = 0
         Set u("Enabled") = 1
         Do ##class(Security.Users).Create("auditor", .u)
@@ -34,16 +34,22 @@
     If '##class(Security.Users).Exists("viewer") {
         Set u("FullName") = "ClaimAuditAI Viewer"
         Set u("Password") = "ViewDash2026!"
-        Set u("Roles") = "%All"
+        Set u("Roles") = "Viewer"
         Set u("ChangePassword") = 0
         Set u("Enabled") = 1
         Do ##class(Security.Users).Create("viewer", .u)
     }
 
     // Ensure roles are stored in globals (backup in case Security.Users.Create doesn't persist)
-    Set ^SYS("Security","Users","admin","Roles","%All") = ""
-    Set ^SYS("Security","Users","auditor","Roles","%All") = ""
-    Set ^SYS("Security","Users","viewer","Roles","%All") = ""
+    Set ^SYS("Security","Users","admin","Roles","Admin") = ""
+    Set ^SYS("Security","Users","admin","Roles","%DB_INTEROP-CODE") = ""
+    Set ^SYS("Security","Users","admin","Roles","%DB_INTEROP-DATA") = ""
+    Set ^SYS("Security","Users","auditor","Roles","Auditor") = ""
+    Set ^SYS("Security","Users","auditor","Roles","%DB_INTEROP-CODE") = ""
+    Set ^SYS("Security","Users","auditor","Roles","%DB_INTEROP-DATA") = ""
+    Set ^SYS("Security","Users","viewer","Roles","Viewer") = ""
+    Set ^SYS("Security","Users","viewer","Roles","%DB_INTEROP-CODE") = ""
+    Set ^SYS("Security","Users","viewer","Roles","%DB_INTEROP-DATA") = ""
 
     // Enable callin for Embedded Python
     do ##class(Security.Services).Get("%Service_CallIn",.prop)
@@ -72,7 +78,7 @@ do $SYSTEM.OBJ.Load("/home/irisowner/dev/src/cls/ClaimAudit/AI/Agent.cls", "ck")
 
 // Register the REST Web Application
 zn "%SYS"
-set name="/api", p("DispatchClass")="ClaimAudit.REST.Router", p("NameSpace")="INTEROP", p("AutheEnabled")=96, p("Recurse")=1, p("MatchRoles")=":%All"
+set name="/api", p("DispatchClass")="ClaimAudit.REST.Router", p("NameSpace")="INTEROP", p("AutheEnabled")=96, p("Recurse")=1, p("MatchRoles")=":%DB_INTEROP-CODE:%DB_INTEROP-DATA:%Admin_Secure"
 if '##class(Security.Applications).Exists(name) {
     do ##class(Security.Applications).Create(name, .p)
     write "/api web app created", !

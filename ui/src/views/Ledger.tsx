@@ -1,16 +1,24 @@
+import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getLedger } from '../api/ledger';
 import { ShieldCheck, AlertTriangle, UserCheck, Clock } from 'lucide-react';
 import { format } from 'date-fns';
 
 export function Ledger() {
-const { data: response, isLoading, isError } = useQuery({
-queryKey: ['ledger'],
-queryFn: () => getLedger(50, 0),
-refetchInterval: 30000,
-});
+  const [page, setPage] = useState(1);
+  const limit = 10;
 
-const entries = response?.data ?? [];
+  const { data: response, isLoading, isError } = useQuery({
+    queryKey: ['ledger'],
+    queryFn: () => getLedger(200, 0), // Load up to 200 overrides for pagination
+    refetchInterval: 30000,
+  });
+
+  const entries = response?.data ?? [];
+  const totalPages = Math.ceil(entries.length / limit);
+  const paginated = useMemo(() => {
+    return entries.slice((page - 1) * limit, page * limit);
+  }, [entries, page, limit]);
 
 if (isError) {
   return (
@@ -81,7 +89,7 @@ No override records yet. Approve or escalate held claims to populate the audit l
   className="divide-y text-sm"
   style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
 >
-{entries.map((entry) => (
+{paginated.map((entry) => (
 <tr
   key={entry.id}
   className="transition-colors"
@@ -129,6 +137,31 @@ ${entry.amount.toLocaleString()}
 </table>
 )}
 </div>
+
+{/* Pagination Controls */}
+{totalPages > 1 && (
+  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 16, marginTop: 16 }}>
+    <button
+      onClick={() => setPage(p => Math.max(1, p - 1))}
+      disabled={page === 1}
+      className="btn-ghost"
+      style={{ fontSize: 12, padding: '6px 12px', opacity: page === 1 ? 0.5 : 1, cursor: page === 1 ? 'not-allowed' : 'pointer' }}
+    >
+      Previous
+    </button>
+    <span style={{ fontSize: 12, fontFamily: 'monospace', color: 'var(--text-secondary)' }}>
+      Page {page} of {totalPages}
+    </span>
+    <button
+      onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+      disabled={page >= totalPages}
+      className="btn-ghost"
+      style={{ fontSize: 12, padding: '6px 12px', opacity: page >= totalPages ? 0.5 : 1, cursor: page >= totalPages ? 'not-allowed' : 'pointer' }}
+    >
+      Next
+    </button>
+  </div>
+)}
 </div>
 );
 }

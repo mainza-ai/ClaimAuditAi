@@ -1,7 +1,24 @@
 Class ClaimAudit.REST.Auth Extends %CSP.REST
 {
 
-/// Validate a SMART on FHIR JWT token. Returns introspection response per RFC 7662.
+ClassMethod GetJWTSecret() As %String
+{
+    Set tSecret = $System.Util.GetEnviron("JWT_SECRET")
+    If tSecret '= "" Quit tSecret
+    
+    // In production, require JWT_SECRET env var to be set (do not fall back to GUID)
+    Set tEnv = $System.Util.GetEnviron("CLAIMAUDIT_ENV")
+    If tEnv = "production" {
+        // Log critical security error to a timestamped global
+        Set ^ClaimAuditSecurityError($ZTS) = "CRITICAL: JWT_SECRET environment variable is NOT set in production!"
+        Quit ""
+    }
+    
+    // In dev, fall back to persistent persistent GUID
+    Quit ..GetOrCreateSecret()
+}
+
+/// Validate a SMART on FHIR JWT token with HS256 signature verification.
 ClassMethod ValidateSMARTToken(pToken As %String) As %DynamicObject [ Internal ]
 {
     Set tResult = {"active": false}
@@ -9,14 +26,31 @@ ClassMethod ValidateSMARTToken(pToken As %String) As %DynamicObject [ Internal ]
         Set tParts = $LISTFROMSTRING(pToken, ".")
         If $LISTLENGTH(tParts) '= 3 Quit
 
+        Set tHeaderB64 = $LISTGET(tParts, 1)
         Set tPayloadB64 = $LISTGET(tParts, 2)
+        Set tSigB64 = $LISTGET(tParts, 3)
+
+        // Verify the signature
+        Set tSecret = ..GetJWTSecret()
+        If tSecret = "" Quit
+
+        Set tInput = tHeaderB64 _ "." _ tPayloadB64
+        Set tExpectedSigBin = $SYSTEM.Encryption.HMACSHA256(tInput, tSecret)
+        Set tExpectedSigB64 = ..EncodeBase64Url(tExpectedSigBin)
+
+        If tSigB64 '= tExpectedSigB64 Quit
+
         Set tPayloadB64Decoded = ..PadBase64Url(tPayloadB64)
         Set tPayloadJson = $SYSTEM.Encryption.Base64Decode(tPayloadB64Decoded)
         Set tClaims = ##class(%DynamicObject).%FromJSON(tPayloadJson)
 
+        // Validate expiration (Unix epoch seconds)
         Set tExp = +tClaims.exp
         If tExp = 0 Quit
-        If tExp < $PIECE($HOROLOG, ",", 1) Quit
+        
+        // Current UTC Unix timestamp
+        Set tNow = ($PIECE($ZTIMESTAMP, ",", 1) - 47117) * 86400 + $PIECE($ZTIMESTAMP, ",", 2)
+        If tExp < tNow Quit
 
         If tClaims.iss '= "https://claimauditai.com/fhir" Quit
 
@@ -36,7 +70,8 @@ ClassMethod ValidateSMARTToken(pToken As %String) As %DynamicObject [ Internal ]
             "iat": (tClaims.iat),
             "iss": (tClaims.iss),
             "fhirUser": (tClaims.fhirUser),
-            "roles": (tClaims.roles)
+            "roles": (tClaims.roles),
+            "name": (tClaims.name)
         }
     } Catch ex {}
     Quit tResult
@@ -133,39 +168,56 @@ ClassMethod PadBase64Url(pStr As %String) As %String [ Internal ]
 ClassMethod IssueSmartOnFHIRToken(pUsername As %String, pClientId As %String = "claimaudit-ui") As %String [ Internal ]
 {
     Set tResult = ""
-    zn "%SYS"
-    Set tUserProps = ##class(Security.Users).Get(pUsername, .tProps)
-    Set tFullName = $Get(tProps("FullName"), pUsername)
-    Set tRoles = []
-    Set tSub = ""
-    For {
-        Set tSub = $Order(^SYS("Security", "Users", pUsername, "Roles", tSub))
-        If tSub = "" Quit
-        Do tRoles.%Push(tSub)
+    Try {
+        zn "%SYS"
+        Set tUserProps = ##class(Security.Users).Get(pUsername, .tProps)
+        Set tFullName = $Get(tProps("FullName"), pUsername)
+        Set tRoles = []
+        Set tSub = ""
+        For {
+            Set tSub = $Order(^SYS("Security", "Users", pUsername, "Roles", tSub))
+            If tSub = "" Quit
+            Do tRoles.%Push(tSub)
+        }
+        zn "INTEROP"
+
+        Set tSecret = ..GetJWTSecret()
+        If tSecret = "" Quit
+
+        // Current Unix epoch seconds
+        Set tNow = ($PIECE($ZTIMESTAMP, ",", 1) - 47117) * 86400 + $PIECE($ZTIMESTAMP, ",", 2)
+        
+        // Expiry configurable via JWT_EXPIRY env var (defaults to 1 day / 86400s)
+        Set tExpirySeconds = +$System.Util.GetEnviron("JWT_EXPIRY")
+        If tExpirySeconds <= 0 Set tExpirySeconds = 86400
+
+        Set tHeader = {"alg": "HS256", "typ": "JWT"}
+        Set tHeaderJson = tHeader.%ToJSON()
+        Set tHeaderB64 = ..EncodeBase64Url(tHeaderJson)
+
+        Set tPayload = {
+            "sub": (pUsername),
+            "iss": "https://claimauditai.com/fhir",
+            "aud": (pClientId),
+            "iat": (tNow),
+            "exp": (tNow + tExpirySeconds),
+            "name": (tFullName),
+            "fhirUser": ("Practitioner/" _ pUsername),
+            "roles": (tRoles),
+            "scope": "launch patient/Patient.read user/Claim.read user/Claim.write user/ClaimResponse.read user/Task.read user/Task.write fhirUser online_access"
+        }
+        Set tPayloadJson = tPayload.%ToJSON()
+        Set tPayloadB64 = ..EncodeBase64Url(tPayloadJson)
+
+        Set tInput = tHeaderB64 _ "." _ tPayloadB64
+        Set tSigBin = $SYSTEM.Encryption.HMACSHA256(tInput, tSecret)
+        Set tSigB64 = ..EncodeBase64Url(tSigBin)
+
+        Set tResult = tInput _ "." _ tSigB64
+        Set tResult = $REPLACE($REPLACE(tResult, $CHAR(13), ""), $CHAR(10), "")
+    } Catch ex {
+        zn "INTEROP"
     }
-    zn "INTEROP"
-
-    Set tNow = $PIECE($HOROLOG, ",", 1)
-    Set tHeader = {"alg": "none", "typ": "JWT"}
-    Set tHeaderJson = tHeader.%ToJSON()
-    Set tHeaderB64 = ..EncodeBase64Url(tHeaderJson)
-
-    Set tPayload = {
-        "sub": (pUsername),
-        "iss": "https://claimauditai.com/fhir",
-        "aud": (pClientId),
-        "iat": (tNow),
-        "exp": (tNow + 86400),
-        "name": (tFullName),
-        "fhirUser": ("Practitioner/" _ pUsername),
-        "roles": (tRoles),
-        "scope": "launch patient/Patient.read user/Claim.read user/Claim.write user/ClaimResponse.read user/Task.read user/Task.write fhirUser online_access"
-    }
-    Set tPayloadJson = tPayload.%ToJSON()
-    Set tPayloadB64 = ..EncodeBase64Url(tPayloadJson)
-
-    Set tResult = tHeaderB64 _ "." _ tPayloadB64 _ "."
-    Set tResult = $REPLACE($REPLACE(tResult, $CHAR(13), ""), $CHAR(10), "")
     Quit tResult
 }
 

@@ -16,7 +16,7 @@ do ##class(ClaimAudit.AI.Engine).Setup()
 
 // Register the REST Web Application
 zn "%SYS"
-set p("DispatchClass")="ClaimAudit.REST.Router", p("NameSpace")="INTEROP", p("AutheEnabled")=96, p("Recurse")=1, p("MatchRoles")=":%All"
+set p("DispatchClass")="ClaimAudit.REST.Router", p("NameSpace")="INTEROP", p("AutheEnabled")=96, p("Recurse")=1, p("MatchRoles")=":%DB_INTEROP-CODE:%DB_INTEROP-DATA:%Admin_Secure"
 if '##class(Security.Applications).Exists("/api") {
     do ##class(Security.Applications).Create("/api", .p)
     write "/api web app created", !

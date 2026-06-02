@@ -22,13 +22,26 @@ export function HoldQueue() {
   const [chipHovered, setChipHovered] = useState<string | null>(null);
   const [searchFocused, setSearchFocused] = useState(false);
   const [sortFocused, setSortFocused] = useState(false);
+  const [page, setPage] = useState(1);
+  const limit = 10;
 
   const { data: response, isLoading, isError } = useQuery({
     queryKey: ['claims', 'held'],
-    queryFn: () => getHeldClaims(50, 0),
+    queryFn: () => getHeldClaims(200, 0), // Fetch up to 200 holds for client-side search/pagination
   });
 
   const allClaims = response?.data ?? [];
+
+  // Reset page when search or filters change
+  const handleSearchChange = (val: string) => {
+    setSearch(val);
+    setPage(1);
+  };
+
+  const handleRiskChange = (risk: 'all' | 'critical' | 'high' | 'medium') => {
+    setSelectedRisk(risk);
+    setPage(1);
+  };
 
   const filtered = useMemo(() => {
     const f = allClaims.filter(
@@ -57,6 +70,11 @@ export function HoldQueue() {
     return f;
   }, [allClaims, search, selectedRisk, sortKey]);
 
+  const totalPages = Math.ceil(filtered.length / limit);
+  const paginated = useMemo(() => {
+    return filtered.slice((page - 1) * limit, page * limit);
+  }, [filtered, page, limit]);
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -78,7 +96,7 @@ export function HoldQueue() {
               type="text"
               placeholder="Search by ID, CPT, patient ID, or patient name..."
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => handleSearchChange(e.target.value)}
               className="w-full pl-9 pr-4 py-2 rounded-lg text-sm font-mono transition-colors focus:outline-none"
               style={{
                 backgroundColor: 'var(--bg-input)',
@@ -92,7 +110,7 @@ export function HoldQueue() {
           <div className="relative">
             <select
               value={sortKey}
-              onChange={(e) => setSortKey(e.target.value as SortKey)}
+              onChange={(e) => { setSortKey(e.target.value as SortKey); setPage(1); }}
               className="appearance-none rounded-lg px-3 py-2 pr-8 text-xs font-mono focus:outline-none cursor-pointer"
               style={{
                 backgroundColor: 'var(--bg-input)',
@@ -121,7 +139,7 @@ export function HoldQueue() {
             return (
               <button
                 key={r}
-                onClick={() => setSelectedRisk(r)}
+                onClick={() => handleRiskChange(r)}
                 onMouseEnter={() => setChipHovered(r)}
                 onMouseLeave={() => setChipHovered(null)}
                 className="px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition-all border"
@@ -160,10 +178,10 @@ export function HoldQueue() {
         {isLoading && (
           <div className="text-sm text-center py-16" style={{ color: 'var(--text-secondary)' }}>Loading pended claims...</div>
         )}
-        {filtered?.map((claim) => (
+        {paginated?.map((claim) => (
           <ClaimRow key={claim.id} claim={claim} />
         ))}
-        {filtered?.length === 0 && !isLoading && (
+        {paginated?.length === 0 && !isLoading && (
           <div
             className="text-sm text-center py-16 rounded-lg border border-dashed"
             style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-default)' }}
@@ -175,6 +193,31 @@ export function HoldQueue() {
           </div>
         )}
       </div>
+
+      {/* Pagination Controls */}
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 16, marginTop: 24, borderTop: '1px solid var(--border-default)' }}>
+          <button
+            onClick={() => setPage(p => Math.max(1, p - 1))}
+            disabled={page === 1}
+            className="btn-ghost"
+            style={{ fontSize: 12, padding: '6px 12px', opacity: page === 1 ? 0.5 : 1, cursor: page === 1 ? 'not-allowed' : 'pointer' }}
+          >
+            Previous
+          </button>
+          <span style={{ fontSize: 12, fontFamily: 'monospace', color: 'var(--text-secondary)' }}>
+            Page {page} of {totalPages}
+          </span>
+          <button
+            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+            disabled={page >= totalPages}
+            className="btn-ghost"
+            style={{ fontSize: 12, padding: '6px 12px', opacity: page >= totalPages ? 0.5 : 1, cursor: page >= totalPages ? 'not-allowed' : 'pointer' }}
+          >
+            Next
+          </button>
+        </div>
+      )}
     </div>
   );
 }
