@@ -2,8 +2,6 @@
 
 An autonomous, pre-payment payment integrity agent running natively on InterSystems IRIS for Health. ClaimAuditAI intercepts FHIR Claim submissions in the request lifecycle, analyzes them through a three-tier AI reasoning engine, and holds suspicious transactions for human review.
 
-Developed for the **InterSystems Programming Contest: AI Agents for FHIR**.
-
 **Author:** Mainza Kangombe — [LinkedIn](https://www.linkedin.com/in/mainza-kangombe-6214295/)
 
 ---
