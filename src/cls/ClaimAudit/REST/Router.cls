@@ -92,9 +92,13 @@ ClassMethod Login() As %Status
 
         // Validate credentials using IRIS login system
         zn "%SYS"
-        Set tSCVal = ##class(Security.Users).Validate(tUsername, tPassword)
+        Set tUserObj = ##class(Security.Users).%OpenId(tUsername)
+        Set tIsValid = 0
+        If $IsObject(tUserObj) {
+            Set tIsValid = ##class(Security.Users).CheckPassword(.tUserObj, tPassword)
+        }
         zn "INTEROP"
-        If $$$ISERR(tSCVal) {
+        If 'tIsValid {
             Set %response.Status = 401
             Write {"error": "invalid_grant", "error_description": "Invalid credentials"}.%ToJSON()
             Quit
@@ -157,10 +161,12 @@ ClassMethod GetHeldClaims() As %Status
         If tLimit < 1 Set tLimit = 50
         If tLimit > 200 Set tLimit = 200
 
+        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
+
         // Single O(1) query with JOIN — matching the proven CSV export pattern
         // Build SQL as single concatenated string (no line continuations)
         Set tRS = ##class(%SQL.Statement).%ExecDirect(,
-        "SELECT CR.Key, CR.patient, CR.request, CR._lastUpdated, CR.disposition, CR.extension, CR.created, CR.total, "_
+        "SELECT CR.Key, CR.patient, CR.request, CR._lastUpdated, CR.disposition, CR.created, "_
         "PP.Name AS patientName "_
         "FROM HSFHIR_X0001_S.ClaimResponse CR "_
         "LEFT JOIN ClaimAudit.PatientProjections PP ON SUBSTRING(CR.patient, 9) = PP.Key "_
@@ -192,7 +198,7 @@ ClassMethod GetHeldClaims() As %Status
             Set tPatientName = tRS.%Get("patientName")
             If tPatientName = "" Set tPatientName = "Unknown Patient"
 
-            // Derive risk level from disposition keywords
+            // Derive default risk level from disposition keywords
             Set tRiskScore = 0.70
             Set tRiskLevel = "high"
             If tDisposition [ "critical" {
@@ -219,31 +225,52 @@ ClassMethod GetHeldClaims() As %Status
                 } Catch {}
             }
 
-            // Parse extensions directly from the JOIN'd SQL row
-            Set tRiskScore = 0.70
-            Set tRiskLevel = "high"
+            // Fetch CPT, ICD, total, and risk score directly from resource JSON via FHIR service read
             Set tCptCode = "Unknown"
             Set tIcdCode = "Unknown"
+            Set tBilledAmount = 0.0
             
             Set tCreatedVal = tRS.%Get("created")
             Set tSubmittedAt = tLastUpdated
             If tCreatedVal '= "" Set tSubmittedAt = tCreatedVal
 
-            Set tExtensionStr = tRS.%Get("extension")
-            If tExtensionStr '= "" {
+            If tClaimResponseId '= "" {
                 Try {
-                    Set tExtJson = ##class(%DynamicAbstractObject).%FromJSON(tExtensionStr)
-                    If $IsObject(tExtJson) {
-                        Set tExtIter = tExtJson.%GetIterator()
-                        While tExtIter.%GetNext(.tK, .tExt) {
-                            If tExt.url = "https://claimauditai.com/fhir/extension/risk-score" {
-                                Set tRiskScore = +tExt.valueDecimal
+                    Set tReqCR = ##class(HS.FHIRServer.API.Data.Request).%New()
+                    Set tReqCR.RequestMethod = "GET"
+                    Set tReqCR.RequestPath = "/ClaimResponse/" _ tClaimResponseId
+                    Set tReqCR.Interaction = "read"
+                    Set tRespCR = ##class(HS.FHIRServer.API.Data.Response).%New()
+                    Do tService.DispatchRequest(tReqCR, .tRespCR)
+                    If $IsObject(tRespCR.Json) {
+                        Set tCRJson = tRespCR.Json
+                        
+                        // Parse billed amount from total array
+                        Set tTotalJson = tCRJson.total
+                        If $IsObject(tTotalJson) {
+                            For tI = 0:1:tTotalJson.%Size()-1 {
+                                Set tTotalEntry = tTotalJson.%Get(tI)
+                                If $IsObject(tTotalEntry.amount) {
+                                    Set tBilledAmount = +tTotalEntry.amount.value
+                                    Quit
+                                }
                             }
-                            If tExt.url = "https://claimauditai.com/fhir/extension/cpt-code" {
-                                Set tCptCode = tExt.valueString
-                            }
-                            If tExt.url = "https://claimauditai.com/fhir/extension/icd-code" {
-                                Set tIcdCode = tExt.valueString
+                        }
+
+                        // Parse extensions for CPT, ICD, risk-score
+                        Set tExtJson = tCRJson.extension
+                        If $IsObject(tExtJson) {
+                            Set tExtIter = tExtJson.%GetIterator()
+                            While tExtIter.%GetNext(.tK, .tExt) {
+                                If tExt.url = "https://claimauditai.com/fhir/extension/risk-score" {
+                                    Set tRiskScore = +tExt.valueDecimal
+                                }
+                                If tExt.url = "https://claimauditai.com/fhir/extension/cpt-code" {
+                                    Set tCptCode = tExt.valueString
+                                }
+                                If tExt.url = "https://claimauditai.com/fhir/extension/icd-code" {
+                                    Set tIcdCode = tExt.valueString
+                                }
                             }
                         }
                     }
@@ -251,30 +278,11 @@ ClassMethod GetHeldClaims() As %Status
             }
 
             // Map score to risk level based on tier count:
-            // 3 tiers (1.0): critical | 2 tiers (0.65-0.70): high | 1 tier (0.30-0.35): medium
             Set tRiskLevel = "medium"
             If tRiskScore >= 0.86 {
                 Set tRiskLevel = "critical"
             } ElseIf tRiskScore >= 0.50 {
                 Set tRiskLevel = "high"
-            }
-
-            // Billed amount from ClaimResponse.total JSON
-            Set tBilledAmount = 0.0
-            Set tTotalStr = tRS.%Get("total")
-            If tTotalStr '= "" {
-                Try {
-                    Set tTotalJson = ##class(%DynamicAbstractObject).%FromJSON(tTotalStr)
-                    If $IsObject(tTotalJson) {
-                        For tI = 0:1:tTotalJson.%Size()-1 {
-                            Set tTotalEntry = tTotalJson.%Get(tI)
-                            If $IsObject(tTotalEntry.amount) {
-                                Set tBilledAmount = +tTotalEntry.amount.value
-                                Quit
-                            }
-                        }
-                    }
-                } Catch {}
             }
 
             Set tObj = {
@@ -1193,7 +1201,9 @@ ClassMethod ChatStream() As %Status
 /// Dynamic uploader to wipe existing test data and reload expanded patient bundles and claims bundles
 ClassMethod LoadSampleData() As %Status
 {
-    If '##class(ClaimAudit.REST.Auth).RequireAuth("Admin") Quit $$$OK
+    If $Get(%request) '= "" {
+        If '##class(ClaimAudit.REST.Auth).RequireAuth("Admin") Quit $$$OK
+    }
     Set tSC = $$$OK
     Try {
         // Warm up Python models before seeding (avoids cold-start timeout)
@@ -1386,6 +1396,8 @@ ClassMethod GetLedger() As %Status
         If tLimit < 1 Set tLimit = 50
         If tLimit > 200 Set tLimit = 200
 
+        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
+
         // Count query for pagination total
         Set tCountRS = ##class(%SQL.Statement).%ExecDirect(,
         "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.Task WHERE status IN (?,?) OR (status = ? AND priority = ?)",
@@ -1395,7 +1407,7 @@ ClassMethod GetLedger() As %Status
 
         Set tRS = ##class(%SQL.Statement).%ExecDirect(,
         "SELECT T.Key AS taskKey, T.status, T.priority, T.focus, T._lastUpdated, "_
-        "CR.patient, CR.disposition, CR.total, CR.extension "_
+        "CR.Key AS crKey, CR.patient, CR.disposition "_
         "FROM HSFHIR_X0001_S.Task T "_
         "LEFT JOIN HSFHIR_X0001_S.ClaimResponse CR ON T.focus = CR.request "_
         "WHERE T.status IN (?,?) OR (T.status = ? AND T.priority = ?) "_
@@ -1429,18 +1441,43 @@ ClassMethod GetLedger() As %Status
             Set tPatientId = $Piece(tPatientRef, "/", 2)
             Set tProviderId = "Unknown"
 
-            // Billed amount from ClaimResponse.total JSON (JOIN'd)
+            // Fetch details directly from ClaimResponse resource using FHIR service read
             Set tBilledAmount = 0.0
-            Set tTotalStr = tRS.%Get("total")
-            If tTotalStr '= "" {
+            Set tAuthorizedBy = "Auditor"
+            Set tCRKey = tRS.%Get("crKey")
+            Set tClaimResponseId = $Piece(tCRKey, "/", 2)
+
+            If tClaimResponseId '= "" {
                 Try {
-                    Set tTotalJson = ##class(%DynamicAbstractObject).%FromJSON(tTotalStr)
-                    If $IsObject(tTotalJson) {
-                        For tI = 0:1:tTotalJson.%Size()-1 {
-                            Set tTotalEntry = tTotalJson.%Get(tI)
-                            If $IsObject(tTotalEntry.amount) {
-                                Set tBilledAmount = +tTotalEntry.amount.value
-                                Quit
+                    Set tReqCR = ##class(HS.FHIRServer.API.Data.Request).%New()
+                    Set tReqCR.RequestMethod = "GET"
+                    Set tReqCR.RequestPath = "/ClaimResponse/" _ tClaimResponseId
+                    Set tReqCR.Interaction = "read"
+                    Set tRespCR = ##class(HS.FHIRServer.API.Data.Response).%New()
+                    Do tService.DispatchRequest(tReqCR, .tRespCR)
+                    If $IsObject(tRespCR.Json) {
+                        Set tCRJson = tRespCR.Json
+                        
+                        // Parse billed amount from total array
+                        Set tTotalJson = tCRJson.total
+                        If $IsObject(tTotalJson) {
+                            For tI = 0:1:tTotalJson.%Size()-1 {
+                                Set tTotalEntry = tTotalJson.%Get(tI)
+                                If $IsObject(tTotalEntry.amount) {
+                                    Set tBilledAmount = +tTotalEntry.amount.value
+                                    Quit
+                                }
+                            }
+                        }
+
+                        // Parse extensions for authorized-by
+                        Set tExtJson = tCRJson.extension
+                        If $IsObject(tExtJson) {
+                            Set tExtIter = tExtJson.%GetIterator()
+                            While tExtIter.%GetNext(.tK, .tExt) {
+                                If tExt.url = "https://claimauditai.com/fhir/extension/authorized-by" {
+                                    Set tAuthorizedBy = tExt.valueString
+                                }
                             }
                         }
                     }
@@ -1465,24 +1502,6 @@ ClassMethod GetLedger() As %Status
                 } Else {
                     Set tReason = "Escalated to senior reviewer for claim " _ tClaimId
                 }
-            }
-
-            // AuthorizedBy from ClaimResponse extensions — parsed directly from the JOIN'd SQL row
-            Set tAuthorizedBy = "Auditor"
-            Set tExtensionStr = tRS.%Get("extension")
-            If tExtensionStr '= "" {
-                Try {
-                    Set tExtJson = ##class(%DynamicAbstractObject).%FromJSON(tExtensionStr)
-                    If $IsObject(tExtJson) {
-                        Set tExtIter = tExtJson.%GetIterator()
-                        While tExtIter.%GetNext(.tK, .tExt) {
-                            If tExt.url = "https://claimauditai.com/fhir/extension/authorized-by" {
-                                Set tAuthorizedBy = tExt.valueString
-                                Quit
-                            }
-                        }
-                    }
-                } Catch {}
             }
 
             Do tArr.%Push({

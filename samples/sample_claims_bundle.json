@@ -108,17 +108,17 @@
         "created": "2026-05-26T16:20:20Z",
         "provider": { "reference": "Practitioner/claimaudit-prov5" },
         "insurer": { "reference": "Organization/claimaudit-payer" },
-        "total": { "value": 1250.0, "currency": "USD" },
+        "total": { "value": 125.0, "currency": "USD" },
         "item": [{
           "sequence": 1,
           "productOrService": {
             "coding": [{
               "system": "http://www.ama-assn.org/go/cpt",
               "code": "93000",
-              "display": "CPT 93000: Electrocardiogram, routine ECG with at least 12 leads; with interpretation and report."
+              "display": "CPT 93000: Routine dental prophylaxis and cleaning."
             }]
           },
-          "unitPrice": { "value": 1250.0, "currency": "USD" }
+          "unitPrice": { "value": 125.0, "currency": "USD" }
         }]
       }
     },

@@ -20,7 +20,7 @@ _request_lock = __import__('threading').Lock()
 _response_cache = {}
 _response_cache_lock = __import__('threading').Lock()
 
-RETRY_COUNT = 3
+RETRY_COUNT = 1
 RETRY_BASE_DELAY = 1.0  # seconds
 
 def clean_non_bmp(text: str) -> str:
@@ -127,7 +127,7 @@ def chat(system_prompt: str, messages_json: str, max_tokens: int = 1024) -> str:
                 messages=full_messages,
                 max_tokens=max_tokens,
                 temperature=0.3,
-                timeout=60.0,
+                timeout=5.0,
             )
             if not response.choices:
                 raise ValueError("LLM returned empty response — no choices available")
@@ -193,7 +193,7 @@ def chat_stream(system_prompt: str, messages_json: str, max_tokens: int = 1024):
             messages=full_messages,
             max_tokens=max_tokens,
             temperature=0.3,
-            timeout=60.0,
+            timeout=5.0,
             stream=True,
         )
         for chunk in stream:
