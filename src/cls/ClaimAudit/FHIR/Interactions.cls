@@ -29,11 +29,10 @@ Method OnBeforeRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest A
 }
 
 /// Run the three-tier audit engine on a single Claim JSON object and record flags
-Method AuditSingleClaim(pClaimJson As %DynamicObject) [ Private ]
+Method AuditSingleClaim(pClaimJson As %DynamicObject, pIndex As %String = "single") [ Private ]
 {
     Set tSC = ##class(ClaimAudit.AI.Engine).AuditClaim(pClaimJson, .tAuditResult)
     If tAuditResult.flagged = 1 {
-        
         // Use tier reasons directly if LLM generation should be skipped (fast-seed mode)
         // LLM takes 5-10s per claim — use reasons array for bulk seeding
         Set tReasons = tAuditResult.reasons
@@ -55,9 +54,22 @@ Method AuditSingleClaim(pClaimJson As %DynamicObject) [ Private ]
         } Catch {}
         
         // Record audit flags and summaries in thread-safe process memory
-        Set ^||ClaimAuditFlag("flagged") = 1
-        Set ^||ClaimAuditFlag("summary") = summary
-        Set ^||ClaimAuditFlag("score") = tAuditResult.score
+        Set ^||ClaimAuditFlag(pIndex, "flagged") = 1
+        Set ^||ClaimAuditFlag(pIndex, "summary") = summary
+        Set ^||ClaimAuditFlag(pIndex, "score") = tAuditResult.score
+        Set ^||ClaimAuditFlag(pIndex, "patientId") = tAuditResult.patientId
+        Set ^||ClaimAuditFlag(pIndex, "providerNpi") = tAuditResult.providerNpi
+        Set ^||ClaimAuditFlag(pIndex, "billedAmount") = tAuditResult.billedAmount
+
+        If $IsObject(pClaimJson.patient) {
+            Set ^||ClaimAuditFlag(pIndex, "patient") = pClaimJson.patient.%ToJSON()
+        }
+        If $IsObject(pClaimJson.type) {
+            Set ^||ClaimAuditFlag(pIndex, "type") = pClaimJson.type.%ToJSON()
+        }
+        If $IsObject(pClaimJson.total) {
+            Set ^||ClaimAuditFlag(pIndex, "total") = pClaimJson.total.%ToJSON()
+        }
 
         // Store CPT/ICD from claim JSON so they can be embedded as ClaimResponse extensions
         // (Claims are not persisted by the interceptor, so we carry codes forward here)
@@ -66,8 +78,9 @@ Method AuditSingleClaim(pClaimJson As %DynamicObject) [ Private ]
             If $IsObject(tItem.productOrService) && $IsObject(tItem.productOrService.coding) {
                 Set tCoding = tItem.productOrService.coding.%Get(0)
                 If tCoding '= "" {
-                    Set ^||ClaimAuditFlag("cptCode") = tCoding.display
-                    If ^||ClaimAuditFlag("cptCode") = "" Set ^||ClaimAuditFlag("cptCode") = tCoding.code
+                    Set tCode = tCoding.display
+                    If tCode = "" Set tCode = tCoding.code
+                    Set ^||ClaimAuditFlag(pIndex, "cptCode") = tCode
                 }
             }
         }
@@ -75,9 +88,11 @@ Method AuditSingleClaim(pClaimJson As %DynamicObject) [ Private ]
             Set tDiag = pClaimJson.diagnosis.%Get(0)
             If $IsObject(tDiag.diagnosisCodeableConcept) && $IsObject(tDiag.diagnosisCodeableConcept.coding) {
                 Set tDCoding = tDiag.diagnosisCodeableConcept.coding.%Get(0)
-                If tDCoding '= "" Set ^||ClaimAuditFlag("icdCode") = tDCoding.code
+                If tDCoding '= "" Set ^||ClaimAuditFlag(pIndex, "icdCode") = tDCoding.code
             }
         }
+        
+        Set ^||ClaimAuditFlag("any_flagged") = 1
     }
 }
 
@@ -170,34 +185,27 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
         }
     }
     
-    // If claim was flagged as an anomaly, mutate response and save audit records
-    If (pFHIRRequest.Type = "Claim") && ($Get(^||ClaimAuditFlag("flagged")) = 1) {
+    // If single claim request was flagged as an anomaly, mutate response and save audit records
+    If (pFHIRRequest.Type = "Claim") && ($Get(^||ClaimAuditFlag("single", "flagged")) = 1) {
         Try {
             // Retrieve summary and score from flags first, then clear flags to prevent infinite recursion
-            Set summary = $Get(^||ClaimAuditFlag("summary"))
-            Set score = $Get(^||ClaimAuditFlag("score"))
-            Kill ^||ClaimAuditFlag
-
-            Set claimId = pFHIRResponse.Id
-            If claimId = "" Set claimId = $Piece(pFHIRResponse.ETag, "/", 1)
-            If claimId = "" Set claimId = pFHIRRequest.Json.id
-
-            Set claimJson = pFHIRRequest.Json
-
-            // Resolve Patient reference
+            Set summary = $Get(^||ClaimAuditFlag("single", "summary"))
+            Set score = $Get(^||ClaimAuditFlag("single", "score"))
+            Set tCptCode = $Get(^||ClaimAuditFlag("single", "cptCode"))
+            Set tIcdCode = $Get(^||ClaimAuditFlag("single", "icdCode"))
+            
+            Set patientStr = $Get(^||ClaimAuditFlag("single", "patient"))
             Set patientRef = ""
-            If $IsObject(claimJson.patient) {
-                Set patientRef = claimJson.patient
+            If patientStr '= "" {
+                Set patientRef = ##class(%DynamicObject).%FromJSON(patientStr)
             } Else {
                 Set patientRef = { "reference": "Patient/unknown" }
             }
-
-            Set createdTime = $Translate($ZDateTime($Horolog, 3, 1), " ", "T") _ "Z"
-
-            // Resolve Claim Type for ClaimResponse
+            
+            Set typeStr = $Get(^||ClaimAuditFlag("single", "type"))
             Set claimType = ""
-            If $IsObject(claimJson.type) {
-                Set claimType = claimJson.type
+            If typeStr '= "" {
+                Set claimType = ##class(%DynamicObject).%FromJSON(typeStr)
             } Else {
                 Set claimType = {
                     "coding": [
@@ -208,6 +216,15 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
                     ]
                 }
             }
+            
+            Kill ^||ClaimAuditFlag
+
+            Set claimId = pFHIRResponse.Id
+            If claimId = "" Set claimId = $Piece(pFHIRResponse.ETag, "/", 1)
+            If claimId = "" Set claimId = pFHIRRequest.Json.id
+
+            Set claimJson = pFHIRRequest.Json
+            Set createdTime = $Translate($ZDateTime($Horolog, 3, 1), " ", "T") _ "Z"
 
             // Construct native FHIR transaction Bundle containing ClaimResponse, Task, and CommunicationRequest
             Set bundle = {
@@ -229,7 +246,18 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
                 "disposition": (summary),
                 "request": { "reference": ("Claim/" _ claimId) }
             }
-            If $IsObject(claimJson.total) {
+            
+            Set totalStr = $Get(^||ClaimAuditFlag("single", "total"))
+            If totalStr '= "" {
+                Set totalAmount = ##class(%DynamicObject).%FromJSON(totalStr)
+                Set tTotalObj = {
+                    "category": {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/adjudication", "code": "submitted"}]},
+                    "amount": (totalAmount)
+                }
+                Set tTotalArr = ##class(%DynamicArray).%New()
+                Do tTotalArr.%Push(tTotalObj)
+                Set claimResponse.total = tTotalArr
+            } ElseIf $IsObject(claimJson) && $IsObject(claimJson.total) {
                 Set tTotalObj = {
                     "category": {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/adjudication", "code": "submitted"}]},
                     "amount": (claimJson.total)
@@ -240,11 +268,8 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
             }
 
             // Embed CPT, ICD, and risk score as extensions so they can be read without the Claim resource
-            Set tExtensions = claimResponse.extension
-            If '$IsObject(tExtensions) Set tExtensions = []
+            Set tExtensions = []
             Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/risk-score", "valueDecimal": (score)})
-            Set tCptCode = $Get(^||ClaimAuditFlag("cptCode"))
-            Set tIcdCode = $Get(^||ClaimAuditFlag("icdCode"))
             If tCptCode '= "" {
                 Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/cpt-code", "valueString": (tCptCode)})
             }
@@ -303,7 +328,7 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
                                "system": "http://terminology.hl7.org/CodeSystem/communication-category",
                                 "code": "notification",
                                 "display": "Claim Hold Notification"
-                            }
+                              }
                         ]
                     }
                 ],
@@ -340,7 +365,6 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
                 Set ^ClaimAuditStatusLog($ZTS, "Bundle", "status") = tResponseBundle.Status
                 Set pFHIRResponse.Status = 500
                 Set pFHIRResponse.Json = {"error": "Failed to execute atomic FHIR transaction Bundle"}
-                Kill ^||ClaimAuditFlag
                 Quit
             }
 
@@ -366,9 +390,246 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
 
         } Catch ex {
             Set ^ClaimAuditError($ZTS) = ex.DisplayString()
+        }
+    }
+    
+    // If batch/transaction Bundle claim requests were flagged, mutate response entries and create hold records
+    If (pFHIRRequest.Type = "Bundle") && ($Get(^||ClaimAuditFlag("any_flagged")) = 1) && ($Extract(pFHIRResponse.Status, 1) = "2") {
+        Try {
+            // Construct a single native FHIR transaction Bundle containing holds for all flagged claims
+            Set holdsBundle = {
+                "resourceType": "Bundle",
+                "type": "transaction",
+                "entry": []
+            }
+            
+            // Temporary storage for mapping and response mutation
+            Set tFlaggedEntries = ##class(%ArrayOfDataTypes).%New()
+            Set tTempClaimResponse = ##class(%ArrayOfDataTypes).%New()
+            
+            Set tRespIter = pFHIRResponse.Json.entry.%GetIterator()
+            While tRespIter.%GetNext(.tKey, .tRespEntry) {
+                If $Get(^||ClaimAuditFlag(tKey, "flagged")) = 1 {
+                    Set tLocation = ""
+                    If $IsObject(tRespEntry) && $IsObject(tRespEntry.response) {
+                        Set tLocation = tRespEntry.response.location
+                    }
+                    Set tClaimId = $Piece(tLocation, "/", 2)
+                    If tClaimId = "" {
+                        Set tReqEntry = pFHIRRequest.Json.entry.%Get(tKey)
+                        If $IsObject(tReqEntry) && $IsObject(tReqEntry.resource) {
+                            Set tClaimId = tReqEntry.resource.id
+                        }
+                    }
+                    
+                    If tClaimId '= "" {
+                        Do tFlaggedEntries.SetAt(tClaimId, tKey)
+                        
+                        Set summary = ^||ClaimAuditFlag(tKey, "summary")
+                        Set score = ^||ClaimAuditFlag(tKey, "score")
+                        Set tCptCode = $Get(^||ClaimAuditFlag(tKey, "cptCode"))
+                        Set tIcdCode = $Get(^||ClaimAuditFlag(tKey, "icdCode"))
+                        
+                        Set patientStr = $Get(^||ClaimAuditFlag(tKey, "patient"))
+                        Set patientRef = ""
+                        If patientStr '= "" {
+                            Set patientRef = ##class(%DynamicObject).%FromJSON(patientStr)
+                        } Else {
+                            Set patientRef = { "reference": "Patient/unknown" }
+                        }
+                        
+                        Set typeStr = $Get(^||ClaimAuditFlag(tKey, "type"))
+                        Set claimType = ""
+                        If typeStr '= "" {
+                            Set claimType = ##class(%DynamicObject).%FromJSON(typeStr)
+                        } Else {
+                            Set claimType = {
+                                "coding": [
+                                    {"system": "http://terminology.hl7.org/CodeSystem/claim-type", "code": "professional"}
+                                ]
+                            }
+                        }
+                        
+                        Set createdTime = $Translate($ZDateTime($Horolog, 3, 1), " ", "T") _ "Z"
+                        
+                        // 1. Create FHIR ClaimResponse
+                        Set claimResponse = {
+                            "resourceType": "ClaimResponse",
+                            "status": "active",
+                            "use": "claim",
+                            "type": (claimType),
+                            "patient": (patientRef),
+                            "created": (createdTime),
+                            "insurer": { "reference": "Organization/claimaudit-payer" },
+                            "outcome": "queued",
+                            "disposition": (summary),
+                            "request": { "reference": ("Claim/" _ tClaimId) }
+                        }
+                        
+                        Set totalStr = $Get(^||ClaimAuditFlag(tKey, "total"))
+                        If totalStr '= "" {
+                            Set totalAmount = ##class(%DynamicObject).%FromJSON(totalStr)
+                            Set tTotalObj = {
+                                "category": {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/adjudication", "code": "submitted"}]},
+                                "amount": (totalAmount)
+                            }
+                            Set tTotalArr = ##class(%DynamicArray).%New()
+                            Do tTotalArr.%Push(tTotalObj)
+                            Set claimResponse.total = tTotalArr
+                        }
+                        
+                        // Embed CPT, ICD, risk score extensions
+                        Set tExtensions = []
+                        Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/risk-score", "valueDecimal": (score)})
+                        If tCptCode '= "" {
+                            Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/cpt-code", "valueString": (tCptCode)})
+                        }
+                        If tIcdCode '= "" {
+                            Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/icd-code", "valueString": (tIcdCode)})
+                        }
+                        Set claimResponse.extension = tExtensions
+                        
+                        // Unique fullUrl in this transaction
+                        Set crUuid = "urn:uuid:claimresponse-bundle-" _ tKey
+                        
+                        Set crEntry = {
+                            "fullUrl": (crUuid),
+                            "resource": (claimResponse),
+                            "request": {
+                                "method": "POST",
+                                "url": "ClaimResponse"
+                            }
+                        }
+                        Do holdsBundle.entry.%Push(crEntry)
+                        
+                        // 2. Create FHIR Task
+                        Set auditTask = {
+                            "resourceType": "Task",
+                            "status": "ready",
+                            "intent": "order",
+                            "priority": "urgent",
+                            "code": {
+                                "coding": [
+                                    {
+                                        "system": "http://hl7.org/fhir/CodeSystem/task-code",
+                                        "code": "review",
+                                        "display": "Claim Audit Review"
+                                    }
+                                ]
+                            },
+                            "focus": { "reference": ("Claim/" _ tClaimId) },
+                            "owner": { "reference": "Practitioner/claimaudit-auditor" },
+                            "description": ("Adjudication Score: " _ score _ ". Risk Reasons: " _ summary)
+                        }
+                        Set taskEntry = {
+                            "resource": (auditTask),
+                            "request": {
+                                "method": "POST",
+                                "url": "Task"
+                            }
+                        }
+                        Do holdsBundle.entry.%Push(taskEntry)
+                        
+                        // 3. Create FHIR CommunicationRequest
+                        Set commRequest = {
+                            "resourceType": "CommunicationRequest",
+                            "status": "active",
+                            "category": [
+                                {
+                                    "coding": [
+                                        {
+                                           "system": "http://terminology.hl7.org/CodeSystem/communication-category",
+                                            "code": "notification",
+                                            "display": "Claim Hold Notification"
+                                        }
+                                    ]
+                                }
+                            ],
+                            "payload": [
+                                {
+                                    "contentString": (summary)
+                                }
+                            ],
+                            "about": [
+                                { "reference": ("Claim/" _ tClaimId) },
+                                { "reference": (crUuid) }
+                            ]
+                        }
+                        Set commEntry = {
+                            "resource": (commRequest),
+                            "request": {
+                                "method": "POST",
+                                "url": "CommunicationRequest"
+                            }
+                        }
+                        Do holdsBundle.entry.%Push(commEntry)
+                        
+                        Do tTempClaimResponse.SetAt(claimResponse, tKey)
+                    }
+                }
+            }
+            
+            // Execute the hold creation transaction Bundle
+            If holdsBundle.entry.%Size() > 0 {
+                Set tRequestBundle = ##class(HS.FHIRServer.API.Data.Request).%New()
+                Set tRequestBundle.RequestMethod = "POST"
+                Set tRequestBundle.RequestPath = ""
+                Set tRequestBundle.Interaction = "transaction"
+                Set tRequestBundle.Json = holdsBundle
+                Set tResponseBundle = ##class(HS.FHIRServer.API.Data.Response).%New()
+                Do pFHIRService.DispatchRequest(tRequestBundle, .tResponseBundle)
+                
+                If ($Extract(tResponseBundle.Status, 1) = "2") && $IsObject(tResponseBundle.Json) && $IsObject(tResponseBundle.Json.entry) {
+                    // Map created ClaimResponse IDs back and mutate entries in the output response Bundle
+                    Set tHoldsRespIter = tResponseBundle.Json.entry.%GetIterator()
+                    
+                    // We step through the keys in order
+                    Set tFlaggedKey = ""
+                    For {
+                        Set tFlaggedKey = tFlaggedEntries.Next(tFlaggedKey)
+                        If tFlaggedKey = "" Quit
+                        
+                        // The ClaimResponse created status is the first of 3 resources for this claim
+                        If tHoldsRespIter.%GetNext(.tHoldIndex, .tHoldRespEntry) {
+                            Set tCRLocation = ""
+                            If $IsObject(tHoldRespEntry) && $IsObject(tHoldRespEntry.response) {
+                                Set tCRLocation = tHoldRespEntry.response.location
+                            }
+                            Set tCRId = $Piece(tCRLocation, "/", 2)
+                            
+                            Set claimRespObj = tTempClaimResponse.GetAt(tFlaggedKey)
+                            If (tCRId '= "") && $IsObject(claimRespObj) {
+                                Set claimRespObj.id = tCRId
+                            }
+                            
+                            // Mutate original entry response in pFHIRResponse
+                            Set tOrigRespEntry = pFHIRResponse.Json.entry.%Get(tFlaggedKey)
+                            If $IsObject(tOrigRespEntry) {
+                                Set tOrigRespEntry.resource = claimRespObj
+                                If $IsObject(tOrigRespEntry.response) {
+                                    Set tOrigRespEntry.response.status = "202 Accepted"
+                                    Set tOrigRespEntry.response.location = "ClaimResponse/" _ tCRId
+                                }
+                            }
+                        }
+                        
+                        // Skip Task and CommunicationRequest entries in the response
+                        Do tHoldsRespIter.%GetNext(.tHoldIndex, .tHoldRespEntry)
+                        Do tHoldsRespIter.%GetNext(.tHoldIndex, .tHoldRespEntry)
+                    }
+                    Set ^ClaimAuditStatusLog($ZTS, "BundleBatch", "status") = tResponseBundle.Status
+                } Else {
+                    Set ^ClaimAuditError($ZTS) = "Failed to dispatch holds transaction for batch Bundle: " _ tResponseBundle.Status
+                }
+            }
+            
+            Kill ^||ClaimAuditFlag
+        } Catch ex {
+            Set ^ClaimAuditError($ZTS) = ex.DisplayString()
             Kill ^||ClaimAuditFlag
         }
     }
+}
 }
 
 }

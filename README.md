@@ -8,12 +8,13 @@ An autonomous, pre-payment payment integrity agent running natively on InterSyst
 
 ## 🌟 Key Capabilities
 
-- **Real-Time FHIR Interception:** Claims are audited, pended, and held at the database/middleware layer before persistence.
-- **Three-Tier Parallel AI Engine:** Executes NLP vector search, PyTorch reconstruction loss, and NetworkX collusion graph analysis concurrently under strict timeout safeguards.
-- **Atomic Transaction Integrity:** Native FHIR transaction Bundles create pended `ClaimResponse`, manual audit `Task`, and provider `CommunicationRequest` resources atomically.
-- **Role-Based Adjudication:** SMART on FHIR token verification gates system actions across Auditor, Specialist, Director, and Admin views.
-- **Tamper-Proof Audit Ledger:** Timestamped, high-precision subscript records provide a reliable audit trail of all override decisions.
-- **Interactive Collusion Graphs:** Visualizes provider-patient networks dynamically using Cytoscape.js to identify billing syndicates.
+- **Real-Time FHIR Interception:** Claims are audited, pended, and held at the database/middleware layer before persistence, fully supporting both single Claims and batch/transaction Bundles.
+- **Three-Tier AI Engine:** Runs HNSW clinical note NLP vector search, PyTorch reconstruction loss anomaly profiling, and NetworkX collusion cycle graph analysis sequentially under strict timeout and circuit-breaker safeguards.
+- **Atomic Transaction Integrity:** Native FHIR transaction Bundles create hold `ClaimResponse` records, review `Task` resources, and provider `CommunicationRequest` notifications atomically.
+- **Federated Security & Role Hierarchy:** Authenticates via SMART on FHIR tokens supporting symmetric HS256 local HMAC or asymmetric Keycloak RS256 JWKS validation, backed by public key caching and numeric role-hierarchy access controls.
+- **Persistent Chat History:** Persists LLM assistant auditor conversation histories natively in IRIS via custom `ChatHistory` tables.
+- **Tamper-Proof Audit Ledger:** High-precision subscript records (`^ClaimAuditLedger`) provide a reliable, date-indexed audit trail of override decisions.
+- **Interactive Collusion Graphs:** Visualizes provider-patient networks dynamically using Cytoscape.js to identify billing steering syndicates.
 
 ---
 
@@ -33,7 +34,7 @@ ClaimAuditAI integrates InterSystems IRIS for Health with an Embedded Python run
                ▼
 ┌──────────────────────────────┐
 │      tier_orchestrator       │
-│  (Parallel Thread Executor)  │
+│  (Sequential Engine Runner)   │
 └──────┬───────┬───────┬───────┘
        │       │       │
        │       │       └─────────────────────────────┐
@@ -46,19 +47,19 @@ ClaimAuditAI integrates InterSystems IRIS for Health with an Embedded Python run
 ```
 
 ### 1. The Interception Hook (`OnBeforeRequest` & `OnAfterRequest`)
-The [Interactions.cls](src/cls/ClaimAudit/FHIR/Interactions.cls) class intercepts incoming POST/PUT requests on the `Claim` resource type. If a claim is flagged as an anomaly by the AI engines:
-1. The interceptor blocks the standard claim response.
-2. It constructs a FHIR `transaction` Bundle to atomically write:
-   - A `ClaimResponse` with `outcome` set to `queued` (Hold status), enriched with risk score and billing code extensions.
-   - A `Task` routed to the manual auditor queues.
-   - A `CommunicationRequest` containing the claim hold reason.
-3. The server responds with `202 Accepted`, informing the provider that the claim is held pending review.
+The [Interactions.cls](src/cls/ClaimAudit/FHIR/Interactions.cls) class intercepts incoming requests for single `Claim` submissions or batch `Bundle` submissions. If a claim is flagged by the three-tier AI reasoning engine:
+1. The interceptor temporarily intercepts standard storage persistence.
+2. It aggregates holds and compiles an atomic FHIR `transaction` Bundle to write:
+   - A `ClaimResponse` with `outcome` set to `queued` (HOLD status) and custom billing code/threat level extensions.
+   - A manual audit `Task` routed to the practitioner queue.
+   - A `CommunicationRequest` hold notification.
+3. The response payload is mutated to return HTTP `202 Accepted` alongside the created hold `ClaimResponse` resource.
 
 ### 2. The 3-Tier AI Engine (`tier_orchestrator.py`)
-AI evaluation runs within the database memory space using Embedded Python, managed by a parallel ThreadPoolExecutor with individual timeout safeguards and circuit breaker states:
-- **Tier 1 (NLP Similarity):** Vectors are extracted from clinical progress notes stored in the native IRIS HNSW index. [nlp_auditor.py](src/python/nlp_auditor.py) compares claim billing descriptions against clinical records using cosine similarity.
-- **Tier 2 (ML Autoencoder Anomaly):** [autoencoder_train.py](src/python/autoencoder_train.py) feeds patient age, billed amount, service duration, specialty, and item counts into a PyTorch autoencoder. High reconstruction loss flags outlier billing patterns.
-- **Tier 3 (Collusion Networks):** [graph_analyzer.py](src/python/graph_analyzer.py) builds a directed multigraph of patient-provider networks using NetworkX. It detects geo-temporal leap loops, address collisions, and syndicate cycles.
+AI evaluation runs within the database memory space using Embedded Python, running sequentially to ensure thread-safety and database integrity in InterSystems IRIS:
+- **Tier 1 (NLP Similarity):** Cosine similarity between claim descriptions and progress notes is evaluated using sentence-transformers vector indexing in [nlp_auditor.py](src/python/nlp_auditor.py).
+- **Tier 2 (ML Autoencoder Anomaly):** [autoencoder_train.py](src/python/autoencoder_train.py) trains an unsupervised PyTorch Autoencoder to evaluate claim structures. Categorical specialties are scaled stably without Z-score distortion.
+- **Tier 3 (Collusion Networks):** [graph_analyzer.py](src/python/graph_analyzer.py) builds a bipartite patient-provider graph using NetworkX. It maps undirected cycle bases to uncover relational steering rings, address overlaps, and geo-temporal leap impossibilities.
 
 ---
 
@@ -66,12 +67,14 @@ AI evaluation runs within the database memory space using Embedded Python, manag
 
 The system enforces strict role-based access control (RBAC) across both API and database layers:
 
-- **JWT Authentication:** Smart on FHIR standard tokens are issued via HS256 JWT signature generation (`$SYSTEM.Encryption.HMACSHA256`).
-- **Endpoint Protection:** The [Auth.cls](src/cls/ClaimAudit/REST/Auth.cls) middleware extracts user roles from the JWT context and gates access:
-  - **Auditor / Specialist:** Review holds, escalate claims, and view dashboards.
-  - **Director:** Override approvals, review escalated holds, and write to the audit ledger.
-  - **Tech Owner / Admin:** Wipe data, load sample bundles, and update LLM runtime configurations.
-- **IRIS Application Hardening:** Web applications (`/api` and `/csp/interop`) run under least privilege matching roles (`:%DB_INTEROP-CODE:%DB_INTEROP-DATA:%Admin_Secure`) instead of matched `%All` privilege.
+- **SMART on FHIR Authentication:** Supports both HS256 local HMAC signature verification and RS256 JWKS verification for federated OpenID Connect (OIDC) identity providers like Keycloak.
+- **Key Caching & Hardening:** JWKS certificates are cached locally for 1 hour to prevent roundtrip API overhead. The environment requires a valid `JWT_SECRET` in production, raising a hard exception if missing.
+- **Role Hierarchy Gatekeeper:** The [Auth.cls](src/cls/ClaimAudit/REST/Auth.cls) middleware uses a numeric role hierarchy to authorize access (e.g. Director and Admin roles inherit Auditor and Specialist abilities on API endpoints):
+  - **Auditor:** Reviews held claims, escalates anomalies.
+  - **Specialist:** Conducts collusion graph analysis, manages second-stage overrides.
+  - **Director:** Resolves escalated pended holds (Approve/Reject), authors ledger override summaries.
+  - **Tech Owner / Admin:** Full settings administration, model retraining, and system purges.
+- **Least-Privilege IRIS Hardening:** Web applications (`/api` and `/interop/fhir/r4`) run under tightened MatchRoles parameters (`:%DB_INTEROP-CODE:%DB_INTEROP-DATA:%Admin_Secure`) instead of matching `%All` permissions.
 
 ---
 

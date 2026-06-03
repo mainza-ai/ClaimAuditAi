@@ -73,9 +73,9 @@ export function Dashboard() {
   const dailyData = stats?.dailyInterceptedCounts ?? [];
 
   const tierData = [
-    { name: 'Tier 1 \u2014 NLP', value: riskData.find(d => d.level === 'critical')?.count ?? 0 },
-    { name: 'Tier 2 \u2014 Statistical', value: riskData.find(d => d.level === 'high')?.count ?? 0 },
-    { name: 'Tier 3 \u2014 Collusion', value: riskData.find(d => d.level === 'medium')?.count ?? 0 },
+    { name: 'Tier 1 \u2014 NLP', value: stats?.tierDistribution?.find(d => d.tier === 'tier1')?.count ?? 0 },
+    { name: 'Tier 2 \u2014 Statistical', value: stats?.tierDistribution?.find(d => d.tier === 'tier2')?.count ?? 0 },
+    { name: 'Tier 3 \u2014 Collusion', value: stats?.tierDistribution?.find(d => d.tier === 'tier3')?.count ?? 0 },
   ].filter(d => d.value > 0);
 
   const TIER_PIE_COLORS = ['var(--color-danger)', 'var(--color-warning)', 'var(--color-success)'];

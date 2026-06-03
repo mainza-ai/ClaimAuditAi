@@ -21,7 +21,8 @@ class TestNormalizeFeatures:
         mean = np.array([100.0, 2.0, 1.0, 45.0, 1.0], dtype=np.float32)
         std = np.array([1.0, 1.0, 1.0, 1.0, 1.0], dtype=np.float32)
         result = autoencoder_train.normalize_features(features, mean, std)
-        assert np.allclose(result, 0.0, atol=0.001)
+        expected = np.array([[0.0, 0.0, 0.01, 0.0, 0.0]], dtype=np.float32)
+        assert np.allclose(result, expected, atol=0.001)
 
     def test_handles_zero_std(self):
         features = np.array([[100.0, 2.0, 1.0, 45.0, 1.0]], dtype=np.float32)

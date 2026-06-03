@@ -66,50 +66,45 @@ def _run_tier(tier_num: int, args: tuple, kwargs: dict) -> dict:
             "findings": [],
         }
 
-
 def run_all_tiers(patient_id: str, provider_npi: str, first_code_desc: str,
                   billed_amount: float, code_count: int,
                   specialty_code: float, patient_age: float, duration_days: float,
                   service_date: str) -> dict:
-    """Execute all three audit tiers in parallel with timeouts.
-    Returns dict with per-tier results suitable for scoring in Engine.cls."""
-    tier_args = {
-        # args and kwargs for each tier function
-    }
-
-    with futures.ThreadPoolExecutor(max_workers=3) as executor:
-        tier1_future = executor.submit(
-            _run_tier, 1,
-            (patient_id, first_code_desc), {}
-        ) if first_code_desc else None
-
-        tier2_future = executor.submit(
-            _run_tier, 2,
-            (billed_amount, float(code_count), specialty_code, patient_age, duration_days), {}
-        )
-
-        tier3_future = executor.submit(
-            _run_tier, 3,
-            (patient_id, provider_npi, service_date), {}
-        )
-
+    """Execute all three audit tiers sequentially to ensure safety in InterSystems IRIS Embedded Python."""
     results = {}
 
-    if tier1_future:
+    # Run Tier 1: NLP
+    if first_code_desc:
+        start_time = time.time()
         try:
-            results["tier1"] = tier1_future.result(timeout=TIER_CONFIG[1]["timeout"] + 5)
-        except futures.TimeoutError:
-            results["tier1"] = {"flagged": True, "reason": "Tier 1 NLP audit timed out. Manual review required.", "similarity": 0.0}
+            results["tier1"] = _run_tier(1, (patient_id, first_code_desc), {})
+            elapsed = time.time() - start_time
+            if elapsed > TIER_CONFIG[1]["timeout"]:
+                results["tier1"] = {"flagged": True, "reason": "Tier 1 NLP audit timed out. Manual review required.", "similarity": 0.0}
+        except Exception as e:
+            results["tier1"] = {"flagged": True, "reason": f"Tier 1 NLP audit failed: {str(e)}. Manual review required.", "similarity": 0.0}
+    else:
+        results["tier1"] = {"flagged": False, "reason": "No code description provided", "similarity": 0.0}
 
+    # Run Tier 2: Autoencoder
+    start_time = time.time()
     try:
-        results["tier2"] = tier2_future.result(timeout=TIER_CONFIG[2]["timeout"] + 5)
-    except futures.TimeoutError:
-        results["tier2"] = {"flagged": True, "reason": "Tier 2 autoencoder audit timed out. Manual review required.", "loss": 0.0, "threshold": 0.1}
+        results["tier2"] = _run_tier(2, (billed_amount, float(code_count), specialty_code, patient_age, duration_days), {})
+        elapsed = time.time() - start_time
+        if elapsed > TIER_CONFIG[2]["timeout"]:
+            results["tier2"] = {"flagged": True, "reason": "Tier 2 autoencoder audit timed out. Manual review required.", "loss": 0.0, "threshold": 0.1}
+    except Exception as e:
+        results["tier2"] = {"flagged": True, "reason": f"Tier 2 autoencoder audit failed: {str(e)}. Manual review required.", "loss": 0.0, "threshold": 0.1}
 
+    # Run Tier 3: Graph
+    start_time = time.time()
     try:
-        results["tier3"] = tier3_future.result(timeout=TIER_CONFIG[3]["timeout"] + 5)
-    except futures.TimeoutError:
-        results["tier3"] = {"flagged": True, "reason": "Tier 3 graph audit timed out. Manual review required.", "findings": []}
+        results["tier3"] = _run_tier(3, (patient_id, provider_npi, service_date), {})
+        elapsed = time.time() - start_time
+        if elapsed > TIER_CONFIG[3]["timeout"]:
+            results["tier3"] = {"flagged": True, "reason": "Tier 3 graph audit timed out. Manual review required.", "findings": []}
+    except Exception as e:
+        results["tier3"] = {"flagged": True, "reason": f"Tier 3 graph audit failed: {str(e)}. Manual review required.", "findings": []}
 
     return results
 

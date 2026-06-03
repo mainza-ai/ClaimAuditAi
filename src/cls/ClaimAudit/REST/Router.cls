@@ -27,6 +27,8 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
     <Route Url="/fhir/metadata"         Method="GET"  Call="GetCapabilityStatement"/>
     <Route Url="/chat"                  Method="POST" Call="Chat"/>
     <Route Url="/chat/stream"           Method="POST" Call="ChatStream"/>
+    <Route Url="/chat/history/:id"      Method="GET"  Call="GetChatHistory"/>
+    <Route Url="/chat/history/:id"      Method="POST" Call="SaveChatMessage"/>
     <Route Url="/samples/load"          Method="POST" Call="LoadSampleData"/>
     <Route Url="/graph"                 Method="GET"  Call="GetCollusionGraph"/>
     <Route Url="/settings/llm"              Method="GET"  Call="GetLLMSettings"/>
@@ -158,7 +160,7 @@ ClassMethod GetHeldClaims() As %Status
         // Single O(1) query with JOIN — matching the proven CSV export pattern
         // Build SQL as single concatenated string (no line continuations)
         Set tRS = ##class(%SQL.Statement).%ExecDirect(,
-        "SELECT CR.Key, CR.patient, CR.request, CR._lastUpdated, CR.disposition, "_
+        "SELECT CR.Key, CR.patient, CR.request, CR._lastUpdated, CR.disposition, CR.extension, CR.created, CR.total, "_
         "PP.Name AS patientName "_
         "FROM HSFHIR_X0001_S.ClaimResponse CR "_
         "LEFT JOIN ClaimAudit.PatientProjections PP ON SUBSTRING(CR.patient, 9) = PP.Key "_
@@ -217,26 +219,22 @@ ClassMethod GetHeldClaims() As %Status
                 } Catch {}
             }
 
-            // Derive risk from the stored score extension (fall back to disposition keywords)
+            // Parse extensions directly from the JOIN'd SQL row
             Set tRiskScore = 0.70
             Set tRiskLevel = "high"
             Set tCptCode = "Unknown"
             Set tIcdCode = "Unknown"
+            
+            Set tCreatedVal = tRS.%Get("created")
             Set tSubmittedAt = tLastUpdated
+            If tCreatedVal '= "" Set tSubmittedAt = tCreatedVal
 
-            // Fetch the full ClaimResponse to read extensions (score, CPT, ICD)
-            Try {
-                Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
-                Set tReqCR = ##class(HS.FHIRServer.API.Data.Request).%New()
-                Set tReqCR.RequestMethod = "GET"
-                Set tReqCR.RequestPath = "/ClaimResponse/" _ tClaimResponseId
-                Set tReqCR.Interaction = "read"
-                Set tRespCR = ##class(HS.FHIRServer.API.Data.Response).%New()
-                Do tService.DispatchRequest(tReqCR, .tRespCR)
-                If $IsObject(tRespCR.Json) {
-                    If tRespCR.Json.created '= "" Set tSubmittedAt = tRespCR.Json.created
-                    If $IsObject(tRespCR.Json.extension) {
-                        Set tExtIter = tRespCR.Json.extension.%GetIterator()
+            Set tExtensionStr = tRS.%Get("extension")
+            If tExtensionStr '= "" {
+                Try {
+                    Set tExtJson = ##class(%DynamicAbstractObject).%FromJSON(tExtensionStr)
+                    If $IsObject(tExtJson) {
+                        Set tExtIter = tExtJson.%GetIterator()
                         While tExtIter.%GetNext(.tK, .tExt) {
                             If tExt.url = "https://claimauditai.com/fhir/extension/risk-score" {
                                 Set tRiskScore = +tExt.valueDecimal
@@ -249,8 +247,8 @@ ClassMethod GetHeldClaims() As %Status
                             }
                         }
                     }
-                }
-            } Catch {}
+                } Catch {}
+            }
 
             // Map score to risk level based on tier count:
             // 3 tiers (1.0): critical | 2 tiers (0.65-0.70): high | 1 tier (0.30-0.35): medium
@@ -261,6 +259,24 @@ ClassMethod GetHeldClaims() As %Status
                 Set tRiskLevel = "high"
             }
 
+            // Billed amount from ClaimResponse.total JSON
+            Set tBilledAmount = 0.0
+            Set tTotalStr = tRS.%Get("total")
+            If tTotalStr '= "" {
+                Try {
+                    Set tTotalJson = ##class(%DynamicAbstractObject).%FromJSON(tTotalStr)
+                    If $IsObject(tTotalJson) {
+                        For tI = 0:1:tTotalJson.%Size()-1 {
+                            Set tTotalEntry = tTotalJson.%Get(tI)
+                            If $IsObject(tTotalEntry.amount) {
+                                Set tBilledAmount = +tTotalEntry.amount.value
+                                Quit
+                            }
+                        }
+                    }
+                } Catch {}
+            }
+
             Set tObj = {
                 "id": (tClaimResponseId),
                 "patientId": (tPatientId),
@@ -268,7 +284,7 @@ ClassMethod GetHeldClaims() As %Status
                 "providerId": "claimaudit-prov",
                 "cptCode": (tCptCode),
                 "icdCode": (tIcdCode),
-                "totalAmount": 0,
+                "totalAmount": (tBilledAmount),
                 "submittedAt": (tSubmittedAt),
                 "lastModified": (tLastUpdated),
                 "riskScore": (tRiskScore),
@@ -308,13 +324,23 @@ ClassMethod GetLLMSettings() As %Status
     If '##class(ClaimAudit.REST.Auth).RequireAuth() Quit $$$OK
     Set tSC = $$$OK
     Try {
+        Set tSettingsPath = "/home/irisowner/dev/.llm_settings.json"
+        Set tJson = {}
+        Try {
+            Set tFile = ##class(%Stream.FileCharacter).%New()
+            Do tFile.LinkToFile(tSettingsPath)
+            Set tJson = ##class(%DynamicObject).%FromJSON(tFile.Read(tFile.Size))
+        } Catch {}
+
         Set tSettings = {
-            "provider":      ($System.Util.GetEnviron("LLM_PROVIDER")),
-            "nvidiaModel":   ($System.Util.GetEnviron("NVIDIA_MODEL")),
-            "nvidiaBaseUrl": ($System.Util.GetEnviron("NVIDIA_BASE_URL")),
-            "ollamaBaseUrl": ($System.Util.GetEnviron("OLLAMA_BASE_URL")),
-            "ollamaModel":   ($System.Util.GetEnviron("OLLAMA_MODEL")),
-            "openaiModel":   ($System.Util.GetEnviron("OPENAI_MODEL"))
+            "provider":      (..GetSetting(tJson, "provider", "LLM_PROVIDER")),
+            "nvidiaModel":   (..GetSetting(tJson, "nvidiaModel", "NVIDIA_MODEL")),
+            "nvidiaBaseUrl": (..GetSetting(tJson, "nvidiaBaseUrl", "NVIDIA_BASE_URL")),
+            "ollamaBaseUrl": (..GetSetting(tJson, "ollamaBaseUrl", "OLLAMA_BASE_URL")),
+            "ollamaModel":   (..GetSetting(tJson, "ollamaModel", "OLLAMA_MODEL")),
+            "openaiModel":   (..GetSetting(tJson, "openaiModel", "OPENAI_MODEL")),
+            "rateLimitPerMin": (..GetSettingInt(tJson, "rateLimitPerMin", 120)),
+            "cacheTTL":      (..GetSettingInt(tJson, "cacheTTL", 86400))
         }
         Write tSettings.%ToJSON()
     } Catch ex {
@@ -322,6 +348,26 @@ ClassMethod GetLLMSettings() As %Status
         Write {"error": (ex.DisplayString())}.%ToJSON()
     }
     Quit tSC
+}
+
+ClassMethod GetSetting(pJson As %DynamicObject, pKey As %String, pEnvVar As %String) As %String [ Internal ]
+{
+    Set tVal = ""
+    If $IsObject(pJson) {
+        Set tVal = pJson.%Get(pKey)
+    }
+    If tVal '= "" Return tVal
+    Return $System.Util.GetEnviron(pEnvVar)
+}
+
+ClassMethod GetSettingInt(pJson As %DynamicObject, pKey As %String, pDefault As %Integer) As %Integer [ Internal ]
+{
+    Set tVal = ""
+    If $IsObject(pJson) {
+        Set tVal = pJson.%Get(pKey)
+    }
+    If tVal '= "" Return +tVal
+    Return pDefault
 }
 
 /// Persist LLM provider overrides to .llm_settings.json (read by Python at runtime)
@@ -916,6 +962,9 @@ ClassMethod GetStats() As %Status
         Set tCrit = 0
         Set tHigh = 0
         Set tMed = 0
+        Set tTier1Count = 0
+        Set tTier2Count = 0
+        Set tTier3Count = 0
         Set tHeldRS = ##class(%SQL.Statement).%ExecDirect(,
         "SELECT Key FROM HSFHIR_X0001_S.ClaimResponse WHERE outcome = ?", "queued")
         Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
@@ -929,14 +978,21 @@ ClassMethod GetStats() As %Status
                 Set tReq.Interaction = "read"
                 Set tResp = ##class(HS.FHIRServer.API.Data.Response).%New()
                 Do tService.DispatchRequest(tReq, .tResp)
-                If $IsObject(tResp.Json) && $IsObject(tResp.Json.extension) {
-                    Set tExtIter = tResp.Json.extension.%GetIterator()
-                    While tExtIter.%GetNext(.tK, .tExt) {
-                        If tExt.url = "https://claimauditai.com/fhir/extension/risk-score" {
-                            Set tScore = +tExt.valueDecimal
-                            If tScore >= 0.86 { Set tCrit = tCrit + 1
-                            } ElseIf tScore >= 0.50 { Set tHigh = tHigh + 1
-                            } Else { Set tMed = tMed + 1 }
+                If $IsObject(tResp.Json) {
+                    Set tDisp = tResp.Json.disposition
+                    If (tDisp [ "Tier 1") || (tDisp [ "Clinical") || (tDisp [ "Validity") { Set tTier1Count = tTier1Count + 1 }
+                    If (tDisp [ "Tier 2") || (tDisp [ "Statistical") || (tDisp [ "Outlier") || (tDisp [ "autoencoder") { Set tTier2Count = tTier2Count + 1 }
+                    If (tDisp [ "Tier 3") || (tDisp [ "Collusion") || (tDisp [ "steering") || (tDisp [ "Address") || (tDisp [ "leap") { Set tTier3Count = tTier3Count + 1 }
+                    
+                    If $IsObject(tResp.Json.extension) {
+                        Set tExtIter = tResp.Json.extension.%GetIterator()
+                        While tExtIter.%GetNext(.tK, .tExt) {
+                            If tExt.url = "https://claimauditai.com/fhir/extension/risk-score" {
+                                Set tScore = +tExt.valueDecimal
+                                If tScore >= 0.86 { Set tCrit = tCrit + 1
+                                } ElseIf tScore >= 0.50 { Set tHigh = tHigh + 1
+                                } Else { Set tMed = tMed + 1 }
+                            }
                         }
                     }
                 }
@@ -947,6 +1003,11 @@ ClassMethod GetStats() As %Status
         Do tRiskDist.%Push({"level": "critical", "count": (tCrit)})
         Do tRiskDist.%Push({"level": "high", "count": (tHigh)})
         Do tRiskDist.%Push({"level": "medium", "count": (tMed)})
+
+        Set tTierDist = []
+        Do tTierDist.%Push({"tier": "tier1", "count": (tTier1Count)})
+        Do tTierDist.%Push({"tier": "tier2", "count": (tTier2Count)})
+        Do tTierDist.%Push({"tier": "tier3", "count": (tTier3Count)})
 
         // Daily counts for last 7 days
         Set tDaily = []
@@ -971,11 +1032,73 @@ ClassMethod GetStats() As %Status
             "modelStatus": "healthy",
             "leakageRate": (tLeakRate),
             "riskDistribution": (tRiskDist),
+            "tierDistribution": (tTierDist),
             "dailyInterceptedCounts": (tDaily)
         }
         Write tStats.%ToJSON()
     } Catch ex {
         Set tSC = ex.AsStatus()
+        Write {"error": (ex.DisplayString())}.%ToJSON()
+    }
+    Quit tSC
+}
+
+ClassMethod GetChatHistory(id As %String) As %Status
+{
+    If '##class(ClaimAudit.REST.Auth).RequireAuth() Quit $$$OK
+    Set tSC = $$$OK
+    Try {
+        Set tHistory = ##class(ClaimAudit.Data.ChatHistory).GetHistory(id)
+        Write tHistory.%ToJSON()
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+        Set %response.Status = 500
+        Write {"error": (ex.DisplayString())}.%ToJSON()
+    }
+    Quit tSC
+}
+
+ClassMethod SaveChatMessage(id As %String) As %Status
+{
+    If '##class(ClaimAudit.REST.Auth).RequireAuth() Quit $$$OK
+    Set tSC = $$$OK
+    Try {
+        Set tRaw = %request.Content
+        If '$IsObject(tRaw) {
+            Set %response.Status = 400
+            Write {"error": "Missing request payload"}.%ToJSON()
+            Quit
+        }
+        Do tRaw.Rewind()
+        Set tLen = 32000
+        Set tBodyStr = tRaw.Read(.tLen)
+        Set tBody = ##class(%DynamicObject).%FromJSON(tBodyStr)
+        If '$IsObject(tBody) {
+            Set %response.Status = 400
+            Write {"error": "Invalid JSON payload"}.%ToJSON()
+            Quit
+        }
+        Set tRole = tBody.%Get("role")
+        Set tContent = tBody.%Get("content")
+        Set tTimestamp = tBody.%Get("timestamp")
+        If tTimestamp = "" {
+            Set tTimestamp = $ZDATETIME($ZTIMESTAMP, 3, 1, 3)
+        }
+        If (tRole = "") || (tContent = "") {
+            Set %response.Status = 400
+            Write {"error": "Missing required fields (role, content)"}.%ToJSON()
+            Quit
+        }
+        Set tSC = ##class(ClaimAudit.Data.ChatHistory).SaveMessage(id, tRole, tContent, tTimestamp)
+        If $$$ISOK(tSC) {
+            Write {"status": "success"}.%ToJSON()
+        } Else {
+            Set %response.Status = 500
+            Write {"error": "Failed to save chat message", "details": ($system.Status.GetErrorText(tSC))}.%ToJSON()
+        }
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+        Set %response.Status = 500
         Write {"error": (ex.DisplayString())}.%ToJSON()
     }
     Quit tSC
@@ -1272,7 +1395,7 @@ ClassMethod GetLedger() As %Status
 
         Set tRS = ##class(%SQL.Statement).%ExecDirect(,
         "SELECT T.Key AS taskKey, T.status, T.priority, T.focus, T._lastUpdated, "_
-        "CR.patient, CR.disposition, CR.total "_
+        "CR.patient, CR.disposition, CR.total, CR.extension "_
         "FROM HSFHIR_X0001_S.Task T "_
         "LEFT JOIN HSFHIR_X0001_S.ClaimResponse CR ON T.focus = CR.request "_
         "WHERE T.status IN (?,?) OR (T.status = ? AND T.priority = ?) "_
@@ -1344,32 +1467,23 @@ ClassMethod GetLedger() As %Status
                 }
             }
 
-            // AuthorizedBy from ClaimResponse extensions — single DispatchRequest per item
-            // (simpler than storing authorized-by in SQL)
+            // AuthorizedBy from ClaimResponse extensions — parsed directly from the JOIN'd SQL row
             Set tAuthorizedBy = "Auditor"
-            Set tCRKey = "ClaimResponse/" _ tClaimId
-            Try {
-                Set tCRKeyRS = ##class(%SQL.Statement).%ExecDirect(,
-                "SELECT Key FROM HSFHIR_X0001_S.ClaimResponse WHERE request = ?", tFocus)
-                If tCRKeyRS.%Next() {
-                    Set tCRId = $Piece(tCRKeyRS.%Get("Key"), "/", 2)
-                    Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
-                    Set tReqCR = ##class(HS.FHIRServer.API.Data.Request).%New()
-                    Set tReqCR.RequestMethod = "GET"
-                    Set tReqCR.RequestPath = "/ClaimResponse/" _ tCRId
-                    Set tReqCR.Interaction = "read"
-                    Set tRespCR = ##class(HS.FHIRServer.API.Data.Response).%New()
-                    Do tService.DispatchRequest(tReqCR, .tRespCR)
-                    If $IsObject(tRespCR.Json) && $IsObject(tRespCR.Json.extension) {
-                        Set tExtIter = tRespCR.Json.extension.%GetIterator()
+            Set tExtensionStr = tRS.%Get("extension")
+            If tExtensionStr '= "" {
+                Try {
+                    Set tExtJson = ##class(%DynamicAbstractObject).%FromJSON(tExtensionStr)
+                    If $IsObject(tExtJson) {
+                        Set tExtIter = tExtJson.%GetIterator()
                         While tExtIter.%GetNext(.tK, .tExt) {
                             If tExt.url = "https://claimauditai.com/fhir/extension/authorized-by" {
                                 Set tAuthorizedBy = tExt.valueString
+                                Quit
                             }
                         }
                     }
-                }
-            } Catch {}
+                } Catch {}
+            }
 
             Do tArr.%Push({
                 "id": (tTaskId),

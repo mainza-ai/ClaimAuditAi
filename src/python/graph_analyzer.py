@@ -192,18 +192,28 @@ def check_collusion_network(patient_id: str, provider_npi: str, service_date: st
                             f"({prov2_addr}). Geographically impossible same-day treatments."
                         )
 
-        # Verification 3: Referral Ring Cycle Analysis (bounded for performance)
+        # Verification 3: Referral Ring Cycle Analysis (undirected bipartite cycle detection)
         try:
-            cycles = list(nx.simple_cycles(G, length_bound=5))
+            undirected_G = nx.Graph(G)
+            cycles = nx.cycle_basis(undirected_G)
         except Exception:
             cycles = []
         for cycle in cycles:
-            if provider_npi in cycle or patient_id in cycle:
-                flagged = True
-                findings.append(
-                    f"Structured steering circle identified: Node belongs to a relational cycle "
-                    f"({ ' -> '.join(cycle) }). Suspicion of systematic kickback/referral loop."
-                )
+            # Bipartite cycles must contain at least 4 nodes (alternating Patient-Provider)
+            if len(cycle) >= 4 and (provider_npi in cycle or patient_id in cycle):
+                providers_in_cycle = [n for n in cycle if G.nodes[n].get("type") == "provider"]
+                patients_in_cycle = [n for n in cycle if G.nodes[n].get("type") == "patient"]
+                
+                # A steering cycle requires at least 2 distinct providers sharing patients
+                if len(providers_in_cycle) > 1:
+                    flagged = True
+                    cycle_str = " - ".join(cycle)
+                    findings.append(
+                        f"Structured steering circle identified (undirected collusion loop): "
+                        f"Shared patient loop between providers [{', '.join(providers_in_cycle)}] "
+                        f"and patients [{', '.join(patients_in_cycle)}]. "
+                        f"Relational loop: {cycle_str}. Suspicion of systematic patient steering or collusion."
+                    )
 
         reason = ""
         if flagged:

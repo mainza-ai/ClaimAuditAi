@@ -16,6 +16,19 @@ export function TopBar() {
   const [seedElapsed, setSeedElapsed] = useState(0);
   const roleRef = useRef<HTMLDivElement>(null);
 
+  const seed = useMutation({
+    mutationFn: loadSampleData,
+    onSuccess: () => {
+      setSeedDone(true);
+      setTimeout(() => setSeedDone(false), 3000);
+      queryClient.invalidateQueries({ queryKey: ['claims'], refetchType: 'active' });
+      queryClient.invalidateQueries({ queryKey: ['stats'], refetchType: 'active' });
+      queryClient.invalidateQueries({ queryKey: ['stats', 'trends'], refetchType: 'active' });
+      queryClient.invalidateQueries({ queryKey: ['ledger'] });
+      queryClient.invalidateQueries({ queryKey: ['graph'] });
+    },
+  });
+
   useEffect(() => {
     let timer: ReturnType<typeof setInterval>;
     if (seed.isPending) {
@@ -36,19 +49,6 @@ export function TopBar() {
     }
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [roleOpen]);
-
-  const seed = useMutation({
-    mutationFn: loadSampleData,
-    onSuccess: () => {
-      setSeedDone(true);
-      setTimeout(() => setSeedDone(false), 3000);
-      queryClient.invalidateQueries({ queryKey: ['claims'], refetchType: 'active' });
-      queryClient.invalidateQueries({ queryKey: ['stats'], refetchType: 'active' });
-      queryClient.invalidateQueries({ queryKey: ['stats', 'trends'], refetchType: 'active' });
-      queryClient.invalidateQueries({ queryKey: ['ledger'] });
-      queryClient.invalidateQueries({ queryKey: ['graph'] });
-    },
-  });
 
   return (
     <header

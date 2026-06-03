@@ -56,3 +56,13 @@ export async function* streamChatMessage(
     }
   }
 }
+
+export const getChatHistory = (claimId: string) =>
+  apiClient
+    .get<ChatMessage[]>(`/chat/history/${claimId}`)
+    .then((r) => r.data);
+
+export const saveChatMessage = (claimId: string, message: ChatMessage) =>
+  apiClient
+    .post(`/chat/history/${claimId}`, message)
+    .then((r) => r.data);

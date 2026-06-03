@@ -115,3 +115,67 @@ class TestListOllamaModels:
     def test_strips_v1_from_url(self):
         result = llm_router.list_ollama_models("http://localhost:11434/v1")
         assert isinstance(result, list)
+
+
+class TestRateLimiterAndCache:
+    def test_rate_limiting(self, monkeypatch):
+        # Set limit to 2 per min
+        monkeypatch.setattr(llm_router, "_load_settings", lambda: {"rateLimitPerMin": 2})
+        llm_router._request_timestamps.clear()
+        
+        # 1st and 2nd requests should pass
+        llm_router._check_rate_limit()
+        llm_router._check_rate_limit()
+        
+        # 3rd should fail
+        with pytest.raises(RuntimeError, match="Rate limit exceeded"):
+            llm_router._check_rate_limit()
+
+    def test_response_caching(self, monkeypatch):
+        # Set cache TTL and rate limits high
+        monkeypatch.setattr(llm_router, "_load_settings", lambda: {"cacheTTL": 10, "rateLimitPerMin": 10})
+        
+        # Mock client chat completions
+        class MockChoices:
+            def __init__(self, content):
+                class Msg:
+                    def __init__(self, c):
+                        self.content = c
+                self.message = Msg(content)
+        class MockResponse:
+            def __init__(self, content):
+                self.choices = [MockChoices(content)]
+        
+        call_count = 0
+        def mock_create(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return MockResponse(f"response_{call_count}")
+            
+        class MockCompletions:
+            def create(self, *args, **kwargs):
+                return mock_create(*args, **kwargs)
+        class MockClient:
+            def __init__(self):
+                self.chat = type('MockChat', (object,), {'completions': MockCompletions()})()
+                
+        monkeypatch.setattr(llm_router, "_get_client_and_model", lambda: (MockClient(), "test-model"))
+        
+        llm_router.invalidate_llm_cache()
+        llm_router._request_timestamps.clear()
+        
+        # First call should invoke client
+        res1 = llm_router.chat("sys", "[]")
+        assert res1 == "response_1"
+        assert call_count == 1
+        
+        # Second call should hit cache and NOT invoke client
+        res2 = llm_router.chat("sys", "[]")
+        assert res2 == "response_1"
+        assert call_count == 1
+        
+        # Invalidate cache and call again — should invoke client
+        llm_router.invalidate_llm_cache()
+        res3 = llm_router.chat("sys", "[]")
+        assert res3 == "response_2"
+        assert call_count == 2

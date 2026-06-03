@@ -58,9 +58,18 @@ else:
         pass
 
 def normalize_features(features, mean, std):
-    """Normalize using standard Z-score scaling."""
+    """Normalize continuous features using Z-score, and scale categorical SpecialtyCode by a fixed constant."""
     epsilon = 1e-8
-    return (features - mean) / (std + epsilon)
+    normalized = np.copy(features)
+    
+    # Scale continuous variables
+    for i in [0, 1, 3, 4]:
+        normalized[:, i] = (features[:, i] - mean[i]) / (std[i] + epsilon)
+        
+    # SpecialtyCode is categorical. Scale to a stable [0, 1] range without Z-score distortion.
+    normalized[:, 2] = features[:, 2] / 100.0
+    
+    return normalized
 
 def train_autoencoder() -> str:
     """Load historical ExplanationOfBenefit projected claims and train the Autoencoder model natively."""

@@ -16,6 +16,8 @@ export function AuditAssistant() {
   const togglePanel = useChatStore((s) => s.togglePanel);
   const getHistory = useChatStore((s) => s.getHistory);
   const addMessage = useChatStore((s) => s.addMessage);
+  const syncMessage = useChatStore((s) => s.syncMessage);
+  const fetchHistory = useChatStore((s) => s.fetchHistory);
   const setLoading = useChatStore((s) => s.setLoading);
   const isLoading = useChatStore((s) => s.isLoading);
   const clearHistory = useChatStore((s) => s.clearHistory);
@@ -54,6 +56,12 @@ export function AuditAssistant() {
     : null;
 
   useEffect(() => {
+    if (isOpen && effectiveClaimId) {
+      fetchHistory(effectiveClaimId);
+    }
+  }, [isOpen, effectiveClaimId, fetchHistory]);
+
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [history]);
 
@@ -67,6 +75,7 @@ export function AuditAssistant() {
     };
 
     addMessage(effectiveClaimId, userMsg);
+    syncMessage(effectiveClaimId, userMsg); // Sync user message immediately
     setLoading(true);
 
     // Add placeholder for streaming response
@@ -77,9 +86,9 @@ export function AuditAssistant() {
     };
     addMessage(effectiveClaimId, assistantPlaceholder);
 
+    let fullContent = '';
     try {
       const updatedHistory = [...history, userMsg];
-      let fullContent = '';
 
       for await (const chunk of streamChatMessage(updatedHistory, claimContext)) {
         fullContent += chunk;
@@ -91,17 +100,34 @@ export function AuditAssistant() {
           useChatStore.setState({ histories: { ...histories, [effectiveClaimId]: current } });
         }
       }
+
+      // Sync final response to server
+      const finalAssistantMsg: ChatMessage = {
+        role: 'assistant',
+        content: fullContent,
+        timestamp: new Date().toISOString(),
+      };
+      syncMessage(effectiveClaimId, finalAssistantMsg);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Connection error';
       const histories = useChatStore.getState().histories;
       const current = [...(histories[effectiveClaimId] || [])];
+      const errorMsgContent = message ? `Error: ${message}` : 'Sorry, I encountered an error reaching the LLM provider.';
       if (current.length > 0) {
         current[current.length - 1] = {
           ...current[current.length - 1],
-          content: message ? `Error: ${message}` : 'Sorry, I encountered an error reaching the LLM provider.',
+          content: errorMsgContent,
         };
         useChatStore.setState({ histories: { ...histories, [effectiveClaimId]: current } });
       }
+
+      // Sync error response to server as well so it persists
+      const finalErrorMsg: ChatMessage = {
+        role: 'assistant',
+        content: errorMsgContent,
+        timestamp: new Date().toISOString(),
+      };
+      syncMessage(effectiveClaimId, finalErrorMsg);
     } finally {
       setLoading(false);
     }

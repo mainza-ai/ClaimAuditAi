@@ -12,6 +12,14 @@ logger = logging.getLogger(__name__)
 _client_cache = {}
 _cache_lock = __import__('threading').Lock()
 
+# Thread-safe rate limiter state
+_request_timestamps = []
+_request_lock = __import__('threading').Lock()
+
+# Thread-safe LLM response cache
+_response_cache = {}
+_response_cache_lock = __import__('threading').Lock()
+
 RETRY_COUNT = 3
 RETRY_BASE_DELAY = 1.0  # seconds
 
@@ -27,6 +35,18 @@ def _load_settings() -> dict:
         except Exception:
             pass
     return {}
+
+def _check_rate_limit():
+    settings = _load_settings()
+    rate_limit = int(settings.get("rateLimitPerMin", 120))
+    now = time.time()
+    with _request_lock:
+        global _request_timestamps
+        # Retain only timestamps from the last 60 seconds
+        _request_timestamps = [t for t in _request_timestamps if now - t < 60.0]
+        if len(_request_timestamps) >= rate_limit:
+            raise RuntimeError(f"Rate limit exceeded: maximum {rate_limit} requests per minute allowed.")
+        _request_timestamps.append(now)
 
 def _get_client_and_model():
     settings = _load_settings()
@@ -76,6 +96,23 @@ def _create_client(provider: str, settings: dict):
 
 
 def chat(system_prompt: str, messages_json: str, max_tokens: int = 1024) -> str:
+    settings = _load_settings()
+    cache_ttl = int(settings.get("cacheTTL", 86400))
+    cache_key = (system_prompt, messages_json, max_tokens)
+
+    # 1. Lookup in response cache
+    with _response_cache_lock:
+        if cache_key in _response_cache:
+            cached_data = _response_cache[cache_key]
+            if time.time() - cached_data["timestamp"] < cache_ttl:
+                logger.info("LLM cache hit.")
+                return cached_data["response"]
+            else:
+                del _response_cache[cache_key]
+
+    # 2. Check rate limit before executing request
+    _check_rate_limit()
+
     last_error = None
     for attempt in range(RETRY_COUNT + 1):
         try:
@@ -94,7 +131,15 @@ def chat(system_prompt: str, messages_json: str, max_tokens: int = 1024) -> str:
             )
             if not response.choices:
                 raise ValueError("LLM returned empty response — no choices available")
-            return clean_non_bmp(response.choices[0].message.content)
+            content = clean_non_bmp(response.choices[0].message.content)
+
+            # 3. Store response in cache
+            with _response_cache_lock:
+                _response_cache[cache_key] = {
+                    "response": content,
+                    "timestamp": time.time()
+                }
+            return content
         except Exception as e:
             last_error = e
             if attempt < RETRY_COUNT:
@@ -106,10 +151,16 @@ def chat(system_prompt: str, messages_json: str, max_tokens: int = 1024) -> str:
     raise RuntimeError(f"LLM request failed after {RETRY_COUNT + 1} attempts: {last_error}")
 
 
+def invalidate_llm_cache():
+    """Clear cached LLM completions."""
+    with _response_cache_lock:
+        _response_cache.clear()
+
 def invalidate_client_cache():
-    """Clear cached LLM clients — call after settings change."""
+    """Clear cached LLM clients and completions — call after settings change."""
     with _cache_lock:
         _client_cache.clear()
+    invalidate_llm_cache()
 
 def generate(prompt: str, max_tokens: int = 2048) -> str:
     return chat(
@@ -122,6 +173,12 @@ def generate(prompt: str, max_tokens: int = 2048) -> str:
 def chat_stream(system_prompt: str, messages_json: str, max_tokens: int = 1024):
     """Generator that yields streaming chunks via OpenAI SSE for IRIS SSE passthrough.
     Each yielded string is a complete SSE 'data: ...' line."""
+    try:
+        _check_rate_limit()
+    except Exception as e:
+        yield f"\n\n[Streaming error: {str(e)}]"
+        return
+
     client, model = _get_client_and_model()
     try:
         messages_list = json.loads(messages_json)

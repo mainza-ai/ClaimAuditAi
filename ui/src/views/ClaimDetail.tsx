@@ -73,9 +73,9 @@ export function ClaimDetail() {
     navigate('/queue');
   };
 
-  const userCanApprove = PERMISSIONS.canApprove(activeRole) && !claim?.escalated;
+  const userCanApprove = PERMISSIONS.canApprove(activeRole);
   const userCanEscalate = PERMISSIONS.canEscalate(activeRole) && !claim?.escalated;
-  const userCanReject = PERMISSIONS.canReject(activeRole) && !claim?.escalated;
+  const userCanReject = PERMISSIONS.canReject(activeRole);
   const canTakeAction = userCanApprove || userCanEscalate || userCanReject;
 
   if (isLoading && !claim) {

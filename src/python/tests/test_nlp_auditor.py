@@ -12,6 +12,20 @@ def mock_iris_not_running(monkeypatch):
     monkeypatch.setattr(nlp_auditor, "iris", None)
 
 
+@pytest.fixture(autouse=True)
+def mock_sentence_transformer(monkeypatch):
+    class MockSentenceTransformer:
+        def __init__(self, model_name, cache_folder=None, **kwargs):
+            self.model_name = model_name
+            self.cache_folder = cache_folder
+        def encode(self, text):
+            if not text:
+                return [0.0] * 384
+            val = float(sum(ord(c) for c in text) % 1000) / 1000.0
+            return [val] * 384
+    monkeypatch.setattr("nlp_auditor.SentenceTransformer", MockSentenceTransformer)
+
+
 class TestVectorizeText:
     def test_returns_list(self):
         result = nlp_auditor.vectorize_text("Routine physical examination")

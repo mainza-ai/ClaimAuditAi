@@ -81,6 +81,28 @@ class TestCheckCollusionNetwork:
         assert isinstance(result["flagged"], bool)
         assert result["reason"] == ""
 
+    def test_detects_undirected_cycle(self):
+        import networkx as nx
+        from unittest.mock import patch
+        
+        test_G = nx.MultiDiGraph()
+        test_G.add_node("Pat_A", type="patient")
+        test_G.add_node("Pat_B", type="patient")
+        test_G.add_node("NPI_A", type="provider", address="100 Main St")
+        test_G.add_node("NPI_B", type="provider", address="200 Main St")
+        
+        test_G.add_edge("Pat_A", "NPI_A", transaction="claim", amount=100.0, date="2026-05-29")
+        test_G.add_edge("Pat_B", "NPI_A", transaction="claim", amount=100.0, date="2026-05-29")
+        test_G.add_edge("Pat_B", "NPI_B", transaction="claim", amount=100.0, date="2026-05-29")
+        test_G.add_edge("Pat_A", "NPI_B", transaction="claim", amount=100.0, date="2026-05-29")
+        
+        with patch("graph_analyzer.build_relational_graph", return_value=test_G):
+            # Pass patch to import module context safely
+            with patch("graph_analyzer._get_cached_graph", return_value=test_G):
+                result = graph_analyzer.check_collusion_network("Pat_A", "NPI_A", "2026-05-29")
+                assert result["flagged"] is True
+                assert any("undirected collusion loop" in f for f in result["findings"])
+
 
 class TestExportGraphForUI:
     def test_returns_json_string(self):

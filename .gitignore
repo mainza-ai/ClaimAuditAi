@@ -44,3 +44,6 @@ claimauditai-wiki/.obsidian/
 # Assets (large files)
 assets/
 
+# Vitest Coverage
+ui/coverage/
+

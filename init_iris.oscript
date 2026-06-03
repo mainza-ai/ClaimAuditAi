@@ -7,6 +7,15 @@ do ##class(HS.FHIRServer.Installer).InstallNamespace()
 set tSC = ##class(HS.FHIRServer.Installer).InstallInstance("/interop/fhir/r4", "ClaimAudit.FHIR.InteractionsStrategy", "hl7.fhir.r4.core@4.0.1")
 if tSC {
     write "FHIR server created", !
+    // Secure the FHIR CSP application by tightening MatchRoles
+    zn "%SYS"
+    if ##class(Security.Applications).Exists("/interop/fhir/r4") {
+        do ##class(Security.Applications).Get("/interop/fhir/r4", .prop)
+        set prop("MatchRoles") = ":%DB_INTEROP-CODE:%DB_INTEROP-DATA"
+        do ##class(Security.Applications).Modify("/interop/fhir/r4", .prop)
+        write "FHIR server application secured", !
+    }
+    zn "INTEROP"
 } else {
     write "FHIR server setup: ", $SYSTEM.Status.GetOneErrorText(tSC), !
 }

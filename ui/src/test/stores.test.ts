@@ -53,19 +53,19 @@ describe('useChatStore', () => {
   });
 
   it('should add messages to history', () => {
-    useChatStore.getState().addMessage('claim-123', { role: 'user', content: 'hello' });
+    useChatStore.getState().addMessage('claim-123', { role: 'user', content: 'hello', timestamp: '2026-06-03T00:00:00.000Z' });
     let history = useChatStore.getState().getHistory('claim-123');
     expect(history).toHaveLength(1);
-    expect(history[0]).toEqual({ role: 'user', content: 'hello' });
+    expect(history[0]).toEqual({ role: 'user', content: 'hello', timestamp: '2026-06-03T00:00:00.000Z' });
 
-    useChatStore.getState().addMessage('claim-123', { role: 'assistant', content: 'hi there' });
+    useChatStore.getState().addMessage('claim-123', { role: 'assistant', content: 'hi there', timestamp: '2026-06-03T00:00:01.000Z' });
     history = useChatStore.getState().getHistory('claim-123');
     expect(history).toHaveLength(2);
     expect(history[1].content).toBe('hi there');
   });
 
   it('should clear history correctly', () => {
-    useChatStore.getState().addMessage('claim-123', { role: 'user', content: 'hello' });
+    useChatStore.getState().addMessage('claim-123', { role: 'user', content: 'hello', timestamp: '2026-06-03T00:00:00.000Z' });
     useChatStore.getState().clearHistory('claim-123');
     const history = useChatStore.getState().getHistory('claim-123');
     expect(history).toEqual([]);

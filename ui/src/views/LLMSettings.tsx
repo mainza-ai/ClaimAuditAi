@@ -12,6 +12,8 @@ interface LLMSettingsData {
   ollamaBaseUrl: string;
   ollamaModel: string;
   openaiModel: string;
+  rateLimitPerMin?: number;
+  cacheTTL?: number;
 }
 
 export function LLMSettings() {
@@ -30,6 +32,8 @@ export function LLMSettings() {
   const [ollamaModel, setOllamaModel] = useState('');
   const [openaiModel, setOpenaiModel] = useState('gpt-4');
   const [openaiKey, setOpenaiKey] = useState('');
+  const [rateLimitPerMin, setRateLimitPerMin] = useState(120);
+  const [cacheTTL, setCacheTTL] = useState(86400);
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
   const [ollamaStatus, setOllamaStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle');
   const [dirty, setDirty] = useState(false);
@@ -42,6 +46,8 @@ export function LLMSettings() {
       setOllamaBaseUrl(settings.ollamaBaseUrl || 'http://localhost:11434');
       setOllamaModel(settings.ollamaModel || '');
       setOpenaiModel(settings.openaiModel || 'gpt-4');
+      setRateLimitPerMin(settings.rateLimitPerMin !== undefined ? settings.rateLimitPerMin : 120);
+      setCacheTTL(settings.cacheTTL !== undefined ? settings.cacheTTL : 86400);
     }
   }, [settings]);
 
@@ -75,7 +81,11 @@ export function LLMSettings() {
 
   function handleSave() {
     setDirty(false);
-    const payload: Record<string, unknown> = { provider };
+    const payload: Record<string, unknown> = {
+      provider,
+      rateLimitPerMin: Number(rateLimitPerMin),
+      cacheTTL: Number(cacheTTL),
+    };
     if (provider === 'nvidia') {
       payload.nvidiaModel = nvidiaModel;
       payload.nvidiaBaseUrl = nvidiaBaseUrl;
@@ -265,6 +275,41 @@ export function LLMSettings() {
           </div>
         </div>
       )}
+
+      <div className="card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+          Performance & Caching
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+          <div>
+            <label style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>
+              Rate Limit (Req/Min)
+            </label>
+            <input
+              type="number"
+              value={rateLimitPerMin}
+              onChange={e => { setRateLimitPerMin(Number(e.target.value)); setDirty(true); }}
+              className="input"
+              min={1}
+            />
+          </div>
+          <div>
+            <label style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>
+              Cache TTL (Seconds)
+            </label>
+            <input
+              type="number"
+              value={cacheTTL}
+              onChange={e => { setCacheTTL(Number(e.target.value)); setDirty(true); }}
+              className="input"
+              min={0}
+            />
+          </div>
+        </div>
+        <p style={{ margin: 0, fontSize: 11, color: 'var(--text-tertiary)' }}>
+          Rate limit enforces local request throttling to avoid external API limits. Caching avoids duplicate queries and reduces costs. Set Cache TTL to 0 to disable caching.
+        </p>
+      </div>
 
       <button
         onClick={handleSave}

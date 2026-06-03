@@ -38,6 +38,7 @@ export interface SystemStats {
   modelStatus: 'healthy' | 'degraded' | 'offline';
   leakageRate?: number;
   riskDistribution?: { level: string; count: number }[];
+  tierDistribution?: { tier: string; count: number }[];
   dailyInterceptedCounts?: { date: string; count: number }[];
 }
 
