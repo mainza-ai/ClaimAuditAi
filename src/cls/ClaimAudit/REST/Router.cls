@@ -49,6 +49,7 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
     <Route Url="/system/users" Method="POST" Call="CreateUser"/>
     <Route Url="/system/users/:username" Method="PUT" Call="UpdateUser"/>
     <Route Url="/system/users/:username" Method="DELETE" Call="DeleteUser"/>
+    <Route Url="/system/backup" Method="GET" Call="BackupRepository"/>
     </Routes>
 }
 
@@ -2054,6 +2055,65 @@ ClassMethod DeleteUser(username As %String) As %Status
         Do ..AdminLog("user-deleted", "Deleted user " _ username)
 
         Write {"success": true, "username": (username)}.%ToJSON()
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+        Write {"error": (ex.DisplayString())}.%ToJSON()
+    }
+    Quit tSC
+}
+
+/// Export the full FHIR repository as a downloadable transaction Bundle (backup)
+ClassMethod BackupRepository() As %Status
+{
+    If '##class(ClaimAudit.REST.Auth).RequireAuth("Admin") Quit $$$OK
+    Set tSC = $$$OK
+    Try {
+        Set %response.ContentType = "application/fhir+json"
+        Set %response.Headers("Content-Disposition") = "attachment; filename=claimaudit_backup_" _ $ZDate($PIECE($HOROLOG, ",", 1), 3) _ ".json"
+
+        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
+        Set tBundle = {
+            "resourceType": "Bundle",
+            "type": "transaction",
+            "timestamp": ($ZDateTime($ZTIMESTAMP, 3, 1)),
+            "entry": []
+        }
+
+        // Export all FHIR resource types from the repository
+        Set tResourceTypes = $LISTBUILD("Claim", "ClaimResponse", "Patient", "Task", "CommunicationRequest", "DocumentReference")
+        Set tCount = 0
+        For tI = 1:1:$LISTLENGTH(tResourceTypes) {
+            Set tResType = $LISTGET(tResourceTypes, tI)
+            Set tRS = ##class(%SQL.Statement).%ExecDirect(,
+            "SELECT Key FROM HSFHIR_X0001_S." _ tResType)
+            While tRS.%Next() {
+                Set tKey = tRS.%Get("Key")
+                Set tId = $Piece(tKey, "/", 2)
+                Try {
+                    Set tReq = ##class(HS.FHIRServer.API.Data.Request).%New()
+                    Set tReq.RequestMethod = "GET"
+                    Set tReq.RequestPath = "/" _ tResType _ "/" _ tId
+                    Set tReq.Interaction = "read"
+                    Set tResp = ##class(HS.FHIRServer.API.Data.Response).%New()
+                    Do tService.DispatchRequest(tReq, .tResp)
+                    If $IsObject(tResp.Json) {
+                        Do tBundle.entry.%Push({
+                            "fullUrl": ("urn:uuid:" _ $ZCVT(tResType _ "-" _ tId, "L")),
+                            "resource": (tResp.Json),
+                            "request": {
+                                "method": "POST",
+                                "url": (tResType)
+                            }
+                        })
+                        Set tCount = tCount + 1
+                    }
+                } Catch {}
+            }
+        }
+
+        Do ..AdminLog("backup", "Repository exported — " _ tCount _ " FHIR resources.")
+
+        Write tBundle.%ToJSON()
     } Catch ex {
         Set tSC = ex.AsStatus()
         Write {"error": (ex.DisplayString())}.%ToJSON()

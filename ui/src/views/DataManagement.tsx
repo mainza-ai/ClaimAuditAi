@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../api/client';
 import { useRoleStore } from '../store/roleStore';
 import { PERMISSIONS } from '../utils/permissions';
-import { Trash2, Database, Upload, RefreshCw, CheckCircle, AlertTriangle, FileJson, Cpu, Activity, Server, Brain, Bot, GitBranch } from 'lucide-react';
+import { Trash2, Database, Upload, RefreshCw, CheckCircle, AlertTriangle, FileJson, Cpu, Activity, Server, Brain, Bot, GitBranch, Download } from 'lucide-react';
 
 interface DataStatus {
   claimResponses: number;
@@ -169,6 +169,34 @@ export function DataManagement() {
             Error: {(retrainModel.error as Error)?.message || 'Retraining failed'}
           </p>
         )}
+      </div>
+
+      <div className="card" style={{ padding: 20 }}>
+        <h2 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>Backup Repository</h2>
+        <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--text-secondary)' }}>
+          Download the full FHIR repository as a transaction Bundle. Use the upload section above to restore from a backup file.
+        </p>
+        <button
+          onClick={() => {
+            const token = localStorage.getItem('claimauditai_token');
+            if (!token) return;
+            fetch('/api/system/backup', {
+              headers: { Authorization: `Bearer ${token}` }
+            }).then(r => r.blob()).then(blob => {
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = 'claimaudit_backup.json';
+              a.click();
+              URL.revokeObjectURL(url);
+            }).catch(err => console.error('Backup failed:', err));
+          }}
+          className="btn-primary"
+          style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+        >
+          <Download size={15} />
+          Download Backup
+        </button>
       </div>
 
       <div className="card" style={{ padding: 20 }}>
