@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../api/client';
 import { useThemeStore } from '../store/themeStore';
 import type { GraphData, GraphInsight } from '../types/graph';
-import { AlertTriangle, Network, Users, Building2, ZoomIn, ZoomOut, Maximize, RefreshCw, Download } from 'lucide-react';
+import { AlertTriangle, Network, Users, Building2, ZoomIn, ZoomOut, Maximize, RefreshCw, Download, ShieldCheck } from 'lucide-react';
 
 const SEVERITY_COLORS: Record<string, string> = {
   critical: 'var(--color-danger)',
@@ -278,7 +278,11 @@ export function GraphView() {
           </h1>
           {graph && (
             <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-tertiary)' }}>
-              {graph.nodeCount} entities \u00b7 {graph.edgeCount} transactions \u00b7 {graph.insightCount} anomalies detected
+              {graph.nodeCount} entities \u00b7 {graph.edgeCount} transactions \u00b7 {graph.insightCount} anomalies{graph.insightCount === 0 && graph.edgeCount > 0 && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--color-success)', marginLeft: 6, fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: 11 }}>
+                  <ShieldCheck size={12} /> All clear
+                </span>
+              )}
             </p>
           )}
         </div>

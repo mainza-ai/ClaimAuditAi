@@ -2119,7 +2119,7 @@ ClassMethod GetCapabilityStatement() As %Status
         Write {
             "resourceType": "CapabilityStatement",
             "status": "active",
-            "date": "2026-05-31",
+            "date": ($ZDate($PIECE($HOROLOG, ",", 1), 3)),
             "kind": "instance",
             "fhirVersion": "4.0.1",
             "format": ["json"],
