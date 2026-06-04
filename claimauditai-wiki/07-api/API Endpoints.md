@@ -6,7 +6,9 @@
 
 To authenticate and obtain a JWT token, use the `/api/auth/login` public endpoint with valid credentials:
 - **Admin:** `admin` / `ClaimAuditAdmin2026!` (full system access, seed/clear data)
-- **Auditor:** `auditor` / `AuditReview2026!` (review holds, approve/reject/escalate)
+- **Auditor:** `auditor` / `AuditReview2026!` (review holds, escalate to director)
+- **Specialist:** `specialist` / `ReviewSpec2026!` (review escalated claims, escalate further)
+- **Director:** `director` / `DirectorAudit2026!` (resolve escalated holds — approve/reject)
 - **Viewer:** `viewer` / `ViewDash2026!` (read-only dashboard access)
 
 Credentials are stored as HMAC-SHA256 hashes in INTEROP namespace globals (`^ClaimAuditAI("Users",...)`) — no namespace switching or `%SYS` access required. See [[Security Users Validate Crash]] for the authentication architecture.
@@ -41,12 +43,12 @@ Standard SMART on FHIR token validation also supports federated OpenID Connect (
 | `POST` | `/api/auth/introspect` | Public | SMART on FHIR token validation (RFC 7662) | `{"active": true, "sub": "...", "roles": [...], ...}` |
 | `GET` | `/api/stats` | Protected | System metrics | `{"held": N, "approvedToday": N, "interceptedTotal": N, "totalValueHeld": N, "modelStatus": "...", "leakageRate": N, "riskDistribution": [...], "dailyInterceptedCounts": [...]}` |
 | `GET` | `/api/stats/trends` | Protected | 7-day trend data | `[{"day": "Mon", "processed": N, "held": N, "approved": N, "leakagePrevented": N}, ...]` |
-| `GET` | `/api/claims/held` | Protected | Held (queued) claims | `[{"id": "...", "patientId": "...", "patientName": "...", "cptCode": "...", "icdCode": "...", "totalAmount": N, "riskScore": N, "riskLevel": "critical|high|medium", "escalated": 0|1}, ...]` |
-| `GET` | `/api/claims/:id` | Protected | Claim detail | Full claim with `disposition`, `tierResults`, `taskId`, `communicationRequestId`, `escalated`, `linkedClinicalNotes` |
-| `POST` | `/api/claims/:id/approve` | Auditor+ | Approve a held claim (writes to ledger, completes task) | Accepts `{"authorizedBy": "...", "rationaleSummary": "..."}` |
-| `POST` | `/api/claims/:id/escalate` | Auditor+ | Escalate to director (sets priority=stat) | Accepts `{"authorizedBy": "...", "rationaleSummary": "..."}` |
-| `POST` | `/api/claims/:id/reject` | Auditor+ | Reject a claim (outcome=error, cancels task) | Accepts `{"authorizedBy": "...", "rationaleSummary": "..."}` |
-| `GET` | `/api/ledger` | Protected | Override audit ledger log | `[{"id": "...", "claimId": "...", "action": "approved|escalated|rejected", "authorizedBy": "...", "timestamp": "...", "reason": "...", "amount": N}]` |
+| `GET` | `/api/claims/held` | Protected | Held (queued) claims | `[{"id": "...", "patientId": "...", "patientName": "...", "providerId": "...", "cptCode": "...", "icdCode": "...", "totalAmount": N, "riskScore": N, "riskLevel": "critical|high|medium", "escalated": 0|1, "outcome": "queued|complete|error"}, ...]` |
+| `GET` | `/api/claims/:id` | Protected | Claim detail | Full claim with `disposition`, `tierResults`, `taskId`, `taskStatus`, `taskPriority`, `communicationRequestId`, `escalated`, `outcome`, `actionHistory`, `linkedClinicalNotes`, `providerId` (from Claim) |
+| `POST` | `/api/claims/:id/approve` | Director+ | Approve a held claim (writes to ledger, completes task) | Accepts `{"authorizedBy": "...", "rationaleSummary": "..."}` |
+| `POST` | `/api/claims/:id/escalate` | Auditor+ | Escalate to director (sets task priority=stat in single step) | Accepts `{"authorizedBy": "...", "rationaleSummary": "..."}` |
+| `POST` | `/api/claims/:id/reject` | Director+ | Reject a claim (outcome=error, cancels task) | Accepts `{"authorizedBy": "...", "rationaleSummary": "..."}` |
+| `GET` | `/api/ledger` | Protected | Override audit ledger log (includes escalated tasks) | `[{"id": "...", "claimId": "...", "action": "approved|escalated|rejected", "authorizedBy": "...", "timestamp": "...", "reason": "...", "amount": N, "providerId": "..."}]` |
 | `POST` | `/api/chat` | Protected | AI audit assistant chat | `{"response": "..."}` |
 | `POST` | `/api/samples/load` | Admin | Seed FHIR sample data | `{"status": "success", "message": "..."}` |
 | `GET` | `/api/graph` | Protected | Collusion network graph | `{"nodes": [...], "edges": [...], "insights": [...], "nodeCount": N, "edgeCount": N, "insightCount": N}` |
@@ -97,9 +99,13 @@ The `GET /api/stats` endpoint returns:
 }
 ```
 
-- `approvedToday` is scoped to the current date via `SUBSTRING(_lastUpdated,1,10) = today`
+- `approvedToday` is scoped to the current date via `SUBSTRING(_lastUpdated,1,10) = today` (dates derived from `$ZTIMESTAMP` UTC for accuracy across timezones).
 - `riskDistribution` is derived from the `risk-score` ClaimResponse extension value (not disposition text). Thresholds: critical≥0.86 (all 3 AI tiers flagging), high≥0.50 (2 tiers), else medium (default). All three endpoints (GetHeldClaims, GetStats, GetClaimDetail) use the same classification logic.
-- `dailyInterceptedCounts` covers the trailing 7 days
+- `dailyInterceptedCounts` covers the trailing 7 days (dates derived from `$ZTIMESTAMP` UTC).
+
+## Timestamps & Timezones
+
+All timestamps returned by the API use UTC (`$ZTIMESTAMP`) with ISO 8601 `Z` suffix (e.g., `"2026-06-04T16:00:00Z"`). The UI formats these in the browser's local timezone via `date-fns` and `toLocaleString()`. Date-range SQL comparisons (`SUBSTRING(_lastUpdated,1,10) = date`) also derive the comparison date from `$ZTIMESTAMP` to prevent off-by-one-day errors at timezone boundaries.
 
 ## Model Performance
 

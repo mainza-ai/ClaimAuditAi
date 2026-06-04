@@ -1,10 +1,10 @@
 # Claim Actions Silently Fail / Return 404
 
-> **Symptom:** Calling `POST /api/claims/:id/approve`, `/reject`, or `/escalate` returns HTTP 404 Not Found, OR returns `{"status":"success"}` but the claim stays in the hold queue.
+> **Symptom:** Calling `POST /api/claims/:id/approve`, `/reject`, or `/escalate` returns HTTP 404 Not Found, OR returns `{"status":"success"}` but the claim stays in the hold queue with no visible effect.
 
 ## Root Causes
 
-There are three independent root causes that can cause claim actions to fail:
+There are five independent root causes that can cause claim actions to fail:
 
 ### 1. Missing Route Entries in UrlMap (Cause of 404)
 
@@ -69,12 +69,26 @@ If '$IsObject(tCRJson.request) {
 Set tRequestRef = tCRJson.request.reference
 ```
 
+### 5. Escalation Produces No Visible Effect (No Badge, No Ledger Entry)
+
+Even when `EscalateClaim()` succeeds (no 404, no PUT failure), the escalation was invisible:
+- **GetHeldClaims** escalation badge checks `Task.priority = "stat"` — but only the second escalation set `priority="stat"`; the first escalation left it at `"urgent"`
+- **GetLedger** ledger query filtered for `(status='ready' AND priority='stat')` — but escalation always moved status from `'ready'` to `'requested'`, making this condition unreachable
+
+**Fix:** `EscalateClaim()` now sets `priority="stat"` on EVERY escalation (single-step to Director). `GetLedger()` matches any task with `priority="stat"` regardless of status.
+
 ## Fix (Complete)
 
 ```objectscript
-// Use ISO 8601 format for all datetime extensions:
-Set tDt = $ZDATE($PIECE($HOROLOG,",",1),3)_"T"_$ZTIME($PIECE($HOROLOG,",",2),1)_"Z"
-// Produces: "2026-05-31T03:28:12Z"
+// Use $ZTIMESTAMP (true UTC) + ISO 8601 for all datetime extensions:
+Set tDt = $ZDATE($PIECE($ZTIMESTAMP,",",1),3)_"T"_$ZTIME($PIECE($ZTIMESTAMP,",",2),1)_"Z"
+// Produces: "2026-06-04T03:28:12Z"
+
+// Escalation now sets stat priority on first escalation:
+Set tTaskJson.priority = "stat"
+
+// Ledger matches escalated tasks by priority alone:
+WHERE T.status IN ('completed','cancelled') OR T.priority = 'stat'
 
 // Use sanitized Practitioner reference:
 Set tTaskJson.owner = {"reference": "Practitioner/auditor", "display": (tAuthorizedBy)}

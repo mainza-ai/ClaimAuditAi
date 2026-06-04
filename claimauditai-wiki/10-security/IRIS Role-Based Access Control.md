@@ -18,10 +18,10 @@ The `/api/*` endpoints validate token signatures (HS256 local, RS256 Keycloak) a
 
 | Role Name | Numeric Level | Inherited Capabilities |
 | :--- | :--- | :--- |
-| **Viewer** | 1 | View claims dashboard and read-only statistics. |
-| **Auditor** | 2 | View the active pended held claim queue, escalate anomalies to specialist. |
-| **Specialist** | 3 | View the collusion graph, execute second-stage overrides, manage ledger. |
-| **Director** | 4 | Resolve escalated pended holds (Approve/Reject), author final ledger override summaries. |
+| **Viewer** | 1 | View claims dashboard and read-only statistics. Cannot perform any claim actions. |
+| **Auditor** | 2 | View the active pended held claim queue, escalate anomalies to Director (single-step with `priority=stat`). Cannot approve or reject. |
+| **Specialist** | 3 | View the collusion graph, receive escalated claims for deeper analysis, escalate further to Director. Can also escalate but cannot approve or reject. |
+| **Director** | 4 | Resolve escalated pended holds — Approve claims (disburse) or Reject claims (deny and cancel). Author final ledger override summaries. |
 | **Admin** | 5 | Manage users (CRUD with HMAC credential hashing), retrain autoencoder models, modify system-wide LLM settings, clear/seed test data, view system health dashboard, download FHIR repository backup, review admin audit log. |
 
 Higher level roles automatically bypass restrictions for lower levels (e.g., a Director or Admin inherits Auditor and Specialist abilities).
