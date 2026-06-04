@@ -19,4 +19,4 @@ The system ensures that:
 - **Access Rule Policy**: Restricts database write permissions to the `/interop/fhir/r4` service account.
 
 ## See Also
-[[API Key Handling]] · [[PHI and LLM Boundary]] · [[IRIS Role-Based Access Control]]
+[[API Key Handling]] · [[PHI and LLM Boundary]] · [[IRIS Role-Based Access Control]] · [[SMART on FHIR with Keycloak OAuth2]]

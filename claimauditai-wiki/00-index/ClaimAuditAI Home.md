@@ -99,6 +99,7 @@ ClaimAuditAI shifts the payment integrity paradigm from retrospective "pay-and-c
 - [[API Key Handling]] — Credentials hygiene and `.env` isolation.
 - [[PHI and LLM Boundary]] — Strict rules on external vectorization and prompts.
 - [[IRIS Role-Based Access Control]] — Securing patientdata schemas and CallIn services.
+- [[SMART on FHIR with Keycloak OAuth2]] — OIDC federated authentication and token signature flows.
 
 ### 📂 11 - Packaging & Deployment
 - [[Deployment Overview]] — Staging configurations for production rollouts.
