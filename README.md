@@ -11,8 +11,8 @@ An autonomous, pre-payment payment integrity agent running natively on InterSyst
 - **Real-Time FHIR Interception:** Claims are audited, pended, and held at the database/middleware layer before persistence, fully supporting both single Claims and batch/transaction Bundles.
 - **Three-Tier AI Engine:** Runs HNSW clinical note NLP vector search, PyTorch reconstruction loss anomaly profiling, and NetworkX collusion cycle graph analysis sequentially under strict timeout and circuit-breaker safeguards.
 - **Atomic Transaction Integrity:** Native FHIR transaction Bundles create hold `ClaimResponse` records, review `Task` resources, and provider `CommunicationRequest` notifications atomically.
-- **Federated Security & Role Hierarchy:** Authenticates via SMART on FHIR tokens supporting symmetric HS256 local HMAC or asymmetric Keycloak RS256 JWKS validation, backed by public key caching and numeric role-hierarchy access controls.
-- **Persistent Chat History:** Persists LLM assistant auditor conversation histories natively in IRIS via custom `ChatHistory` tables.
+- **Federated Security & Role Hierarchy:** Authenticates via SMART on FHIR HS256 JWT tokens, validated against HMAC credential hashes stored in INTEROP globals — no `%SYS` namespace access required. Supports Keycloak RS256 JWKS for federated OIDC. Numeric role hierarchy (Viewer→Auditor→Specialist→Director→Admin) gates all protected endpoints.
+- **Persistent Chat History:** Persists LLM assistant auditor conversation histories natively in IRIS via custom `ChatHistory` tables. Provider-agnostic LLM routing supports NVIDIA, Ollama, and OpenAI backends (openai==2.41.0, httpx>=0.28.1). SSE streaming with 300s nginx timeout.
 - **Tamper-Proof Audit Ledger:** High-precision subscript records (`^ClaimAuditLedger`) provide a reliable, date-indexed audit trail of override decisions.
 - **Interactive Collusion Graphs:** Visualizes provider-patient networks dynamically using Cytoscape.js to identify billing steering syndicates.
 
@@ -57,9 +57,10 @@ The [Interactions.cls](src/cls/ClaimAudit/FHIR/Interactions.cls) class intercept
 
 ### 2. The 3-Tier AI Engine (`tier_orchestrator.py`)
 AI evaluation runs within the database memory space using Embedded Python, running sequentially to ensure thread-safety and database integrity in InterSystems IRIS:
-- **Tier 1 (NLP Similarity):** Cosine similarity between claim descriptions and progress notes is evaluated using sentence-transformers vector indexing in [nlp_auditor.py](src/python/nlp_auditor.py).
-- **Tier 2 (ML Autoencoder Anomaly):** [autoencoder_train.py](src/python/autoencoder_train.py) trains an unsupervised PyTorch Autoencoder to evaluate claim structures. Categorical specialties are scaled stably without Z-score distortion.
-- **Tier 3 (Collusion Networks):** [graph_analyzer.py](src/python/graph_analyzer.py) builds a bipartite patient-provider graph using NetworkX. It maps undirected cycle bases to uncover relational steering rings, address overlaps, and geo-temporal leap impossibilities.
+- **Tier 1 (NLP Similarity):** Cosine similarity between claim descriptions and progress notes via sentence-transformers in [nlp_auditor.py](src/python/nlp_auditor.py). Flags when best_similarity < 0.38 — CPT codes semantically distant from clinical documentation.
+- **Tier 2 (ML Autoencoder Anomaly):** [autoencoder_train.py](src/python/autoencoder_train.py) trains an unsupervised PyTorch Autoencoder (5 input dimensions → 4 bottleneck). Reconstruction loss threshold is `max(95th_percentile, 0.02)` — the 0.02 floor prevents false negatives with homogeneous training data. Requires ≥5 training claims; tier gracefully bypasses (not-flagged) when data is insufficient.
+- **Tier 3 (Collusion Networks):** [graph_analyzer.py](src/python/graph_analyzer.py) builds a MultiDiGraph of patient-provider relationships. Detects address collisions, geo-temporal leaps, and referral ring cycles. Graph cache is invalidated after each claim audit. Exception handler is fail-open — errors flag the claim for review, never silently suppress.
+- **Risk Scoring:** Tier 1 (+0.35) + Tier 2 (+0.35) + Tier 3 (+0.30), capped at 1.0. Score stored as FHIR ClaimResponse extension — the single source of truth read by all endpoints. Classification: ≥0.86→critical, ≥0.50→high, else→medium.
 
 ---
 
@@ -67,9 +68,9 @@ AI evaluation runs within the database memory space using Embedded Python, runni
 
 The system enforces strict role-based access control (RBAC) across both API and database layers:
 
-- **SMART on FHIR Authentication:** Supports both HS256 local HMAC signature verification and RS256 JWKS verification for federated OpenID Connect (OIDC) identity providers like Keycloak.
-- **Key Caching & Hardening:** JWKS certificates are cached locally for 1 hour to prevent roundtrip API overhead. The environment requires a valid `JWT_SECRET` in production, raising a hard exception if missing.
-- **Role Hierarchy Gatekeeper:** The [Auth.cls](src/cls/ClaimAudit/REST/Auth.cls) middleware uses a numeric role hierarchy to authorize access (e.g. Director and Admin roles inherit Auditor and Specialist abilities on API endpoints):
+- **SMART on FHIR Authentication:** HS256 JWT tokens are issued against HMAC-SHA256 credential hashes stored in INTEROP-namespace globals (`^ClaimAuditAI("Users",...)`) — avoiding `%SYS` namespace access for CSP gateway requests. Tokens validated with `$SYSTEM.Encryption.HMACSHA(256, ...)` signature verification. Supports Keycloak RS256 JWKS for federated OIDC.
+- **Key Caching & Hardening:** JWKS certificates cached locally for 1 hour. `JWT_SECRET` environment variable required in production mode — raises a critical security error if missing.
+- **Role Hierarchy Gatekeeper:** The [Auth.cls](src/cls/ClaimAudit/REST/Auth.cls) middleware extracts roles from the JWT token and enforces a numeric hierarchy (Viewer=1, Auditor=2, Specialist=3, Director=4, Admin=5) on all protected endpoints. Roles read from INTEROP globals — no `$Roles` dependency on IRIS process identity.
   - **Auditor:** Reviews held claims, escalates anomalies.
   - **Specialist:** Conducts collusion graph analysis, manages second-stage overrides.
   - **Director:** Resolves escalated pended holds (Approve/Reject), authors ledger override summaries.
@@ -89,8 +90,9 @@ The system enforces strict role-based access control (RBAC) across both API and 
    ```bash
    git clone https://github.com/mainza-ai/ClaimAuditAi.git
    cd ClaimAuditAi
-   cp .env.example .env
-   ```
+    cp .env.example .env
+    # Edit .env: set LLM_PROVIDER (ollama/nvidia/openai), API keys, and JWT_SECRET
+    ```
 2. Build and launch the containers:
    ```bash
    docker compose up -d --build
@@ -122,8 +124,11 @@ All protected endpoints require an `Authorization: Bearer <token>` header:
 | `POST` | `/api/claims/:id/escalate` | Auditor+ | Progresses task status (Specialist -> Director) |
 | `GET` | `/api/ledger` | Protected | Paginated override audit ledger log |
 | `GET` | `/api/graph` | Protected | Cytoscape network graph data |
+| `GET` | `/api/stats/model-performance` | Protected | AI model precision/recall/F1 metrics |
+| `POST` | `/api/chat` | Protected | AI audit assistant (provider-agnostic LLM) |
+| `POST` | `/api/chat/stream` | Protected | SSE streaming chat response |
 | `GET/POST`| `/api/settings/llm` | Admin | Query or update runtime LLM provider settings |
-| `POST` | `/api/samples/load` | Admin | Clears tables and re-seeds synthetic FHIR data |
+| `POST` | `/api/samples/load` | Admin | Clears tables and re-seeds synthetic FHIR data (8 claims with diversified risk) |
 
 ---
 
