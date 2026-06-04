@@ -134,7 +134,7 @@ export function Dashboard() {
         <StatCard label="Total Intercepted" value={stats ? stats.interceptedTotal : (loading ? '...' : '\u2014')} icon={Activity} accent="blue" />
         <StatCard label="Total Value Pended" value={stats?.totalValueHeld ? formatCurrency(stats.totalValueHeld) : (loading ? '...' : '$0')} icon={DollarSign} accent="amber" />
         <StatCard label="Model status" value={stats ? stats.modelStatus : (loading ? '...' : '\u2014')} icon={Cpu} accent={stats?.modelStatus === 'healthy' ? 'green' : 'red'} />
-        <StatCard label="F1 Score" value={modelPerf ? (modelPerf.f1 * 100).toFixed(1) + '%' : (loading ? '...' : '\u2014')} icon={Activity} accent={modelPerf && modelPerf.f1 > 0.7 ? 'green' : 'amber'} />
+        <StatCard label="F1 Score" value={typeof modelPerf?.f1 === 'number' ? (modelPerf.f1 * 100).toFixed(1) + '%' : (modelPerf?.f1 ?? (loading ? '...' : '\u2014'))} icon={Activity} accent={typeof modelPerf?.f1 === 'number' && modelPerf.f1 > 0.7 ? 'green' : 'amber'} />
       </div>
 
       {/* Charts grid */}

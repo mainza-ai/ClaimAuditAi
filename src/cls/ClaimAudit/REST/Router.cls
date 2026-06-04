@@ -1049,12 +1049,27 @@ ClassMethod GetStats() As %Status
         Set tLeakRate = 0
         If tTotalCount > 0 Set tLeakRate = tHeldCount / tTotalCount
 
+        // Model health — check autoencoder model availability instead of hardcoding
+        Set tModelStatus = "unknown"
+        Try {
+            Do ##class(ClaimAudit.AI.Engine).ConfigurePythonPath()
+            Set tAE = ##class(%SYS.Python).Import("autoencoder_train")
+            Set tCache = tAE."_get_cached_model"()
+            If tCache '= "" {
+                Set tModelStatus = "healthy"
+            } Else {
+                Set tModelStatus = "untrained"
+            }
+        } Catch {
+            Set tModelStatus = "error"
+        }
+
         Set tStats = {
             "held": (tHeldCount),
             "approvedToday": (tApprovedCount),
             "interceptedTotal": (tTotalCount),
             "totalValueHeld": (tValueHeld),
-            "modelStatus": "healthy",
+            "modelStatus": (tModelStatus),
             "leakageRate": (tLeakRate),
             "riskDistribution": (tRiskDist),
             "tierDistribution": (tTierDist),
@@ -1839,39 +1854,33 @@ ClassMethod GetModelPerformance() As %Status
     If '##class(ClaimAudit.REST.Auth).RequireAuth() Quit $$$OK
     Set tSC = $$$OK
     Try {
-        // True Positives: claims flagged by AI that were rejected (correct holding)
+        // True Positives: AI-flagged claims that were rejected (correct holding)
         Set tTP = ##class(%SQL.Statement).%ExecDirect(,
         "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.ClaimResponse WHERE outcome = ? AND disposition IS NOT NULL", "error")
         Do tTP.%Next()
         Set tTPCount = +tTP.%Get("cnt")
 
-        // False Positives: claims flagged by AI that were approved (held unnecessarily)
+        // False Positives: AI-flagged claims that were approved on review (held unnecessarily)
         Set tFP = ##class(%SQL.Statement).%ExecDirect(,
         "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.ClaimResponse WHERE outcome = ? AND disposition IS NOT NULL", "complete")
         Do tFP.%Next()
         Set tFPCount = +tFP.%Get("cnt")
 
-        // True Negatives: claims not flagged that were approved (correct pass-through)
-        Set tTN = ##class(%SQL.Statement).%ExecDirect(,
-        "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.ClaimResponse WHERE outcome = ? AND disposition IS NULL", "complete")
-        Do tTN.%Next()
-        Set tTNCount = +tTN.%Get("cnt")
-
-        // False Negatives: claims approved that should have been flagged (missed fraud)
-        // Estimated as claims approved without AI review (no disposition = no AI flag)
-        Set tFNCount = tTNCount
-
-        // Precision = TP / (TP + FP)
+        // Precision: when the AI holds a claim, how often is it correct?
         Set tPrecision = 0.0
-        If (tTPCount + tFPCount) > 0 Set tPrecision = tTPCount / (tTPCount + tFPCount)
+        Set tPrecisionNote = "No held claims to evaluate."
+        If (tTPCount + tFPCount) > 0 {
+            Set tPrecision = tTPCount / (tTPCount + tFPCount)
+            Set tPrecisionNote = ""
+        }
 
-        // Recall = TP / (TP + FN)
-        Set tRecall = 0.0
-        If (tTPCount + tFNCount) > 0 Set tRecall = tTPCount / (tTPCount + tFNCount)
-
-        // F1 = 2 * (Precision * Recall) / (Precision + Recall)
-        Set tF1 = 0.0
-        If (tPrecision + tRecall) > 0 Set tF1 = 2 * tPrecision * tRecall / (tPrecision + tRecall)
+        // Recall and F1 require labeled ground truth (which claims were actually fraudulent).
+        // Claims that passed without AI review may be clean or may be missed fraud — we cannot
+        // distinguish without labeled data. Reporting unvalidated false negatives as TN produces
+        // meaningless metrics. In production, ground truth labels should come from audit outcomes.
+        Set tRecall = "N/A"
+        Set tF1 = "N/A"
+        Set tPerformanceNote = "Recall and F1 unavailable: requires labeled ground truth data for false negatives."
 
         Write {
             "precision": (tPrecision),
@@ -1880,7 +1889,8 @@ ClassMethod GetModelPerformance() As %Status
             "truePositives": (tTPCount),
             "falsePositives": (tFPCount),
             "totalHeld": (tTPCount + tFPCount),
-            "totalApproved": (tTNCount)
+            "note": (tPerformanceNote),
+            "precisionNote": (tPrecisionNote)
         }.%ToJSON()
     } Catch ex {
         Set tSC = ex.AsStatus()
