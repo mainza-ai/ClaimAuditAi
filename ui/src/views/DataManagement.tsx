@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../api/client';
 import { useRoleStore } from '../store/roleStore';
 import { PERMISSIONS } from '../utils/permissions';
-import { Trash2, Database, Upload, RefreshCw, CheckCircle, AlertTriangle, FileJson, Cpu } from 'lucide-react';
+import { Trash2, Database, Upload, RefreshCw, CheckCircle, AlertTriangle, FileJson, Cpu, Activity, Server, Brain, Bot, GitBranch } from 'lucide-react';
 
 interface DataStatus {
   claimResponses: number;
@@ -66,6 +66,12 @@ export function DataManagement() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['stats'] });
     },
+  });
+
+  const { data: health, refetch: refetchHealth } = useQuery<any>({
+    queryKey: ['system-health'],
+    queryFn: () => apiClient.get('/system/health').then(r => r.data),
+    refetchInterval: 60000,
   });
 
   const statusCards = [
@@ -233,6 +239,43 @@ export function DataManagement() {
           <p style={{ margin: '10px 0 0', fontSize: 13, color: 'var(--color-success)', display: 'flex', alignItems: 'center', gap: 6 }}>
             <CheckCircle size={14} /> All data cleared successfully.
           </p>
+        )}
+      </div>
+
+      <div className="card" style={{ padding: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <h2 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>System Health</h2>
+          <button onClick={() => refetchHealth()} className="btn-ghost" style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <RefreshCw size={13} /> Refresh
+          </button>
+        </div>
+        {health && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+            {[
+              { key: 'fhirEndpoint', label: 'FHIR Endpoint', icon: Server },
+              { key: 'pythonBridge', label: 'Python Bridge', icon: Activity },
+              { key: 'autoencoder', label: 'Autoencoder', icon: Brain },
+              { key: 'graphEngine', label: 'Graph Engine', icon: GitBranch },
+              { key: 'llm', label: 'LLM Provider', icon: Bot },
+            ].map(({ key, label, icon: Icon }) => {
+              const c = health.components?.[key];
+              const status = c?.status || 'unknown';
+              const color = status === 'healthy' ? 'var(--color-success)' : status === 'untrained' || status === 'unknown' ? 'var(--color-warning)' : 'var(--color-danger)';
+              const extra = key === 'autoencoder' && c?.threshold ? ` (threshold: ${c.threshold.toFixed(4)})` : key === 'llm' && c?.provider ? ` (${c.provider})` : '';
+              return (
+                <div key={key} style={{ padding: 10, borderRadius: 6, backgroundColor: 'var(--bg-page)', border: `1px solid ${color}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Icon size={14} style={{ color, flexShrink: 0 }} />
+                  <div style={{ minWidth: 0 }}>
+                    <p style={{ margin: 0, fontSize: 11, fontWeight: 600, color: 'var(--text-primary)' }}>{label}<span style={{ fontSize: 10, marginLeft: 4, color, fontWeight: 400 }}>{extra}</span></p>
+                    <p style={{ margin: 0, fontSize: 11, color, fontFamily: 'var(--font-mono)' }}>{status}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {!health && (
+          <p style={{ margin: 0, fontSize: 13, color: 'var(--text-tertiary)' }}>Loading system health...</p>
         )}
       </div>
     </div>

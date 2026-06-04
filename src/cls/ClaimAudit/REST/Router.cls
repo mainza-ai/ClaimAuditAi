@@ -44,6 +44,7 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
     <Route Url="/system/upload" Method="POST" Call="UploadClaimData"/>
     <Route Url="/system/admin-log" Method="GET" Call="GetAdminLog"/>
     <Route Url="/system/retrain-model" Method="POST" Call="RetrainModel"/>
+    <Route Url="/system/health" Method="GET" Call="GetSystemHealth"/>
     </Routes>
 }
 
@@ -1798,6 +1799,100 @@ ClassMethod RetrainModel() As %Status
     } Catch ex {
         Set tSC = ex.AsStatus()
         Write {"error": (ex.DisplayString())}.%ToJSON()
+    }
+    Quit tSC
+}
+
+/// System health check — validates all critical components and returns status
+ClassMethod GetSystemHealth() As %Status
+{
+    If '##class(ClaimAudit.REST.Auth).RequireAuth("Admin") Quit $$$OK
+    Set tSC = $$$OK
+    Try {
+        Set tHealth = {
+            "status": "healthy",
+            "timestamp": ($ZDateTime($ZTIMESTAMP, 3, 1)),
+            "components": {}
+        }
+        Set tHealthy = 1
+
+        // 1. FHIR endpoint status
+        Set tFhirStatus = "healthy"
+        Try {
+            Set tSvc = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
+            If '$IsObject(tSvc) Set tFhirStatus = "unavailable"
+        } Catch { Set tFhirStatus = "error" }
+        If tFhirStatus '= "healthy" Set tHealthy = 0
+        Do tHealth.components.%Set("fhirEndpoint", {"status": (tFhirStatus)})
+
+        // 2. Python bridge status
+        Set tPyStatus = "healthy"
+        Try {
+            Set tPy = ##class(%SYS.Python).Import("sys")
+            If '$IsObject(tPy) Set tPyStatus = "unavailable"
+        } Catch { Set tPyStatus = "error" }
+        If tPyStatus '= "healthy" Set tHealthy = 0
+        Do tHealth.components.%Set("pythonBridge", {"status": (tPyStatus)})
+
+        // 3. Autoencoder model
+        Set tAEStatus = "healthy"
+        Set tAEThreshold = 0
+        Try {
+            Do ##class(ClaimAudit.AI.Engine).ConfigurePythonPath()
+            Set tAE = ##class(%SYS.Python).Import("autoencoder_train")
+            Set tCache = tAE."_get_cached_model"()
+            If tCache '= "" {
+                Set tAEThreshold = +tCache."get"("threshold", 0)
+            } Else {
+                Set tAEStatus = "untrained"
+            }
+        } Catch { Set tAEStatus = "error" }
+        If tAEStatus '= "healthy" Set tHealthy = 0
+        Do tHealth.components.%Set("autoencoder", {
+            "status": (tAEStatus),
+            "threshold": (tAEThreshold)
+        })
+
+        // 4. Graph engine
+        Set tGraphStatus = "healthy"
+        Try {
+            Set tGA = ##class(%SYS.Python).Import("graph_analyzer")
+            Set tG = tGA."_get_cached_graph"(1)
+        } Catch { Set tGraphStatus = "error" }
+        Do tHealth.components.%Set("graphEngine", {"status": (tGraphStatus)})
+
+        // 5. LLM connectivity
+        Set tLLMStatus = "healthy"
+        Set tLLMProvider = $System.Util.GetEnviron("LLM_PROVIDER")
+        If tLLMProvider = "" Set tLLMProvider = "not_set"
+        Try {
+            Do ##class(ClaimAudit.AI.Engine).ConfigurePythonPath()
+            Set tLLM = ##class(%SYS.Python).Import("llm_router")
+        } Catch { Set tLLMStatus = "error" }
+        Do tHealth.components.%Set("llm", {
+            "status": (tLLMStatus),
+            "provider": (tLLMProvider)
+        })
+
+        // 6. Database counts
+        Set tDBCRs = ##class(%SQL.Statement).%ExecDirect(, "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.ClaimResponse")
+        Do tDBCRs.%Next()
+        Set tDBClaims = ##class(%SQL.Statement).%ExecDirect(, "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.Claim")
+        Do tDBClaims.%Next()
+        Set tDBProj = ##class(%SQL.Statement).%ExecDirect(, "SELECT COUNT(*) AS cnt FROM ClaimAudit.ClaimProjections")
+        Do tDBProj.%Next()
+        Do tHealth.components.%Set("database", {
+            "status": ("healthy"),
+            "claimResponses": (+tDBCRs.%Get("cnt")),
+            "claims": (+tDBClaims.%Get("cnt")),
+            "projections": (+tDBProj.%Get("cnt"))
+        })
+
+        Set tHealth.status = $Select(tHealthy:"healthy", 1:"degraded")
+        Write tHealth.%ToJSON()
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+        Write {"status": "error", "error": (ex.DisplayString())}.%ToJSON()
     }
     Quit tSC
 }
