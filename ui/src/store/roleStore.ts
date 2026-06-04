@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type UserRole = 'Auditor' | 'Director' | 'Specialist' | 'Tech Owner / Admin';
+export type UserRole = 'Viewer' | 'Auditor' | 'Specialist' | 'Director' | 'Admin';
 
 const ROLE_LEVEL: Record<string, number> = {
   Viewer: 1,
@@ -12,15 +12,15 @@ const ROLE_LEVEL: Record<string, number> = {
 };
 
 export function deriveActiveRole(roles: string[]): UserRole {
-  let highest: UserRole = 'Auditor';
+  let highest: UserRole = 'Viewer';
   let highestLevel = 0;
   for (const r of roles) {
     const level = ROLE_LEVEL[r] || 0;
-    if (level >= 5) return 'Tech Owner / Admin';
-    if (level === 4) highest = 'Director';
-    if (level === 3 && highestLevel < 3) highest = 'Specialist';
-    if (level === 2 && highestLevel < 2) highest = 'Auditor';
-    if (level > highestLevel) highestLevel = level;
+    if (level >= 5) return 'Admin';
+    if (level === 4 && highestLevel < 4) { highest = 'Director'; highestLevel = 4; }
+    if (level === 3 && highestLevel < 3) { highest = 'Specialist'; highestLevel = 3; }
+    if (level === 2 && highestLevel < 2) { highest = 'Auditor'; highestLevel = 2; }
+    if (level === 1 && highestLevel < 1) { highest = 'Viewer'; highestLevel = 1; }
   }
   return highest;
 }
@@ -36,7 +36,7 @@ interface RoleState {
 }
 
 export const useRoleStore = create<RoleState>((set) => ({
-  activeRole: 'Auditor',
+  activeRole: 'Viewer',
   userName: '',
   fhirUser: '',
   authRoles: [],

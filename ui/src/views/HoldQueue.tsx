@@ -1,8 +1,9 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getHeldClaims } from '../api/claims';
+import { apiClient } from '../api/client';
 import { ClaimRow } from '../components/claims/ClaimRow';
-import { Search, ArrowUpDown } from 'lucide-react';
+import { Search, ArrowUpDown, Download } from 'lucide-react';
 
 
 const RISKS = ['all', 'critical', 'high', 'medium'] as const;
@@ -58,12 +59,12 @@ export function HoldQueue() {
     f.sort((a, b) => {
       if (sortKey === 'risk') return (RISK_ORDER[a.riskLevel] ?? 1) - (RISK_ORDER[b.riskLevel] ?? 1);
       if (sortKey === 'date') {
-        const aDate = new Date(b.lastModified).getTime();
-        const bDate = new Date(a.lastModified).getTime();
+        const aDate = new Date(a.lastModified).getTime();
+        const bDate = new Date(b.lastModified).getTime();
         if (isNaN(bDate) && isNaN(aDate)) return 0;
-        if (isNaN(bDate)) return 1;
-        if (isNaN(aDate)) return -1;
-        return aDate - bDate;
+        if (isNaN(aDate)) return 1;
+        if (isNaN(bDate)) return -1;
+        return bDate - aDate;
       }
       return (b.totalAmount ?? 0) - (a.totalAmount ?? 0);
     });
@@ -79,12 +80,35 @@ export function HoldQueue() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold tracking-wider" style={{ color: 'var(--text-primary)' }}>Claims Hold Queue</h1>
-        <span
-          className="text-xs font-mono px-2 py-0.5 rounded border"
-          style={{ color: 'var(--text-tertiary)', backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-default)' }}
-        >
-          {allClaims?.length ?? 0} active pended holds
-        </span>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={async () => {
+              try {
+                const res = await apiClient.get('/claims/export', { responseType: 'blob' });
+                const url = window.URL.createObjectURL(new Blob([res.data]));
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'claimaudit_held_claims.csv';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+              } catch {}
+            }}
+            className="flex items-center gap-2 text-xs font-mono px-3 py-1.5 rounded-lg border transition-all"
+            style={{
+              color: 'var(--text-secondary)', backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-default)',
+            }}
+          >
+            <Download size={14} /> Export CSV
+          </button>
+          <span
+            className="text-xs font-mono px-2 py-0.5 rounded border"
+            style={{ color: 'var(--text-tertiary)', backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-default)' }}
+          >
+            {allClaims?.length ?? 0} active pended holds
+          </span>
+        </div>
       </div>
 
       {/* Search & Filters */}

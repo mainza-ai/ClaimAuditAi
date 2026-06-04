@@ -224,7 +224,7 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
             If claimId = "" Set claimId = pFHIRRequest.Json.id
 
             Set claimJson = pFHIRRequest.Json
-            Set createdTime = $Translate($ZDateTime($Horolog, 3, 1), " ", "T") _ "Z"
+            Set createdTime = $Translate($ZDateTime($ZTIMESTAMP, 3, 1), " ", "T") _ "Z"
 
             // Construct native FHIR transaction Bundle containing ClaimResponse, Task, and CommunicationRequest
             Set bundle = {
@@ -454,7 +454,7 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
                             }
                         }
                         
-                        Set createdTime = $Translate($ZDateTime($Horolog, 3, 1), " ", "T") _ "Z"
+                        Set createdTime = $Translate($ZDateTime($ZTIMESTAMP, 3, 1), " ", "T") _ "Z"
                         
                         // 1. Create FHIR ClaimResponse
                         Set claimResponse = {

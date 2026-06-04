@@ -74,7 +74,7 @@ export function ClaimDetail() {
   };
 
   const userCanApprove = PERMISSIONS.canApprove(activeRole);
-  const userCanEscalate = PERMISSIONS.canEscalate(activeRole) && !claim?.escalated;
+  const userCanEscalate = PERMISSIONS.canEscalate(activeRole) && !claim?.escalated && claim?.outcome !== 'complete' && claim?.outcome !== 'error';
   const userCanReject = PERMISSIONS.canReject(activeRole);
   const canTakeAction = userCanApprove || userCanEscalate || userCanReject;
 
@@ -104,7 +104,9 @@ export function ClaimDetail() {
           </h1>
           <p style={{ margin: 0, fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
             Patient: <span style={{ color: 'var(--accent-primary)', fontWeight: 700 }}>{claim.patientId}</span>
+            {' \u00b7 '}Provider: <span style={{ color: 'var(--accent-primary)', fontWeight: 700 }}>{claim.providerId}</span>
             {' \u00b7 '}CPT: <span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{claim.cptCode}</span>
+            {' \u00b7 '}ICD: <span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{claim.icdCode}</span>
             {' \u00b7 '}Total Billed: <span style={{ color: 'var(--color-success)', fontWeight: 700 }}>${claim.totalAmount?.toLocaleString()}</span>
           </p>
         </div>
@@ -204,7 +206,11 @@ export function ClaimDetail() {
         <Shield size={12} />
         Signed in as <span style={{ fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-primary)' }}>{activeRole}</span>
         {claim.escalated ? (
-          <span style={{ marginLeft: 4, color: 'var(--color-warning)' }}>\u2014 this claim has been escalated to director</span>
+          <span style={{ marginLeft: 4, color: 'var(--color-warning)' }}>\u2014 escalated to director \u2022 task <span style={{ fontWeight: 700 }}>{claim.taskStatus || 'requested'}</span></span>
+        ) : claim.outcome === 'complete' ? (
+          <span style={{ marginLeft: 4, color: 'var(--color-success)' }}>\u2014 approved</span>
+        ) : claim.outcome === 'error' ? (
+          <span style={{ marginLeft: 4, color: 'var(--color-danger)' }}>\u2014 rejected</span>
         ) : !canTakeAction ? (
           <span style={{ marginLeft: 4, color: 'var(--color-warning)' }}>\u2014 this role cannot take action on claims</span>
         ) : null}

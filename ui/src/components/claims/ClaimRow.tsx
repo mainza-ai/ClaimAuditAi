@@ -53,6 +53,22 @@ export function ClaimRow({ claim }: { claim: HeldClaim }) {
           }}>
             Escalated
           </span>
+        ) : claim.outcome === 'complete' ? (
+          <span style={{
+            fontSize: 10, fontFamily: 'var(--font-mono)', fontWeight: 700, textTransform: 'uppercase',
+            color: 'var(--color-success)', backgroundColor: 'var(--color-success-bg)',
+            border: '1px solid var(--color-success-border)', padding: '2px 8px', borderRadius: 4,
+          }}>
+            Approved
+          </span>
+        ) : claim.outcome === 'error' ? (
+          <span style={{
+            fontSize: 10, fontFamily: 'var(--font-mono)', fontWeight: 700, textTransform: 'uppercase',
+            color: 'var(--color-danger)', backgroundColor: 'var(--color-danger-bg)',
+            border: '1px solid var(--color-danger-border)', padding: '2px 8px', borderRadius: 4,
+          }}>
+            Rejected
+          </span>
         ) : null}
 
         {hovered && (

@@ -11,6 +11,7 @@ export interface HeldClaim {
   riskScore: number;
   riskLevel: 'critical' | 'high' | 'medium';
   escalated?: 0 | 1;
+  outcome?: string;
 }
 
 export interface AuditTierResult {
@@ -22,11 +23,19 @@ export interface AuditTierResult {
   summary: string;
 }
 
+export interface ActionHistoryEntry {
+  type: 'authorized-by' | 'rationale' | 'decision-timestamp';
+  value: string;
+}
+
 export interface ClaimDetail extends HeldClaim {
   disposition: string;
   tierResults: AuditTierResult[];
   taskId: string;
+  taskStatus: string;
+  taskPriority: string;
   communicationRequestId: string;
+  actionHistory: ActionHistoryEntry[];
   linkedClinicalNotes: string[];
 }
 

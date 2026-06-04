@@ -13,6 +13,14 @@
         Set r("Description") = "Read-only dashboard access"
         Do ##class(Security.Roles).Create("Viewer", .r)
     }
+    If '##class(Security.Roles).Exists("Specialist") {
+        Set r("Description") = "Claim review: approve, reject, escalate"
+        Do ##class(Security.Roles).Create("Specialist", .r)
+    }
+    If '##class(Security.Roles).Exists("Director") {
+        Set r("Description") = "Claim review: approve, reject, final override"
+        Do ##class(Security.Roles).Create("Director", .r)
+    }
 
     // Create users with full-name and password
     If '##class(Security.Users).Exists("admin") {
@@ -39,6 +47,22 @@
         Set u("Enabled") = 1
         Do ##class(Security.Users).Create("viewer", .u)
     }
+    If '##class(Security.Users).Exists("specialist") {
+        Set u("FullName") = "ClaimAuditAI Specialist"
+        Set u("Password") = "ReviewSpec2026!"
+        Set u("Roles") = "Specialist"
+        Set u("ChangePassword") = 0
+        Set u("Enabled") = 1
+        Do ##class(Security.Users).Create("specialist", .u)
+    }
+    If '##class(Security.Users).Exists("director") {
+        Set u("FullName") = "ClaimAuditAI Director"
+        Set u("Password") = "DirectorAudit2026!"
+        Set u("Roles") = "Director"
+        Set u("ChangePassword") = 0
+        Set u("Enabled") = 1
+        Do ##class(Security.Users).Create("director", .u)
+    }
 
     // Ensure roles are stored in globals (backup in case Security.Users.Create doesn't persist)
     Set ^SYS("Security","Users","admin","Roles","Admin") = ""
@@ -50,6 +74,12 @@
     Set ^SYS("Security","Users","viewer","Roles","Viewer") = ""
     Set ^SYS("Security","Users","viewer","Roles","%DB_INTEROP-CODE") = ""
     Set ^SYS("Security","Users","viewer","Roles","%DB_INTEROP-DATA") = ""
+    Set ^SYS("Security","Users","specialist","Roles","Specialist") = ""
+    Set ^SYS("Security","Users","specialist","Roles","%DB_INTEROP-CODE") = ""
+    Set ^SYS("Security","Users","specialist","Roles","%DB_INTEROP-DATA") = ""
+    Set ^SYS("Security","Users","director","Roles","Director") = ""
+    Set ^SYS("Security","Users","director","Roles","%DB_INTEROP-CODE") = ""
+    Set ^SYS("Security","Users","director","Roles","%DB_INTEROP-DATA") = ""
 
     // Enable callin for Embedded Python
     do ##class(Security.Services).Get("%Service_CallIn",.prop)
@@ -76,6 +106,12 @@
     Set ^ClaimAuditAI("Users","viewer","hash") = $SYSTEM.Encryption.HMACSHA(256, "ViewDash2026!", tSalt)
     Set ^ClaimAuditAI("Users","viewer","fullName") = "ClaimAuditAI Viewer"
     Set ^ClaimAuditAI("Users","viewer","roles","Viewer") = ""
+    Set ^ClaimAuditAI("Users","specialist","hash") = $SYSTEM.Encryption.HMACSHA(256, "ReviewSpec2026!", tSalt)
+    Set ^ClaimAuditAI("Users","specialist","fullName") = "ClaimAuditAI Specialist"
+    Set ^ClaimAuditAI("Users","specialist","roles","Specialist") = ""
+    Set ^ClaimAuditAI("Users","director","hash") = $SYSTEM.Encryption.HMACSHA(256, "DirectorAudit2026!", tSalt)
+    Set ^ClaimAuditAI("Users","director","fullName") = "ClaimAuditAI Director"
+    Set ^ClaimAuditAI("Users","director","roles","Director") = ""
 
     // Create /_vscode web app to support VS Code extension testing
     zpm "install vscode-per-namespace-settings"

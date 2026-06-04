@@ -172,7 +172,7 @@ ClassMethod GetHeldClaims() As %Status
         // Single O(1) query with JOIN — matching the proven CSV export pattern
         // Build SQL as single concatenated string (no line continuations)
         Set tRS = ##class(%SQL.Statement).%ExecDirect(,
-        "SELECT CR.Key, CR.patient, CR.request, CR._lastUpdated, CR.disposition, CR.created, "_
+        "SELECT CR.Key, CR.patient, CR.request, CR._lastUpdated, CR.disposition, CR.created, CR.outcome, "_
         "PP.Name AS patientName "_
         "FROM HSFHIR_X0001_S.ClaimResponse CR "_
         "LEFT JOIN ClaimAudit.PatientProjections PP ON SUBSTRING(CR.patient, 9) = PP.Key "_
@@ -201,8 +201,24 @@ ClassMethod GetHeldClaims() As %Status
             Set tLastUpdated = tRS.%Get("_lastUpdated")
             Set tDisposition = tRS.%Get("disposition")
 
+            Set tOutcome = tRS.%Get("outcome")
+
             Set tPatientName = tRS.%Get("patientName")
             If tPatientName = "" Set tPatientName = "Unknown Patient"
+
+            // Derive provider from Claim reference — default if not found
+            Set tProviderId = "claimaudit-prov"
+            If tClaimId '= "" {
+                Try {
+                    Set tProvRS = ##class(%SQL.Statement).%ExecDirect(,
+                    "SELECT provider FROM HSFHIR_X0001_S.Claim WHERE Key = ?", "Claim/" _ tClaimId)
+                    If tProvRS.%Next() {
+                        Set tProvRef = tProvRS.%Get("provider")
+                        Set tProviderId = $Piece(tProvRef, "/", 2)
+                        If tProviderId = "" Set tProviderId = "claimaudit-prov"
+                    }
+                } Catch {}
+            }
 
             // Escalated check
             Set tEscalated = 0
@@ -281,7 +297,7 @@ ClassMethod GetHeldClaims() As %Status
                 "id": (tClaimResponseId),
                 "patientId": (tPatientId),
                 "patientName": (tPatientName),
-                "providerId": "claimaudit-prov",
+                "providerId": (tProviderId),
                 "cptCode": (tCptCode),
                 "icdCode": (tIcdCode),
                 "totalAmount": (tBilledAmount),
@@ -289,7 +305,8 @@ ClassMethod GetHeldClaims() As %Status
                 "lastModified": (tLastUpdated),
                 "riskScore": (tRiskScore),
                 "riskLevel": (tRiskLevel),
-                "escalated": (tEscalated)
+                "escalated": (tEscalated),
+                "outcome": (tOutcome)
             }
             Do tArr.%Push(tObj)
         }
@@ -480,6 +497,7 @@ ClassMethod GetClaimDetail(id As %String) As %Status
         // Fetch details from Claim
         Set tCptCode = "Unknown"
         Set tIcdCode = "Unknown"
+        Set tProviderId = "claimaudit-prov"
         Set tBilledAmount = 0.0
         Set tSubmittedAt = tLastModified
 
@@ -496,6 +514,12 @@ ClassMethod GetClaimDetail(id As %String) As %Status
                     Set tClaimJson = tRespClaim.Json
                     If tClaimJson.created '= "" Set tSubmittedAt = tClaimJson.created
                     If $IsObject(tClaimJson.total) Set tBilledAmount = +tClaimJson.total.value
+
+                    If $IsObject(tClaimJson.provider) {
+                        Set tProvRef = tClaimJson.provider.reference
+                        Set tProviderId = $Piece(tProvRef, "/", 2)
+                        If tProviderId = "" Set tProviderId = "claimaudit-prov"
+                    }
 
                     If $IsObject(tClaimJson.item) && (tClaimJson.item.%Size() > 0) {
                         Set tItem = tClaimJson.item.%Get(0)
@@ -521,14 +545,24 @@ ClassMethod GetClaimDetail(id As %String) As %Status
             } Catch {}
         }
 
-        // Derive risk level from stored FHIR extension (single source of truth — not LLM disposition text)
+        // Parse extensions: risk-score + action history (authorized-by, rationale, decision-timestamp)
         Set tRiskScore = 0.0
         Set tRiskLevel = "medium"
+        Set tActionHistory = []
         If $IsObject(tCRJson.extension) {
             Set tExtIter = tCRJson.extension.%GetIterator()
             While tExtIter.%GetNext(.tK, .tExt) {
                 If tExt.url = "https://claimauditai.com/fhir/extension/risk-score" {
                     Set tRiskScore = +tExt.valueDecimal
+                }
+                If tExt.url = "https://claimauditai.com/fhir/extension/authorized-by" {
+                    Do tActionHistory.%Push({"type": "authorized-by", "value": (tExt.valueString)})
+                }
+                If tExt.url = "https://claimauditai.com/fhir/extension/rationale" {
+                    Do tActionHistory.%Push({"type": "rationale", "value": (tExt.valueString)})
+                }
+                If tExt.url = "https://claimauditai.com/fhir/extension/decision-timestamp" {
+                    Do tActionHistory.%Push({"type": "decision-timestamp", "value": (tExt.valueDateTime)})
                 }
             }
         }
@@ -567,16 +601,19 @@ ClassMethod GetClaimDetail(id As %String) As %Status
 
         // Fetch linked tasks and notifications
         Set tTaskId = ""
+        Set tTaskStatus = ""
+        Set tTaskPriority = ""
         Set tCommId = ""
         Set tEscalated = 0
         Try {
             Set tTRS = ##class(%SQL.Statement).%ExecDirect(,
-            "SELECT Key, priority FROM HSFHIR_X0001_S.Task WHERE focus = ?", "Claim/" _ tClaimId)
+            "SELECT Key, status, priority FROM HSFHIR_X0001_S.Task WHERE focus = ?", "Claim/" _ tClaimId)
             If tTRS.%Next() {
                 Set tTaskKey = tTRS.%Get("Key")
                 Set tTaskId = $Piece(tTaskKey, "/", 2)
-                Set tPriority = tTRS.%Get("priority")
-                If tPriority = "stat" {
+                Set tTaskStatus = tTRS.%Get("status")
+                Set tTaskPriority = tTRS.%Get("priority")
+                If tTaskPriority = "stat" {
                     Set tEscalated = 1
                 }
             }
@@ -594,7 +631,7 @@ ClassMethod GetClaimDetail(id As %String) As %Status
             "id": (id),
             "patientId": (tPatientId),
             "patientName": (tPatientName),
-            "providerId": "claimaudit-prov",
+            "providerId": (tProviderId),
             "cptCode": (tCptCode),
             "icdCode": (tIcdCode),
             "totalAmount": (tBilledAmount),
@@ -604,8 +641,12 @@ ClassMethod GetClaimDetail(id As %String) As %Status
             "riskLevel": (tRiskLevel),
             "disposition": (tDisposition),
             "taskId": (tTaskId),
+            "taskStatus": (tTaskStatus),
+            "taskPriority": (tTaskPriority),
             "communicationRequestId": (tCommId),
             "escalated": (tEscalated),
+            "outcome": ($Get(tCRJson.outcome)),
+            "actionHistory": (tActionHistory),
             "linkedClinicalNotes": []
         }
 
@@ -666,7 +707,7 @@ ClassMethod ApproveClaim(id As %String) As %Status
         If tRationaleSummary '= "" {
             Do tExt.%Push({"url": "https://claimauditai.com/fhir/extension/rationale", "valueString": (tRationaleSummary)})
         }
-        Do tExt.%Push({"url": "https://claimauditai.com/fhir/extension/decision-timestamp", "valueDateTime": ($ZDATE($PIECE($HOROLOG,",",1),3)_"T"_$ZTIME($PIECE($HOROLOG,",",2),1)_"Z")})
+        Do tExt.%Push({"url": "https://claimauditai.com/fhir/extension/decision-timestamp", "valueDateTime": ($ZDATE($PIECE($ZTIMESTAMP,",",1),3)_"T"_$ZTIME($PIECE($ZTIMESTAMP,",",2),1)_"Z")})
         Set tCRJson.extension = tExt
 
         Set tReqPut = ##class(HS.FHIRServer.API.Data.Request).%New()
@@ -763,7 +804,7 @@ ClassMethod EscalateClaim(id As %String) As %Status
         If tRationaleSummary '= "" {
             Do tExt.%Push({"url": "https://claimauditai.com/fhir/extension/rationale", "valueString": (tRationaleSummary)})
         }
-        Do tExt.%Push({"url": "https://claimauditai.com/fhir/extension/decision-timestamp", "valueDateTime": ($ZDATE($PIECE($HOROLOG,",",1),3)_"T"_$ZTIME($PIECE($HOROLOG,",",2),1)_"Z")})
+        Do tExt.%Push({"url": "https://claimauditai.com/fhir/extension/decision-timestamp", "valueDateTime": ($ZDATE($PIECE($ZTIMESTAMP,",",1),3)_"T"_$ZTIME($PIECE($ZTIMESTAMP,",",2),1)_"Z")})
         Set tCRJson.extension = tExt
 
         Set tReqPut = ##class(HS.FHIRServer.API.Data.Request).%New()
@@ -786,8 +827,8 @@ ClassMethod EscalateClaim(id As %String) As %Status
             Set tClaimId = $Piece(tRequestRef, "/", 2)
         }
 
-        // 2. Progress Task through workflow states
-        // ready → requested (specialist) → received (director)
+        // 2. Progress Task through workflow states — escalation always goes to Director with stat priority
+        Set tNextStatus = "requested"
         If tClaimId '= "" {
             Set tTRS = ##class(%SQL.Statement).%ExecDirect(,
             "SELECT Key, status FROM HSFHIR_X0001_S.Task WHERE focus = ?", "Claim/" _ tClaimId)
@@ -806,17 +847,14 @@ ClassMethod EscalateClaim(id As %String) As %Status
                 If $IsObject(tRespT.Json) {
                     Set tTaskJson = tRespT.Json
 
-                    // Workflow progression: ready → requested → received
-                    Set tNextStatus = "requested"
+                    // Escalation always sends to Director with stat priority
+                    // ready → requested → completed (approved) / cancelled (rejected)
                     If tCurrentStatus = "requested" {
-                        Set tNextStatus = "received"
-                        Set tTaskJson.priority = "stat"
-                    } ElseIf tCurrentStatus = "ready" {
                         Set tNextStatus = "requested"
                     } Else {
-                        Set tNextStatus = "received"
-                        Set tTaskJson.priority = "stat"
+                        Set tNextStatus = "requested"
                     }
+                    Set tTaskJson.priority = "stat"
 
                     Set tTaskJson.status = tNextStatus
                     Set tTaskJson.owner = {"reference": ("Practitioner/auditor"), "display": (tAuthorizedBy)}
@@ -886,7 +924,7 @@ ClassMethod RejectClaim(id As %String) As %Status
         If tRationaleSummary '= "" {
             Do tExt.%Push({"url": "https://claimauditai.com/fhir/extension/rationale", "valueString": (tRationaleSummary)})
         }
-        Do tExt.%Push({"url": "https://claimauditai.com/fhir/extension/decision-timestamp", "valueDateTime": ($ZDATE($PIECE($HOROLOG,",",1),3)_"T"_$ZTIME($PIECE($HOROLOG,",",2),1)_"Z")})
+        Do tExt.%Push({"url": "https://claimauditai.com/fhir/extension/decision-timestamp", "valueDateTime": ($ZDATE($PIECE($ZTIMESTAMP,",",1),3)_"T"_$ZTIME($PIECE($ZTIMESTAMP,",",2),1)_"Z")})
         Set tCRJson.extension = tExt
 
         Set tReqPut = ##class(HS.FHIRServer.API.Data.Request).%New()
@@ -957,8 +995,8 @@ ClassMethod GetStats() As %Status
         Set tDays = +$Get(%request.Data("days", 1), 30)
         If tDays < 1 Set tDays = 30
 
-        // Date range filter string
-        Set tFromDate = $ZDATE(($PIECE($HOROLOG,",",1)-tDays), 3)
+        // Date range filter string — derived from $ZTIMESTAMP (UTC) for accurate SQL comparison
+        Set tFromDate = $ZDATE(($PIECE($ZTIMESTAMP,",",1)-tDays), 3)
 
         // Count held claims (within date range)
         Set tHeld = ##class(%SQL.Statement).%ExecDirect(,
@@ -966,8 +1004,8 @@ ClassMethod GetStats() As %Status
         Do tHeld.%Next()
         Set tHeldCount = tHeld.%Get("cnt")
 
-        // Count approved (today only — always today, not date-range-limited)
-        Set tTodayStr = $ZDATE($PIECE($HOROLOG,",",1), 3)
+        // Count approved (today only — always today, not date-range-limited, uses $ZTIMESTAMP for UTC accuracy)
+        Set tTodayStr = $ZDATE($PIECE($ZTIMESTAMP,",",1), 3)
         Set tApproved = ##class(%SQL.Statement).%ExecDirect(,
         "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.ClaimResponse WHERE outcome=? AND SUBSTRING(_lastUpdated,1,10) = ?", "complete", tTodayStr)
         Do tApproved.%Next()
@@ -1042,10 +1080,10 @@ ClassMethod GetStats() As %Status
         Do tTierDist.%Push({"tier": "tier2", "count": (tTier2Count)})
         Do tTierDist.%Push({"tier": "tier3", "count": (tTier3Count)})
 
-        // Daily counts for last 7 days
+        // Daily counts for last 7 days — use $ZTIMESTAMP for accurate UTC-based date comparison
         Set tDaily = []
         For tI = 6:-1:0 {
-            Set tDate = $PIECE($HOROLOG,",",1) - tI
+            Set tDate = $PIECE($ZTIMESTAMP,",",1) - tI
             Set tDateStr = $ZDATE(tDate, 3)
             Set tDRS = ##class(%SQL.Statement).%ExecDirect(,
             "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.ClaimResponse WHERE SUBSTRING(_lastUpdated,1,10) = ?", tDateStr)
@@ -1130,7 +1168,7 @@ ClassMethod SaveChatMessage(id As %String) As %Status
         Set tContent = tBody.%Get("content")
         Set tTimestamp = tBody.%Get("timestamp")
         If tTimestamp = "" {
-            Set tTimestamp = $ZDATETIME($ZTIMESTAMP, 3, 1, 3)
+            Set tTimestamp = $Translate($ZDATETIME($ZTIMESTAMP, 3, 1, 3), " ", "T") _ "Z"
         }
         If (tRole = "") || (tContent = "") {
             Set %response.Status = 400
@@ -1377,7 +1415,7 @@ ClassMethod LoadSampleData() As %Status
         Set tGA = ##class(%SYS.Python).Import("graph_analyzer")
         Do tGA."invalidate_graph_cache"()
 
-        Set ^ClaimAuditAI("LastSeededAt") = $ZDateTime($ZTIMESTAMP, 3, 1)
+        Set ^ClaimAuditAI("LastSeededAt") = $Translate($ZDateTime($ZTIMESTAMP, 3, 1), " ", "T") _ "Z"
 
         Do ..AdminLog("seed", "Seeded 8 sample claims with diversified risk distribution.")
 
@@ -1399,9 +1437,9 @@ ClassMethod GetTrends() As %Status
         Set tArr = []
         Set tDays = $LISTBUILD("Sun","Mon","Tue","Wed","Thu","Fri","Sat")
 
-        // For each of the last 7 days, count processed and held claims
+        // For each of the last 7 days, count processed and held claims — uses $ZTIMESTAMP (UTC)
         For tI = 6:-1:0 {
-        Set tDate = $PIECE($HOROLOG,",",1) - tI
+        Set tDate = $PIECE($ZTIMESTAMP,",",1) - tI
         Set tDateStr = $ZDATE(tDate, 3)
         Set tDow = $ZDATE(tDate, 11)
 
@@ -1460,10 +1498,10 @@ ClassMethod GetLedger() As %Status
 
         Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
 
-        // Count query for pagination total
+        // Count query for pagination total — includes escalated tasks (priority=stat) regardless of status
         Set tCountRS = ##class(%SQL.Statement).%ExecDirect(,
-        "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.Task WHERE status IN (?,?) OR (status = ? AND priority = ?)",
-        "completed", "cancelled", "ready", "stat")
+        "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.Task WHERE status IN (?,?) OR priority = ?",
+        "completed", "cancelled", "stat")
         Do tCountRS.%Next()
         Set tTotal = +tCountRS.%Get("cnt")
 
@@ -1472,8 +1510,8 @@ ClassMethod GetLedger() As %Status
         "CR.Key AS crKey, CR.patient, CR.disposition "_
         "FROM HSFHIR_X0001_S.Task T "_
         "LEFT JOIN HSFHIR_X0001_S.ClaimResponse CR ON T.focus = CR.request "_
-        "WHERE T.status IN (?,?) OR (T.status = ? AND T.priority = ?) "_
-        "ORDER BY T._lastUpdated DESC", "completed", "cancelled", "ready", "stat")
+        "WHERE T.status IN (?,?) OR T.priority = ? "_
+        "ORDER BY T._lastUpdated DESC", "completed", "cancelled", "stat")
 
         Set tArr = []
         Set tIdx = 0
@@ -1494,7 +1532,7 @@ ClassMethod GetLedger() As %Status
             Set tAction = "approved"
             If tStatus = "cancelled" {
                 Set tAction = "rejected"
-            } ElseIf (tStatus = "ready") && (tPriority = "stat") {
+            } ElseIf tPriority = "stat" {
                 Set tAction = "escalated"
             }
 
@@ -1502,6 +1540,19 @@ ClassMethod GetLedger() As %Status
             Set tPatientRef = tRS.%Get("patient")
             Set tPatientId = $Piece(tPatientRef, "/", 2)
             Set tProviderId = "Unknown"
+
+            // Derive provider from Claim reference
+            If tClaimId '= "" {
+                Try {
+                    Set tProvRS = ##class(%SQL.Statement).%ExecDirect(,
+                    "SELECT provider FROM HSFHIR_X0001_S.Claim WHERE Key = ?", "Claim/" _ tClaimId)
+                    If tProvRS.%Next() {
+                        Set tProvRef = tProvRS.%Get("provider")
+                        Set tProviderId = $Piece(tProvRef, "/", 2)
+                        If tProviderId = "" Set tProviderId = "Unknown"
+                    }
+                } Catch {}
+            }
 
             // Fetch details directly from ClaimResponse resource using FHIR service read
             Set tBilledAmount = 0.0
@@ -1816,7 +1867,7 @@ ClassMethod GetSystemHealth() As %Status
     Try {
         Set tHealth = {
             "status": "healthy",
-            "timestamp": ($ZDateTime($ZTIMESTAMP, 3, 1)),
+            "timestamp": ($Translate($ZDateTime($ZTIMESTAMP, 3, 1), " ", "T") _ "Z"),
             "components": {}
         }
         Set tHealthy = 1
@@ -1965,9 +2016,24 @@ ClassMethod CreateUser() As %Status
         Set ^ClaimAuditAI("Users", tUsername, "fullName") = tFullName
         If tFullName = "" Set ^ClaimAuditAI("Users", tUsername, "fullName") = tUsername
         If $IsObject(tRoles) {
+            Set tValidRoles = $LISTBUILD("Viewer", "Auditor", "Specialist", "Director", "Admin")
+            Set tRoleError = ""
             Set tRIter = tRoles.%GetIterator()
             While tRIter.%GetNext(.tK, .tRole) {
+                Set tIsValid = 0
+                For tJ = 1:1:$LISTLENGTH(tValidRoles) {
+                    If ""_tRole = $LISTGET(tValidRoles, tJ) Set tIsValid = 1 Quit
+                }
+                If 'tIsValid {
+                    Set tRoleError = ""_tRole
+                    Quit
+                }
                 Set ^ClaimAuditAI("Users", tUsername, "roles", ""_tRole) = ""
+            }
+            If tRoleError '= "" {
+                Set %response.Status = 400
+                Write {"error": ("Invalid role: " _ tRoleError _ ". Allowed: Viewer, Auditor, Specialist, Director, Admin")}.%ToJSON()
+                Quit
             }
         }
 
@@ -2005,6 +2071,24 @@ ClassMethod UpdateUser(username As %String) As %Status
             Set ^ClaimAuditAI("Users", username, "fullName") = tBody.fullName
         }
         If $IsObject(tBody.roles) {
+            Set tValidRoles = $LISTBUILD("Viewer", "Auditor", "Specialist", "Director", "Admin")
+            Set tRoleError = ""
+            Set tRIter = tBody.roles.%GetIterator()
+            While tRIter.%GetNext(.tK, .tRole) {
+                Set tIsValid = 0
+                For tJ = 1:1:$LISTLENGTH(tValidRoles) {
+                    If ""_tRole = $LISTGET(tValidRoles, tJ) Set tIsValid = 1 Quit
+                }
+                If 'tIsValid {
+                    Set tRoleError = ""_tRole
+                    Quit
+                }
+            }
+            If tRoleError '= "" {
+                Set %response.Status = 400
+                Write {"error": ("Invalid role: " _ tRoleError _ ". Allowed: Viewer, Auditor, Specialist, Director, Admin")}.%ToJSON()
+                Quit
+            }
             Kill ^ClaimAuditAI("Users", username, "roles")
             Set tRIter = tBody.roles.%GetIterator()
             While tRIter.%GetNext(.tK, .tRole) {
@@ -2075,7 +2159,7 @@ ClassMethod BackupRepository() As %Status
         Set tBundle = {
             "resourceType": "Bundle",
             "type": "transaction",
-            "timestamp": ($ZDateTime($ZTIMESTAMP, 3, 1)),
+            "timestamp": ($Translate($ZDateTime($ZTIMESTAMP, 3, 1), " ", "T") _ "Z"),
             "entry": []
         }
 
