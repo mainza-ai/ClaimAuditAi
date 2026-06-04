@@ -226,23 +226,16 @@ ClassMethod IssueSmartOnFHIRToken(pUsername As %String, pClientId As %String = "
 {
     Set tResult = ""
     Try {
-        // Since the process is already logged in as the user, we can get their roles from $Roles.
-        // Default FullName based on common local users.
-        Set tFullName = pUsername
-        If pUsername = "admin" Set tFullName = "ClaimAuditAI Admin"
-        If pUsername = "auditor" Set tFullName = "ClaimAuditAI Auditor"
-        If pUsername = "viewer" Set tFullName = "ClaimAuditAI Viewer"
+        // Read FullName from local credential store (INTEROP globals, no namespace switch needed)
+        Set tFullName = $Get(^ClaimAuditAI("Users", pUsername, "fullName"), pUsername)
 
-        Set tRolesStr = $Roles
+        // Read roles from local credential store (INTEROP globals, no namespace switch needed)
         Set tRoles = []
-        For tI = 1:1:$Length(tRolesStr, ",") {
-            Set tRole = $Piece(tRolesStr, ",", tI)
-            If tRole = "ClaimAdmin" Do tRoles.%Push("Admin")
-            If tRole = "ClaimAuditor" Do tRoles.%Push("Auditor")
-            If tRole = "ClaimViewer" Do tRoles.%Push("Viewer")
-            If tRole = "Admin" Do tRoles.%Push("Admin")
-            If tRole = "Auditor" Do tRoles.%Push("Auditor")
-            If tRole = "Viewer" Do tRoles.%Push("Viewer")
+        Set tSub = ""
+        For {
+            Set tSub = $Order(^ClaimAuditAI("Users", pUsername, "roles", tSub))
+            If tSub = "" Quit
+            Do tRoles.%Push(tSub)
         }
 
         Set tSecret = ..GetJWTSecret()

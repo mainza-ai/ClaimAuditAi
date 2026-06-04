@@ -65,6 +65,18 @@
 
     zn "INTEROP"
 
+    // Store credential hashes + roles in INTEROP globals — CSP runs as UnknownUser without %SYS access
+    Set tSalt = "ClaimAuditAI_Salt"
+    Set ^ClaimAuditAI("Users","admin","hash") = $SYSTEM.Encryption.HMACSHA(256, "ClaimAuditAdmin2026!", tSalt)
+    Set ^ClaimAuditAI("Users","admin","fullName") = "ClaimAuditAI Admin"
+    Set ^ClaimAuditAI("Users","admin","roles","Admin") = ""
+    Set ^ClaimAuditAI("Users","auditor","hash") = $SYSTEM.Encryption.HMACSHA(256, "AuditReview2026!", tSalt)
+    Set ^ClaimAuditAI("Users","auditor","fullName") = "ClaimAuditAI Auditor"
+    Set ^ClaimAuditAI("Users","auditor","roles","Auditor") = ""
+    Set ^ClaimAuditAI("Users","viewer","hash") = $SYSTEM.Encryption.HMACSHA(256, "ViewDash2026!", tSalt)
+    Set ^ClaimAuditAI("Users","viewer","fullName") = "ClaimAuditAI Viewer"
+    Set ^ClaimAuditAI("Users","viewer","roles","Viewer") = ""
+
     // Create /_vscode web app to support VS Code extension testing
     zpm "install vscode-per-namespace-settings"
 

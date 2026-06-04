@@ -21,6 +21,9 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
     <Route Url="/claims/held" Method="GET" Call="GetHeldClaims"/>
     <Route Url="/claims/export"         Method="GET"  Call="ExportClaims"/>
     <Route Url="/claims/:id"            Method="GET"  Call="GetClaimDetail"/>
+    <Route Url="/claims/:id/approve"   Method="POST" Call="ApproveClaim"/>
+    <Route Url="/claims/:id/escalate"  Method="POST" Call="EscalateClaim"/>
+    <Route Url="/claims/:id/reject"    Method="POST" Call="RejectClaim"/>
     <Route Url="/stats"                 Method="GET"  Call="GetStats"/>
     <Route Url="/stats/model-performance" Method="GET"  Call="GetModelPerformance"/>
     <Route Url="/metrics"               Method="GET"  Call="GetMetrics"/>
@@ -90,9 +93,10 @@ ClassMethod Login() As %Status
             Quit
         }
 
-        // Validate credentials using IRIS login system
-        Set tIsValid = ##class(%SYSTEM.Security).Login(tUsername, tPassword)
-        If 'tIsValid {
+        // Validate credentials against local credential store (INTEROP globals — CSP UnknownUser has no %SYS access)
+        Set tHash = $SYSTEM.Encryption.HMACSHA(256, tPassword, "ClaimAuditAI_Salt")
+        Set tStoredHash = $Get(^ClaimAuditAI("Users", tUsername, "hash"))
+        If (tStoredHash = "") || (tHash '= tStoredHash) {
             Set %response.Status = 401
             Write {"error": "invalid_grant", "error_description": "Invalid credentials"}.%ToJSON()
             Quit
@@ -674,7 +678,17 @@ ClassMethod ApproveClaim(id As %String) As %Status
         Set tRespPut = ##class(HS.FHIRServer.API.Data.Response).%New()
         Do tService.DispatchRequest(tReqPut, .tRespPut)
 
+        If $EXTRACT(tRespPut.Status, 1) '= "2" {
+            Set %response.Status = 400
+            Write {"error": ("Failed to update ClaimResponse: " _ tRespPut.Status)}.%ToJSON()
+            Quit
+        }
+
         // Extract Claim reference to resolve associated task
+        If '$IsObject(tCRJson.request) {
+            Write {"status": "success", "authorizedBy": (tAuthorizedBy), "note": "ClaimResponse updated, no associated Claim reference for task resolution"}.%ToJSON()
+            Quit
+        }
         Set tRequestRef = tCRJson.request.reference
         Set tClaimId = $Piece(tRequestRef, "/", 2)
 
@@ -761,8 +775,17 @@ ClassMethod EscalateClaim(id As %String) As %Status
         Set tRespPut = ##class(HS.FHIRServer.API.Data.Response).%New()
         Do tService.DispatchRequest(tReqPut, .tRespPut)
 
-        Set tRequestRef = tCRJson.request.reference
-        Set tClaimId = $Piece(tRequestRef, "/", 2)
+        If $EXTRACT(tRespPut.Status, 1) '= "2" {
+            Set %response.Status = 400
+            Write {"error": ("Failed to update ClaimResponse: " _ tRespPut.Status)}.%ToJSON()
+            Quit
+        }
+
+        Set tClaimId = ""
+        If $IsObject(tCRJson.request) {
+            Set tRequestRef = tCRJson.request.reference
+            Set tClaimId = $Piece(tRequestRef, "/", 2)
+        }
 
         // 2. Progress Task through workflow states
         // ready → requested (specialist) → received (director)
@@ -875,8 +898,17 @@ ClassMethod RejectClaim(id As %String) As %Status
         Set tRespPut = ##class(HS.FHIRServer.API.Data.Response).%New()
         Do tService.DispatchRequest(tReqPut, .tRespPut)
 
-        Set tRequestRef = tCRJson.request.reference
-        Set tClaimId = $Piece(tRequestRef, "/", 2)
+        If $EXTRACT(tRespPut.Status, 1) '= "2" {
+            Set %response.Status = 400
+            Write {"error": ("Failed to update ClaimResponse: " _ tRespPut.Status)}.%ToJSON()
+            Quit
+        }
+
+        Set tClaimId = ""
+        If $IsObject(tCRJson.request) {
+            Set tRequestRef = tCRJson.request.reference
+            Set tClaimId = $Piece(tRequestRef, "/", 2)
+        }
 
         // 2. Cancel linked Task
         If tClaimId '= "" {

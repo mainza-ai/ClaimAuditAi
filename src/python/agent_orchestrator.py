@@ -20,12 +20,22 @@ class ClaimAuditAgent:
         pass
 
     def generate_hold_summary(self, patient_id: str, provider_npi: str, billed_amount: float,
-                              code_count: int, service_date: str, first_code_desc: str,
-                              audit_reasons: list) -> str:
+                               code_count: int, service_date: str, first_code_desc: str,
+                               audit_reasons: list) -> str:
         safe_patient_id = _sanitize(patient_id)
         safe_provider = _sanitize(provider_npi)
         safe_desc = _sanitize(first_code_desc)
         reasons_str = "\n".join([f"- {_sanitize(r)}" for r in audit_reasons])
+
+        # Coerce types — ObjectScript bridge may pass numbers as strings
+        try:
+            billed_amount = float(billed_amount)
+        except (ValueError, TypeError):
+            billed_amount = 0.0
+        try:
+            code_count = int(code_count)
+        except (ValueError, TypeError):
+            code_count = 0
 
         prompt = f"""You are an advanced autonomous Payment Integrity Officer at a major health insurance payer.
 Your primary task is to review clinical-financial audits and construct a comprehensive, explainable adjudication summary for claims that have been flagged as high-risk (HOLD) by our automated engines.
