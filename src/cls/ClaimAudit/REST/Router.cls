@@ -45,6 +45,10 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
     <Route Url="/system/admin-log" Method="GET" Call="GetAdminLog"/>
     <Route Url="/system/retrain-model" Method="POST" Call="RetrainModel"/>
     <Route Url="/system/health" Method="GET" Call="GetSystemHealth"/>
+    <Route Url="/system/users" Method="GET" Call="ListUsers"/>
+    <Route Url="/system/users" Method="POST" Call="CreateUser"/>
+    <Route Url="/system/users/:username" Method="PUT" Call="UpdateUser"/>
+    <Route Url="/system/users/:username" Method="DELETE" Call="DeleteUser"/>
     </Routes>
 }
 
@@ -1893,6 +1897,166 @@ ClassMethod GetSystemHealth() As %Status
     } Catch ex {
         Set tSC = ex.AsStatus()
         Write {"status": "error", "error": (ex.DisplayString())}.%ToJSON()
+    }
+    Quit tSC
+}
+
+/// List all users with their roles from ^ClaimAuditAI credential store
+ClassMethod ListUsers() As %Status
+{
+    If '##class(ClaimAudit.REST.Auth).RequireAuth("Admin") Quit $$$OK
+    Set tSC = $$$OK
+    Try {
+        Set tArr = []
+        Set tUsername = ""
+        For {
+            Set tUsername = $Order(^ClaimAuditAI("Users", tUsername))
+            Quit:tUsername=""
+            Set tFullName = $Get(^ClaimAuditAI("Users", tUsername, "fullName"), tUsername)
+            Set tRoles = []
+            Set tRole = ""
+            For {
+                Set tRole = $Order(^ClaimAuditAI("Users", tUsername, "roles", tRole))
+                Quit:tRole=""
+                Do tRoles.%Push(tRole)
+            }
+            Do tArr.%Push({
+                "username": (tUsername),
+                "fullName": (tFullName),
+                "roles": (tRoles)
+            })
+        }
+        Write {"data": (tArr), "total": (tArr.%Size())}.%ToJSON()
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+        Write {"error": (ex.DisplayString())}.%ToJSON()
+    }
+    Quit tSC
+}
+
+/// Create a new user in ^ClaimAuditAI credential store
+ClassMethod CreateUser() As %Status
+{
+    If '##class(ClaimAudit.REST.Auth).RequireAuth("Admin") Quit $$$OK
+    Set tSC = $$$OK
+    Try {
+        Set tRaw = %request.Content
+        Set tBodyStr = ""
+        While 'tRaw.AtEnd { Set tBodyStr = tBodyStr _ tRaw.Read(32000) }
+        Set tBody = ##class(%DynamicObject).%FromJSON(tBodyStr)
+        Set tUsername = tBody.username
+        Set tPassword = tBody.password
+        Set tFullName = tBody.fullName
+        Set tRoles = tBody.roles
+
+        If (tUsername = "") || (tPassword = "") {
+            Set %response.Status = 400
+            Write {"error": "Username and password are required."}.%ToJSON()
+            Quit
+        }
+        If $Data(^ClaimAuditAI("Users", tUsername)) {
+            Set %response.Status = 409
+            Write {"error": ("User " _ tUsername _ " already exists.")}.%ToJSON()
+            Quit
+        }
+
+        Set ^ClaimAuditAI("Users", tUsername, "hash") = $SYSTEM.Encryption.HMACSHA(256, tPassword, "ClaimAuditAI_Salt")
+        Set ^ClaimAuditAI("Users", tUsername, "fullName") = tFullName
+        If tFullName = "" Set ^ClaimAuditAI("Users", tUsername, "fullName") = tUsername
+        If $IsObject(tRoles) {
+            Set tRIter = tRoles.%GetIterator()
+            While tRIter.%GetNext(.tK, .tRole) {
+                Set ^ClaimAuditAI("Users", tUsername, "roles", ""_tRole) = ""
+            }
+        }
+
+        Do ..AdminLog("user-created", "Created user " _ tUsername _ " with roles " _ tRoles.%ToJSON())
+
+        Write {"success": true, "username": (tUsername)}.%ToJSON()
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+        Write {"error": (ex.DisplayString())}.%ToJSON()
+    }
+    Quit tSC
+}
+
+/// Update existing user (roles, password, display name)
+ClassMethod UpdateUser(username As %String) As %Status
+{
+    If '##class(ClaimAudit.REST.Auth).RequireAuth("Admin") Quit $$$OK
+    Set tSC = $$$OK
+    Try {
+        If '$Data(^ClaimAuditAI("Users", username)) {
+            Set %response.Status = 404
+            Write {"error": ("User " _ username _ " not found.")}.%ToJSON()
+            Quit
+        }
+
+        Set tRaw = %request.Content
+        Set tBodyStr = ""
+        While 'tRaw.AtEnd { Set tBodyStr = tBodyStr _ tRaw.Read(32000) }
+        Set tBody = ##class(%DynamicObject).%FromJSON(tBodyStr)
+
+        If tBody.password '= "" {
+            Set ^ClaimAuditAI("Users", username, "hash") = $SYSTEM.Encryption.HMACSHA(256, tBody.password, "ClaimAuditAI_Salt")
+        }
+        If tBody.fullName '= "" {
+            Set ^ClaimAuditAI("Users", username, "fullName") = tBody.fullName
+        }
+        If $IsObject(tBody.roles) {
+            Kill ^ClaimAuditAI("Users", username, "roles")
+            Set tRIter = tBody.roles.%GetIterator()
+            While tRIter.%GetNext(.tK, .tRole) {
+                Set ^ClaimAuditAI("Users", username, "roles", ""_tRole) = ""
+            }
+        }
+
+        Do ..AdminLog("user-updated", "Updated user " _ username)
+
+        Write {"success": true, "username": (username)}.%ToJSON()
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+        Write {"error": (ex.DisplayString())}.%ToJSON()
+    }
+    Quit tSC
+}
+
+/// Delete a user from ^ClaimAuditAI credential store
+ClassMethod DeleteUser(username As %String) As %Status
+{
+    If '##class(ClaimAudit.REST.Auth).RequireAuth("Admin") Quit $$$OK
+    Set tSC = $$$OK
+    Try {
+        If '$Data(^ClaimAuditAI("Users", username)) {
+            Set %response.Status = 404
+            Write {"error": ("User " _ username _ " not found.")}.%ToJSON()
+            Quit
+        }
+
+        // Prevent deleting the last admin
+        If username '= "admin" {
+            Set tAdminCount = 0
+            Set tU = ""
+            For {
+                Set tU = $Order(^ClaimAuditAI("Users", tU))
+                Quit:tU=""
+                If $Data(^ClaimAuditAI("Users", tU, "roles", "Admin")) Set tAdminCount = tAdminCount + 1
+            }
+            If (tAdminCount <= 1) && $Data(^ClaimAuditAI("Users", username, "roles", "Admin")) {
+                Set %response.Status = 400
+                Write {"error": "Cannot delete the only remaining admin user."}.%ToJSON()
+                Quit
+            }
+        }
+
+        Kill ^ClaimAuditAI("Users", username)
+
+        Do ..AdminLog("user-deleted", "Deleted user " _ username)
+
+        Write {"success": true, "username": (username)}.%ToJSON()
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+        Write {"error": (ex.DisplayString())}.%ToJSON()
     }
     Quit tSC
 }

@@ -14,6 +14,7 @@ const GraphView = lazy(() => import('./views/GraphView').then(m => ({ default: m
 const Ledger = lazy(() => import('./views/Ledger').then(m => ({ default: m.Ledger })));
 const LLMSettings = lazy(() => import('./views/LLMSettings').then(m => ({ default: m.LLMSettings })));
 const DataManagement = lazy(() => import('./views/DataManagement').then(m => ({ default: m.DataManagement })));
+const UserManagement = lazy(() => import('./views/UserManagement').then(m => ({ default: m.UserManagement })));
 const LoginPage = lazy(() => import('./views/LoginPage').then(m => ({ default: m.LoginPage })));
 const AuditAssistant = lazy(() => import('./components/assistant/AuditAssistant').then(m => ({ default: m.AuditAssistant })));
 
@@ -98,6 +99,7 @@ function ProtectedLayout() {
                 <Route path="/ledger" element={<Ledger />} />
                 <Route path="/settings/llm" element={<LLMSettings />} />
                 <Route path="/admin/data" element={<DataManagement />} />
+                <Route path="/admin/users" element={<UserManagement />} />
                 <Route
                   path="*"
                   element={
