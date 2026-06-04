@@ -22,7 +22,7 @@ The `/api/*` endpoints validate token signatures (HS256 local, RS256 Keycloak) a
 | **Auditor** | 2 | View the active pended held claim queue, escalate anomalies to specialist. |
 | **Specialist** | 3 | View the collusion graph, execute second-stage overrides, manage ledger. |
 | **Director** | 4 | Resolve escalated pended holds (Approve/Reject), author final ledger override summaries. |
-| **Admin** | 5 | RETRAIN models, modify system-wide LLM settings, clear/seed test data. |
+| **Admin** | 5 | Manage users (CRUD with HMAC credential hashing), retrain autoencoder models, modify system-wide LLM settings, clear/seed test data, view system health dashboard, download FHIR repository backup, review admin audit log. |
 
 Higher level roles automatically bypass restrictions for lower levels (e.g., a Director or Admin inherits Auditor and Specialist abilities).
 

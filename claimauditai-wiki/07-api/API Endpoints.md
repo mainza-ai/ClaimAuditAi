@@ -54,9 +54,18 @@ Standard SMART on FHIR token validation also supports federated OpenID Connect (
 | `POST` | `/api/settings/llm` | Admin | Update LLM provider config | Merges with existing `.llm_settings.json` (API keys survive updates) |
 | `GET` | `/api/settings/llm/ollama/models` | Admin | List Ollama models | `["model1", "model2", ...]` |
 | `POST` | `/api/claims/summarize-rationale` | Protected | AI-summarize audit rationale | Accepts `{"action": "approve|escalate|reject", "userText": "..."}`, returns `{"summary": "..."}` |
-| `POST` | `/api/system/clear` | Admin | Clear all FHIR test data | `{"success": true, "message": "..."}` |
-| `GET` | `/api/system/status` | Admin | Repository resource counts | `{"claimResponses": N, "tasks": N, "patients": N}` |
-| `POST` | `/api/system/upload` | Admin | Upload external FHIR data | Accepts Claim or Bundle JSON body |
+| `GET` | `/api/stats/model-performance` | Protected | Model precision metrics | `{"precision": N, "recall": "N/A", "f1": "N/A", "truePositives": N, "falsePositives": N, "note": "..."}` |
+| `POST` | `/api/system/clear` | Admin | Clear all FHIR test data (also clears graph globals) | `{"success": true, "message": "..."}` |
+| `GET` | `/api/system/status` | Admin | Repository resource counts (10 tables) | `{"claimResponses": N, "tasks": N, "patients": N, ..., "lastSeededAt": "..."}` |
+| `POST` | `/api/system/upload` | Admin | Upload external FHIR data (Claim or Bundle) | Accepts JSON body; auto-creates ClaimProjections |
+| `GET` | `/api/system/health` | Admin | 6-component system health check | `{"status": "healthy|degraded", "components": {"fhirEndpoint": {...}, "pythonBridge": {...}, "autoencoder": {...}, "graphEngine": {...}, "llm": {...}, "database": {...}}}` |
+| `POST` | `/api/system/retrain-model` | Admin | Retrain autoencoder on current data (>5 claims) | `{"success": true|false, "message": "..."}` |
+| `GET` | `/api/system/admin-log` | Admin | Admin audit trail | `{"data": [{"date", "timestamp", "action", "detail", "user"}, ...], "total": N}` |
+| `GET` | `/api/system/users` | Admin | List all users with roles | `{"data": [{"username", "fullName", "roles": [...]}, ...], "total": N}` |
+| `POST` | `/api/system/users` | Admin | Create user with HMAC-SHA256 hash | Accepts `{"username", "password", "fullName", "roles": [...]}` |
+| `PUT` | `/api/system/users/:username` | Admin | Update user roles/password/name | Accepts `{"password", "fullName", "roles": [...]}` (password optional) |
+| `DELETE` | `/api/system/users/:username` | Admin | Delete user (prevents last admin deletion) | Returns 400 if would remove only admin |
+| `GET` | `/api/system/backup` | Admin | Download FHIR repository as transaction Bundle | `Content-Type: application/fhir+json` with attachment disposition |
 
 > **Note:** Admin/data endpoints use the `/system/` prefix (not `/admin/`). The `/admin/` path prefix is blocked by IRIS CSP security settings and returns 401.
 
@@ -91,6 +100,22 @@ The `GET /api/stats` endpoint returns:
 - `approvedToday` is scoped to the current date via `SUBSTRING(_lastUpdated,1,10) = today`
 - `riskDistribution` is derived from the `risk-score` ClaimResponse extension value (not disposition text). Thresholds: critical≥0.86 (all 3 AI tiers flagging), high≥0.50 (2 tiers), else medium (default). All three endpoints (GetHeldClaims, GetStats, GetClaimDetail) use the same classification logic.
 - `dailyInterceptedCounts` covers the trailing 7 days
+
+## Model Performance
+
+`GET /api/stats/model-performance` returns precision derived from adjudication outcomes. Recall and F1 return `"N/A"` when no labeled ground truth exists — claims that pass without AI review cannot be classified as true/false negatives without external audit data:
+
+```json
+{
+  "precision": 0.75, "recall": "N/A", "f1": "N/A",
+  "truePositives": 3, "falsePositives": 1,
+  "note": "Recall and F1 unavailable: requires labeled ground truth data for false negatives."
+}
+```
+
+## System Health
+
+`GET /api/system/health` checks 6 components: FHIR endpoint, Python bridge, autoencoder model, graph engine, LLM provider, and database counts. Returns `"healthy"` when all pass, `"degraded"` if any fail. Logged in the Data Management page.
 
 ## Error Format
 

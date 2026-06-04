@@ -31,6 +31,11 @@ If your installation encounters errors, locate the symptom in the table below to
 | **Claims in Bundles are not audited** | OnBeforeRequest only checks `Type="Claim"`, not `Type="Bundle"` | [[Bundle Claims Not Intercepted]] |
 | **Collusion graph fails to detect new edges / flags silently suppressed** | Graph was cached with 30s TTL and not invalidated between claims; exceptions returned `flagged=False` masking infrastructure failures | [[Collusion Graph Performance Degradation]] |
 | **Risk distribution shows all same level / mismatched between pages** | GetClaimDetail used LLM disposition text matching instead of risk-score extension with numeric thresholds (≥0.86→critical, ≥0.50→high, else→medium) | [[Seed Data Disposition Validation]] |
+| **F1 score always shows "N/A" in model performance** | Recall and F1 require labeled ground truth (which claims were actually fraudulent). Without external labels, false negatives cannot be measured — "N/A" is the correct value | [[API Endpoints]] |
+| **System health dashboard shows "degraded"** | One or more of 6 components (FHIR, Python, autoencoder, graph, LLM, database) failed validation | [[Container Startup Failures]] |
+| **Admin audit log returns empty** | No admin actions logged yet, or `^ClaimAuditAdminLog` global was cleared | Seed/clear/upload/retrain data to generate audit entries |
+| **User CRUD returns 409/400** | Duplicate username, missing fields, or attempted deletion of last remaining admin user | Check request payload; ensure at least one Admin role user exists |
+| **Retrain model fails** | Fewer than 5 claim projections in database, or autoencoder Python module unavailable | Seed/upload at least 5 claims before retraining |
 
 ## Key Details
 - **Primary Diagnostic Command**: `docker logs --tail 100 claimaudit-iris`
