@@ -20,7 +20,7 @@ _request_lock = __import__('threading').Lock()
 _response_cache = {}
 _response_cache_lock = __import__('threading').Lock()
 
-RETRY_COUNT = 1
+RETRY_COUNT = 3
 RETRY_BASE_DELAY = 1.0  # seconds
 
 def _load_env():
@@ -134,17 +134,17 @@ def chat(system_prompt: str, messages_json: str, max_tokens: int = 1024, timeout
             else:
                 del _response_cache[cache_key]
 
-    # 2. Check rate limit before executing request
-    _check_rate_limit()
-
     # Determine timeout and retry count dynamically from settings
     if timeout is None:
         timeout = float(settings.get("timeout", 60.0))
-    retry_count = int(settings.get("retryCount", 1))
+    retry_count = int(settings.get("retryCount", 3))
 
     last_error = None
     for attempt in range(retry_count + 1):
         try:
+            # Rate limit check inside retry loop — if limit is hit, wait and retry
+            _check_rate_limit()
+
             client, model = _get_client_and_model()
             try:
                 messages = json.loads(messages_json)

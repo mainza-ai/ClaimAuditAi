@@ -1144,8 +1144,12 @@ ClassMethod Chat() As %Status
     If '##class(ClaimAudit.REST.Auth).RequireAuth() Quit $$$OK
     Set tSC = $$$OK
     Try {
-        Set tBody = %request.Content
-        Set tPayload = ##class(%DynamicObject).%FromJSON(tBody)
+        Set tRaw = %request.Content
+        Set tBodyStr = ""
+        While 'tRaw.AtEnd {
+            Set tBodyStr = tBodyStr _ tRaw.Read(32000)
+        }
+        Set tPayload = ##class(%DynamicObject).%FromJSON(tBodyStr)
         Set tMessages = tPayload.messages
         Set tClaimContext = tPayload.claimContext
 
@@ -1176,8 +1180,12 @@ ClassMethod ChatStream() As %Status
     If '##class(ClaimAudit.REST.Auth).RequireAuth() Quit $$$OK
     Set tSC = $$$OK
     Try {
-        Set tBody = %request.Content
-        Set tPayload = ##class(%DynamicObject).%FromJSON(tBody)
+        Set tRaw = %request.Content
+        Set tBodyStr = ""
+        While 'tRaw.AtEnd {
+            Set tBodyStr = tBodyStr _ tRaw.Read(32000)
+        }
+        Set tPayload = ##class(%DynamicObject).%FromJSON(tBodyStr)
         Set tMessages = tPayload.messages
         Set tClaimContext = tPayload.claimContext
 

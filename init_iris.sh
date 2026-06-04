@@ -2,6 +2,10 @@
 # Runtime initialization for IRIS — runs on first container start
 # Creates FHIR server, compiles dependent classes, runs Engine.Setup
 
+# Upgrade Python packages to match requirements.txt (catches version bumps without full rebuild)
+echo "Checking Python dependencies..."
+/home/irisowner/.venvs/mcp-tools/bin/pip install --upgrade -r /home/irisowner/dev/requirements.txt --target /usr/irissys/mgr/python --break-system-packages 2>&1 | tail -3
+
 iris session IRIS << 'EOF' 2>&1
 zn "INTEROP"
 
