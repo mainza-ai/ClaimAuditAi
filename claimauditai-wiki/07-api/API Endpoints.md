@@ -1,29 +1,56 @@
 # API Endpoints
 
-> The REST API is served at `/api/*` via `ClaimAudit.REST.Router` (%CSP.REST). All endpoints return JSON and use Basic Authentication (`_SYSTEM:SYS`).
+> The REST API is served at `/api/*` via `ClaimAudit.REST.Router` (%CSP.REST). Protected endpoints return JSON and require SMART on FHIR token authentication (`Authorization: Bearer <token>`).
+
+## Authentication & Token Flow
+
+To authenticate and obtain a JWT token, use the `/api/auth/login` public endpoint with valid credentials (e.g., `_SYSTEM` / `SYS`, `auditor` / `AuditReview2026!`, or `admin` / `ClaimAuditAdmin2026!`).
+Standard SMART on FHIR token validation also supports federated OpenID Connect (OIDC) identities via Keycloak (RS256 JWKS signatures).
+
+### Login Request Body
+```json
+{
+  "grant_type": "password",
+  "username": "auditor",
+  "password": "AuditReview2026!",
+  "client_id": "claimaudit-ui"
+}
+```
+
+### Login Success Response
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "bearer",
+  "expires_in": 86400,
+  "scope": "launch patient/Patient.read user/Claim.read user/Claim.write user/ClaimResponse.read user/Task.read user/Task.write fhirUser online_access"
+}
+```
 
 ## Endpoint Table
 
-| Method | Path | Description | Response |
-|--------|------|-------------|----------|
-| `GET` | `/api/stats` | System metrics | `{"held": N, "approvedToday": N, "interceptedTotal": N, "totalValueHeld": N, "modelStatus": "...", "leakageRate": N, "riskDistribution": [...], "dailyInterceptedCounts": [...]}` |
-| `GET` | `/api/stats/trends` | 7-day trend data | `[{"day": "Mon", "processed": N, "held": N, "approved": N, "leakagePrevented": N}, ...]` |
-| `GET` | `/api/claims/held` | Held (queued) claims | `[{"id": "...", "patientId": "...", "patientName": "...", "cptCode": "...", "icdCode": "...", "totalAmount": N, "riskScore": N, "riskLevel": "critical|high|medium", "escalated": 0|1}, ...]` |
-| `GET` | `/api/claims/:id` | Claim detail | Full claim with `disposition`, `tierResults`, `taskId`, `communicationRequestId`, `escalated`, `linkedClinicalNotes` |
-| `POST` | `/api/claims/:id/approve` | Approve a held claim | Accepts `{"authorizedBy": "...", "rationaleSummary": "..."}`. Sets ClaimResponse outcome=complete, Task status=completed. |
-| `POST` | `/api/claims/:id/escalate` | Escalate to director | Accepts `{"authorizedBy": "...", "rationaleSummary": "..."}`. Sets Task priority=stat. Claim stays queued but shows escalated badge. |
-| `POST` | `/api/claims/:id/reject` | Reject a claim | Accepts `{"authorizedBy": "...", "rationaleSummary": "..."}`. Sets ClaimResponse outcome=error, Task status=cancelled. |
-| `GET` | `/api/ledger` | Audit ledger (approved/rejected/escalated) | `[{"id": "...", "claimId": "...", "action": "approved|escalated|rejected", "authorizedBy": "...", "timestamp": "...", "reason": "...", "amount": N}]` |
-| `POST` | `/api/chat` | AI audit assistant | `{"response": "..."}` |
-| `POST` | `/api/samples/load` | Seed FHIR sample data | `{"status": "success", "message": "..."}` |
-| `GET` | `/api/graph` | Collusion network graph | `{"nodes": [...], "edges": [...], "insights": [...], "nodeCount": N, "edgeCount": N, "insightCount": N}` |
-| `GET` | `/api/settings/llm` | Current LLM provider config | `{"provider": "nvidia|ollama|openai", "nvidiaModel": "...", "nvidiaBaseUrl": "...", ...}` |
-| `POST` | `/api/settings/llm` | Update LLM provider config | Merges with existing `.llm_settings.json` (API keys survive partial updates). Immediately active. |
-| `GET` | `/api/settings/llm/ollama/models` | List Ollama models | `["model1", "model2", ...]` |
-| `POST` | `/api/claims/summarize-rationale` | AI-summarize audit rationale | Accepts `{"action": "approve|escalate|reject", "userText": "..."}`, returns `{"summary": "..."}` |
-| `POST` | `/api/system/clear` | Clear all FHIR test data | `{"success": true, "message": "..."}` |
-| `GET` | `/api/system/status` | Repository resource counts | `{"claimResponses": N, "tasks": N, "patients": N}` |
-| `POST` | `/api/system/upload` | Upload external FHIR data | Accepts Claim or Bundle JSON body. Returns `{"success": true, "fhirStatus": N, "resourceType": "..."}` |
+| Method | Path | Access | Description | Response |
+|--------|------|--------|-------------|----------|
+| `POST` | `/api/auth/login` | Public | Authenticates credentials and returns a signed JWT | Standard OAuth2/SMART token object |
+| `POST` | `/api/auth/introspect` | Public | SMART on FHIR token validation (RFC 7662) | `{"active": true, "sub": "...", "roles": [...], ...}` |
+| `GET` | `/api/stats` | Protected | System metrics | `{"held": N, "approvedToday": N, "interceptedTotal": N, "totalValueHeld": N, "modelStatus": "...", "leakageRate": N, "riskDistribution": [...], "dailyInterceptedCounts": [...]}` |
+| `GET` | `/api/stats/trends` | Protected | 7-day trend data | `[{"day": "Mon", "processed": N, "held": N, "approved": N, "leakagePrevented": N}, ...]` |
+| `GET` | `/api/claims/held` | Protected | Held (queued) claims | `[{"id": "...", "patientId": "...", "patientName": "...", "cptCode": "...", "icdCode": "...", "totalAmount": N, "riskScore": N, "riskLevel": "critical|high|medium", "escalated": 0|1}, ...]` |
+| `GET` | `/api/claims/:id` | Protected | Claim detail | Full claim with `disposition`, `tierResults`, `taskId`, `communicationRequestId`, `escalated`, `linkedClinicalNotes` |
+| `POST` | `/api/claims/:id/approve` | Auditor+ | Approve a held claim (writes to ledger, completes task) | Accepts `{"authorizedBy": "...", "rationaleSummary": "..."}` |
+| `POST` | `/api/claims/:id/escalate` | Auditor+ | Escalate to director (sets priority=stat) | Accepts `{"authorizedBy": "...", "rationaleSummary": "..."}` |
+| `POST` | `/api/claims/:id/reject` | Auditor+ | Reject a claim (outcome=error, cancels task) | Accepts `{"authorizedBy": "...", "rationaleSummary": "..."}` |
+| `GET` | `/api/ledger` | Protected | Override audit ledger log | `[{"id": "...", "claimId": "...", "action": "approved|escalated|rejected", "authorizedBy": "...", "timestamp": "...", "reason": "...", "amount": N}]` |
+| `POST` | `/api/chat` | Protected | AI audit assistant chat | `{"response": "..."}` |
+| `POST` | `/api/samples/load` | Admin | Seed FHIR sample data | `{"status": "success", "message": "..."}` |
+| `GET` | `/api/graph` | Protected | Collusion network graph | `{"nodes": [...], "edges": [...], "insights": [...], "nodeCount": N, "edgeCount": N, "insightCount": N}` |
+| `GET` | `/api/settings/llm` | Admin | Current LLM provider config | `{"provider": "nvidia|ollama|openai", "nvidiaModel": "...", "nvidiaBaseUrl": "...", ...}` |
+| `POST` | `/api/settings/llm` | Admin | Update LLM provider config | Merges with existing `.llm_settings.json` (API keys survive updates) |
+| `GET` | `/api/settings/llm/ollama/models` | Admin | List Ollama models | `["model1", "model2", ...]` |
+| `POST` | `/api/claims/summarize-rationale` | Protected | AI-summarize audit rationale | Accepts `{"action": "approve|escalate|reject", "userText": "..."}`, returns `{"summary": "..."}` |
+| `POST` | `/api/system/clear` | Admin | Clear all FHIR test data | `{"success": true, "message": "..."}` |
+| `GET` | `/api/system/status` | Admin | Repository resource counts | `{"claimResponses": N, "tasks": N, "patients": N}` |
+| `POST` | `/api/system/upload` | Admin | Upload external FHIR data | Accepts Claim or Bundle JSON body |
 
 > **Note:** Admin/data endpoints use the `/system/` prefix (not `/admin/`). The `/admin/` path prefix is blocked by IRIS CSP security settings and returns 401.
 

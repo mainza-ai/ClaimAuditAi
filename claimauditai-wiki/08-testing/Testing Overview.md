@@ -15,7 +15,7 @@ Testing asserts that:
 
 ## Key Details
 - **Primary Test Script**: `test_claim.py` (Exposed in your workspace's `/scratch` directory).
-- **Authentication Credentials**: Basic Auth (`_SYSTEM` / `SYS`).
+- **Authentication Credentials**: JWT Bearer token or Basic Auth (`_SYSTEM` / `SYS`).
 - **Base Verification URL**: `http://localhost:52773/interop/fhir/r4/Claim`
 - **Output Assertions**: Verification of the `outcome` (`"queued"`), `disposition` (Markdown explanation), and secondary resource database IDs.
 

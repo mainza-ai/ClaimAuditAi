@@ -1,23 +1,36 @@
-# IRIS Role-Based Access Control
+# IRIS Role-Based Access Control & API RBAC
 
-> Role-Based Access Control (RBAC) secures database access by restricting schema access and managing passwordless CallIn services.
+> Role-Based Access Control (RBAC) secures database access by restricting schema access and managing passwordless CallIn services, while custom token-based claims enforce application-level privileges.
 
-To secure database access:
+## Database Access Hardening
+
 1. **Schema Access Limits**: Access to the projected SQL tables under the `ClaimAudit` schema is restricted to the `/interop/fhir/r4` service account.
 2. **Passwordless CallIn Configuration**: Enabled using `merge.cpf` to allow passwordless connections for local Python processes, while maintaining strict password enforcement for external database clients.
 
 ```
-External Client (REST) ──> Required Basic Authentication (_SYSTEM/SYS) ──> IRIS DB
-Local Process (CallIn)  ──> Allowed Passwordless CallIn Connection       ──> IRIS DB
+External Client (REST) ──> Bearer JWT or Basic Credentials ──> IRIS DB
+Local Process (CallIn)  ──> Allowed Passwordless CallIn      ──> IRIS DB
 ```
 
-This multi-layered access architecture protects the database from unauthorized external access while maintaining fast, native local data access.
+## API Role-Based Access Control (RBAC)
+
+The `/api/*` endpoints validate token signatures (HS256 local, RS256 Keycloak) and check user scopes and role claims. A numeric role level hierarchy is enforced by `ClaimAudit.REST.Auth` class:
+
+| Role Name | Numeric Level | Inherited Capabilities |
+| :--- | :--- | :--- |
+| **Viewer** | 1 | View claims dashboard and read-only statistics. |
+| **Auditor** | 2 | View the active pended held claim queue, escalate anomalies to specialist. |
+| **Specialist** | 3 | View the collusion graph, execute second-stage overrides, manage ledger. |
+| **Director** | 4 | Resolve escalated pended holds (Approve/Reject), author final ledger override summaries. |
+| **Admin** | 5 | RETRAIN models, modify system-wide LLM settings, clear/seed test data. |
+
+Higher level roles automatically bypass restrictions for lower levels (e.g., a Director or Admin inherits Auditor and Specialist abilities).
 
 ## Key Details
 - **Operational Schema**: `ClaimAudit.*`
 - **SuperServer Port**: 1972 (requires password authentication).
 - **Local CallIn Service**: `%Service_CallIn` (configured via `merge.cpf`).
-- **Gateway Accounts**: Restrict default credentials (`_SYSTEM` / `SYS`) before deploying to staging environments.
+- **Access Rule Policy**: Restricts database write permissions to the `/interop/fhir/r4` service account.
 
 ## See Also
 [[Security Overview]] · [[FHIR Interception Strategy]] · [[Docker Configuration]]

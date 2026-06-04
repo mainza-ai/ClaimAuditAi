@@ -90,6 +90,9 @@ ClaimAuditAI shifts the payment integrity paradigm from retrospective "pay-and-c
 - [[Autoencoder Trains on Random Noise]] — Synthetic noise fallback when < 10 real claims.
 - [[Bundle Claims Not Intercepted]] — OnBeforeRequest only checks `Type="Claim"`.
 - [[Collusion Graph Performance Degradation]] — Unbounded `nx.simple_cycles()` exponential blowup.
+- [[Security Users Validate Crash]] — Resolving Validate classmethod errors on Security.Users.
+- [[ClaimResponse SQL Column Missing]] — Selecting non-projected total/extension fields directly.
+
 
 ### 📂 10 - Platform Security
 - [[Security Overview]] — Safeguarding PHI and local configuration keys.
