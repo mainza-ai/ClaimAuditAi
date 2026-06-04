@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../api/client';
 import { useRoleStore } from '../store/roleStore';
 import { PERMISSIONS } from '../utils/permissions';
-import { Trash2, Database, Upload, RefreshCw, CheckCircle, AlertTriangle, FileJson } from 'lucide-react';
+import { Trash2, Database, Upload, RefreshCw, CheckCircle, AlertTriangle, FileJson, Cpu } from 'lucide-react';
 
 interface DataStatus {
   claimResponses: number;
@@ -53,11 +53,18 @@ export function DataManagement() {
   });
 
   const seedData = useMutation({
-    mutationFn: () => apiClient.post('/samples/load', {}, { timeout: 120000 }),
+    mutationFn: () => apiClient.post('/samples/load', {}, { timeout: 300000 }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['claims'] });
       qc.invalidateQueries({ queryKey: ['stats'] });
       refetchStatus();
+    },
+  });
+
+  const retrainModel = useMutation({
+    mutationFn: () => apiClient.post('/system/retrain-model'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['stats'] });
     },
   });
 
@@ -128,6 +135,32 @@ export function DataManagement() {
         {seedData.isError && (
           <p style={{ margin: '10px 0 0', fontSize: 13, color: 'var(--color-danger)' }}>
             Error seeding data: {(seedData.error as Error)?.message || 'Unknown error'}
+          </p>
+        )}
+      </div>
+
+      <div className="card" style={{ padding: 20 }}>
+        <h2 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>Retrain Autoencoder Model</h2>
+        <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--text-secondary)' }}>
+          Manually retrain the autoencoder on current ClaimProjections data. Requires at least 5 claim projections to produce a meaningful model.
+        </p>
+        <button
+          onClick={() => retrainModel.mutate()}
+          disabled={retrainModel.isPending}
+          className="btn-primary"
+          style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+        >
+          <Cpu size={15} />
+          {retrainModel.isPending ? 'Training...' : 'Retrain Model'}
+        </button>
+        {retrainModel.isSuccess && (
+          <p style={{ margin: '10px 0 0', fontSize: 13, color: 'var(--color-success)', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <CheckCircle size={14} /> {(retrainModel.data as any)?.data?.message || 'Model retrained successfully.'}
+          </p>
+        )}
+        {retrainModel.isError && (
+          <p style={{ margin: '10px 0 0', fontSize: 13, color: 'var(--color-danger)' }}>
+            Error: {(retrainModel.error as Error)?.message || 'Retraining failed'}
           </p>
         )}
       </div>

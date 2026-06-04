@@ -42,6 +42,8 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
     <Route Url="/system/clear" Method="POST" Call="ClearAllData"/>
     <Route Url="/system/status" Method="GET" Call="GetDataStatus"/>
     <Route Url="/system/upload" Method="POST" Call="UploadClaimData"/>
+    <Route Url="/system/admin-log" Method="GET" Call="GetAdminLog"/>
+    <Route Url="/system/retrain-model" Method="POST" Call="RetrainModel"/>
     </Routes>
 }
 
@@ -1371,6 +1373,8 @@ ClassMethod LoadSampleData() As %Status
 
         Set ^ClaimAuditAI("LastSeededAt") = $ZDateTime($ZTIMESTAMP, 3, 1)
 
+        Do ..AdminLog("seed", "Seeded 8 sample claims with diversified risk distribution.")
+
         Set tMsg = "Successfully ingested " _ tCount _ " FHIR Claims and parsed 8 Patient profiles."
         Write {"status": "success", "message": (tMsg)}.%ToJSON()
     } Catch ex {
@@ -1608,6 +1612,8 @@ ClassMethod ClearAllData() As %Status
             Do tGA."invalidate_graph_cache"()
         } Catch {}
 
+        Do ..AdminLog("clear", "All FHIR data cleared — 10 tables deleted.")
+
         Write {"success": true, "message": "All FHIR test data cleared."}.%ToJSON()
     } Catch ex {
         Set tSC = ex.AsStatus()
@@ -1723,6 +1729,8 @@ ClassMethod UploadClaimData() As %Status
             Do ..InsertProjectionFromClaim(tJson, tInsStmt, .tProjCount)
         }
 
+        Do ..AdminLog("upload", "Uploaded "_tResourceType_" — " _ tProjCount _" claim projections created.")
+
         Write {"success": true, "fhirStatus": (tResp.Status), "resourceType": (tResourceType), "projectionsCreated": (tProjCount)}.%ToJSON()
     } Catch ex {
         Set tSC = ex.AsStatus()
@@ -1751,6 +1759,92 @@ ClassMethod InsertProjectionFromClaim(pClaim As %DynamicObject, pStmt As %SQL.St
         Do pStmt.%Execute(tPatId, tProvId, tAmount, tItemCount, 1, 45, 1, tServiceDate)
         Set pCount = pCount + 1
     } Catch {}
+}
+
+/// Manually retrain the autoencoder model on current ClaimProjections data.
+/// This is idempotent — replaces existing model if enough training data exists (>5 claims).
+ClassMethod RetrainModel() As %Status
+{
+    If '##class(ClaimAudit.REST.Auth).RequireAuth("Admin") Quit $$$OK
+    Set tSC = $$$OK
+    Try {
+        Do ##class(ClaimAudit.AI.Engine).ConfigurePythonPath()
+        Set tAE = ##class(%SYS.Python).Import("autoencoder_train")
+        Do tAE."_invalidate_cache"()
+        Set tResult = tAE."train_autoencoder"()
+
+        Set tSuccess = 0
+        Set tMessage = ""
+        If $IsObject(tResult) {
+            Set tStatus = tResult."get"("status", "")
+            Set tMessage = tResult."get"("message", "")
+            If tStatus = "skipped" {
+                Set tSuccess = 0
+            }
+        } Else {
+            Set tMessage = ""_tResult
+            Set tSuccess = 1
+        }
+
+        Do ..AdminLog("retrain", "Autoencoder model retrained. Result: " _ tMessage)
+
+        Write {
+            "success": (tSuccess),
+            "message": (tMessage)
+        }.%ToJSON()
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+        Write {"error": (ex.DisplayString())}.%ToJSON()
+    }
+    Quit tSC
+}
+
+/// Write an immutable admin audit entry to ^ClaimAuditAdminLog
+ClassMethod AdminLog(pAction As %String, pDetail As %String) [ Internal ]
+{
+    Try {
+        Set tDate = $ZDate($PIECE($HOROLOG, ",", 1), 3)
+        Set tTS = $ZTS
+        Set tUser = $Get(^||ClaimAuditUser, "system")
+        Set ^ClaimAuditAdminLog(tDate, tTS, "action") = pAction
+        Set ^ClaimAuditAdminLog(tDate, tTS, "detail") = pDetail
+        Set ^ClaimAuditAdminLog(tDate, tTS, "user") = tUser
+    } Catch {}
+}
+
+/// Return admin audit trail entries (paginated)
+ClassMethod GetAdminLog() As %Status
+{
+    If '##class(ClaimAudit.REST.Auth).RequireAuth("Admin") Quit $$$OK
+    Set tSC = $$$OK
+    Try {
+        Set tArr = []
+        Set tDate = ""
+        For {
+            Set tDate = $Order(^ClaimAuditAdminLog(tDate), -1)
+            Quit:tDate=""
+            Set tTS = ""
+            For {
+                Set tTS = $Order(^ClaimAuditAdminLog(tDate, tTS), -1)
+                Quit:tTS=""
+                Set tAction = $Get(^ClaimAuditAdminLog(tDate, tTS, "action"))
+                Set tDetail = $Get(^ClaimAuditAdminLog(tDate, tTS, "detail"))
+                Set tUser = $Get(^ClaimAuditAdminLog(tDate, tTS, "user"))
+                Do tArr.%Push({
+                    "date": (tDate),
+                    "timestamp": (tTS),
+                    "action": (tAction),
+                    "detail": (tDetail),
+                    "user": (tUser)
+                })
+            }
+        }
+        Write {"data": (tArr), "total": (tArr.%Size())}.%ToJSON()
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+        Write {"error": (ex.DisplayString())}.%ToJSON()
+    }
+    Quit tSC
 }
 
 /// FHIR CapabilityStatement for SMART on FHIR compliance
