@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../api/client';
 import { useThemeStore } from '../store/themeStore';
 import type { GraphData, GraphInsight } from '../types/graph';
-import { AlertTriangle, Network, Users, Building2, ZoomIn, ZoomOut, Maximize, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Network, Users, Building2, ZoomIn, ZoomOut, Maximize, RefreshCw, Download } from 'lucide-react';
 
 const SEVERITY_COLORS: Record<string, string> = {
   critical: 'var(--color-danger)',
@@ -227,6 +227,14 @@ export function GraphView() {
   const handleZoomIn = () => cyRef.current?.zoom(cyRef.current.zoom() * 1.2);
   const handleZoomOut = () => cyRef.current?.zoom(cyRef.current.zoom() * 0.8);
   const handleFit = () => cyRef.current?.fit(undefined, 20);
+  const handleExportPNG = () => {
+    if (!cyRef.current) return;
+    const b64 = (cyRef.current as any).png({ full: true, bg: isDark ? '#0F172A' : '#FFFFFF' });
+    const link = document.createElement('a');
+    link.download = 'claimaudit-collusion-network.png';
+    link.href = b64;
+    link.click();
+  };
 
   const highlightInsightElements = (cy: cytoscape.Core, insights: GraphInsight[], flash: boolean) => {
     cy.elements().removeClass('highlighted');
@@ -302,6 +310,9 @@ export function GraphView() {
           </button>
           <button onClick={() => queryClient.invalidateQueries({ queryKey: ['graph'] })} title="Refresh graph" style={{ padding: '5px 8px', borderRadius: 6, border: '1px solid var(--border-default)', backgroundColor: 'transparent', cursor: 'pointer', color: 'var(--text-secondary)' }}>
             <RefreshCw size={14} />
+          </button>
+          <button onClick={handleExportPNG} title="Export as PNG" style={{ padding: '5px 8px', borderRadius: 6, border: '1px solid var(--border-default)', backgroundColor: 'transparent', cursor: 'pointer', color: 'var(--text-secondary)' }}>
+            <Download size={14} />
           </button>
         </div>
       </div>

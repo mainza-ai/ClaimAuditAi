@@ -1612,6 +1612,9 @@ ClassMethod ClearAllData() As %Status
             Do tGA."invalidate_graph_cache"()
         } Catch {}
 
+        // Clear persistent graph globals (^ClaimAuditGraph) to prevent orphaned growth
+        Try { Do ##class(ClaimAudit.Data.GraphStore).ClearAll() } Catch {}
+
         Do ..AdminLog("clear", "All FHIR data cleared — 10 tables deleted.")
 
         Write {"success": true, "message": "All FHIR test data cleared."}.%ToJSON()
