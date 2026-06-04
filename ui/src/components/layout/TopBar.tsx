@@ -1,20 +1,17 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { loadSampleData } from '../../api/claims';
 import { logout } from '../../api/auth';
-import { useRoleStore, type UserRole } from '../../store/roleStore';
-import { Database, ChevronDown, Loader2, LogOut } from 'lucide-react';
+import { useRoleStore } from '../../store/roleStore';
+import { PERMISSIONS } from '../../utils/permissions';
+import { Database, Loader2, LogOut } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
-
-const ROLES: UserRole[] = ['Auditor', 'Director', 'Specialist', 'Tech Owner / Admin'];
 
 export function TopBar() {
   const queryClient = useQueryClient();
-  const { activeRole, setActiveRole, userName } = useRoleStore();
-  const [roleOpen, setRoleOpen] = useState(false);
+  const { activeRole, userName } = useRoleStore();
   const [seedDone, setSeedDone] = useState(false);
   const [seedElapsed, setSeedElapsed] = useState(0);
-  const roleRef = useRef<HTMLDivElement>(null);
 
   const seed = useMutation({
     mutationFn: loadSampleData,
@@ -37,18 +34,6 @@ export function TopBar() {
     }
     return () => clearInterval(timer);
   }, [seed.isPending]);
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (roleRef.current && !roleRef.current.contains(e.target as Node)) {
-        setRoleOpen(false);
-      }
-    };
-    if (roleOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [roleOpen]);
 
   return (
     <header
@@ -82,8 +67,9 @@ export function TopBar() {
         </span>
 
         {/* Seed Sample Data button */}
+        {PERMISSIONS.canManageData(activeRole) && (
         <button
-          onClick={() => seed.mutate()}
+          onClick={() => !seed.isPending && !seedDone && seed.mutate()}
           disabled={seed.isPending || seedDone}
           aria-label={seed.isPending ? 'Seeding sample data...' : seedDone ? 'Sample data seeded' : 'Seed sample data'}
           style={{
@@ -104,47 +90,16 @@ export function TopBar() {
           )}
           {seed.isPending ? `Seeding... (${seedElapsed}s)` : seedDone ? 'Seeded!' : 'Seed Sample Data'}
         </button>
+        )}
 
-        {/* Role selector */}
-        <div ref={roleRef} style={{ position: 'relative' }}>
-          <button
-            onClick={() => setRoleOpen(!roleOpen)}
-            aria-label="Select role"
-            aria-expanded={roleOpen}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 6,
-              fontSize: 12, fontFamily: 'var(--font-mono)', fontWeight: 600, cursor: 'pointer',
-              backgroundColor: 'var(--bg-card)', color: 'var(--text-secondary)',
-              border: '1px solid var(--border-default)',
-            }}
-          >
-            {activeRole}
-            <ChevronDown size={13} style={{ transform: roleOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
-          </button>
-          {roleOpen && (
-            <div style={{
-              position: 'absolute', right: 0, top: '100%', marginTop: 4, width: 192,
-              backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-default)',
-              borderRadius: 8, boxShadow: 'var(--shadow-modal)', zIndex: 50, overflow: 'hidden',
-            }}>
-              {ROLES.map((role) => (
-                <button
-                  key={role}
-                  onClick={() => { setActiveRole(role); setRoleOpen(false); }}
-                  style={{
-                    width: '100%', textAlign: 'left', padding: '8px 12px',
-                    fontSize: 12, fontFamily: 'var(--font-mono)', cursor: 'pointer',
-                    backgroundColor: activeRole === role ? 'var(--accent-subtle)' : 'transparent',
-                    color: activeRole === role ? 'var(--accent-text)' : 'var(--text-secondary)',
-                    fontWeight: activeRole === role ? 700 : 400,
-                    border: 'none',
-                  }}
-                >
-                  {role}
-                </button>
-              ))}
-            </div>
-          )}
+        {/* Role badge — derived from JWT, display only. Authority enforced by backend. */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 6,
+          fontSize: 12, fontFamily: 'var(--font-mono)', fontWeight: 600,
+          backgroundColor: 'var(--bg-card)', color: 'var(--text-secondary)',
+          border: '1px solid var(--border-default)',
+        }}>
+          {activeRole}
         </div>
 
         {/* User identity badge */}

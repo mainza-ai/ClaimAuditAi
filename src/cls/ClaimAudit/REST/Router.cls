@@ -1354,6 +1354,8 @@ ClassMethod LoadSampleData() As %Status
         Set tGA = ##class(%SYS.Python).Import("graph_analyzer")
         Do tGA."invalidate_graph_cache"()
 
+        Set ^ClaimAuditAI("LastSeededAt") = $ZDateTime($ZTIMESTAMP, 3, 1)
+
         Set tMsg = "Successfully ingested " _ tCount _ " FHIR Claims and parsed 8 Patient profiles."
         Write {"status": "success", "message": (tMsg)}.%ToJSON()
     } Catch ex {
@@ -1601,12 +1603,37 @@ ClassMethod GetDataStatus() As %Status
         Do tCR.%Next()
         Set tTask = ##class(%SQL.Statement).%ExecDirect(, "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.Task")
         Do tTask.%Next()
+        Set tClaim = ##class(%SQL.Statement).%ExecDirect(, "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.Claim")
+        Do tClaim.%Next()
         Set tPat = ##class(%SQL.Statement).%ExecDirect(, "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.Patient")
         Do tPat.%Next()
+        Set tDocRef = ##class(%SQL.Statement).%ExecDirect(, "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.DocumentReference")
+        Do tDocRef.%Next()
+        Set tComm = ##class(%SQL.Statement).%ExecDirect(, "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.CommunicationRequest")
+        Do tComm.%Next()
+        Set tProjCR = ##class(%SQL.Statement).%ExecDirect(, "SELECT COUNT(*) AS cnt FROM ClaimAudit.ClaimProjections")
+        Do tProjCR.%Next()
+        Set tProjPat = ##class(%SQL.Statement).%ExecDirect(, "SELECT COUNT(*) AS cnt FROM ClaimAudit.PatientProjections")
+        Do tProjPat.%Next()
+        Set tProjProv = ##class(%SQL.Statement).%ExecDirect(, "SELECT COUNT(*) AS cnt FROM ClaimAudit.ProviderProjections")
+        Do tProjProv.%Next()
+        Set tCN = ##class(%SQL.Statement).%ExecDirect(, "SELECT COUNT(*) AS cnt FROM ClaimAudit.ClinicalNotes")
+        Do tCN.%Next()
+
+        Set tLastSeed = $Get(^ClaimAuditAI("LastSeededAt"), "")
+
         Write {
             "claimResponses": (tCR.%Get("cnt")),
             "tasks": (tTask.%Get("cnt")),
-            "patients": (tPat.%Get("cnt"))
+            "claims": (tClaim.%Get("cnt")),
+            "patients": (tPat.%Get("cnt")),
+            "documentReferences": (tDocRef.%Get("cnt")),
+            "communicationRequests": (tComm.%Get("cnt")),
+            "projectionClaims": (tProjCR.%Get("cnt")),
+            "projectionPatients": (tProjPat.%Get("cnt")),
+            "projectionProviders": (tProjProv.%Get("cnt")),
+            "clinicalNotes": (tCN.%Get("cnt")),
+            "lastSeededAt": (tLastSeed)
         }.%ToJSON()
     } Catch ex {
         Set tSC = ex.AsStatus()
@@ -1628,6 +1655,13 @@ ClassMethod UploadClaimData() As %Status
             Write {"error": "Empty or invalid JSON body"}.%ToJSON()
             Return $$$OK
         }
+        // Reject unsupported resource types
+        If (tResourceType '= "Claim") && (tResourceType '= "Bundle") {
+            Set %response.Status = 400
+            Write {"error": ("Unsupported resource type: " _ tResourceType _ ". Only Claim and Bundle resources are accepted.")}.%ToJSON()
+            Quit
+        }
+
         Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
         Set tReq = ##class(HS.FHIRServer.API.Data.Request).%New()
         Set tReq.RequestMethod = "POST"
@@ -1642,7 +1676,31 @@ ClassMethod UploadClaimData() As %Status
         }
         Set tResp = ##class(HS.FHIRServer.API.Data.Response).%New()
         Do tService.DispatchRequest(tReq, .tResp)
-        Write {"success": true, "fhirStatus": (tResp.Status), "resourceType": (tResourceType)}.%ToJSON()
+
+        If $EXTRACT(tResp.Status, 1) '= "2" {
+            Set %response.Status = 400
+            Write {"error": ("FHIR dispatch failed with status " _ tResp.Status)}.%ToJSON()
+            Quit
+        }
+
+        // Insert ClaimProjections so the autoencoder has training data for uploaded claims
+        Set tInsStmt = ##class(%SQL.Statement).%New()
+        Do tInsStmt.%Prepare("INSERT INTO ClaimAudit.ClaimProjections (PatientKey, ProviderNPI, BilledAmount, ItemCount, SpecialtyCode, PatientAge, DurationDays, ServiceDate) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+        Set tProjCount = 0
+        If tResourceType = "Bundle" {
+            If $IsObject(tJson.entry) {
+                Set tEIter = tJson.entry.%GetIterator()
+                While tEIter.%GetNext(.tEK, .tEntry) {
+                    If $IsObject(tEntry.resource) && (tEntry.resource.resourceType = "Claim") {
+                        Do ..InsertProjectionFromClaim(tEntry.resource, tInsStmt, .tProjCount)
+                    }
+                }
+            }
+        } ElseIf tResourceType = "Claim" {
+            Do ..InsertProjectionFromClaim(tJson, tInsStmt, .tProjCount)
+        }
+
+        Write {"success": true, "fhirStatus": (tResp.Status), "resourceType": (tResourceType), "projectionsCreated": (tProjCount)}.%ToJSON()
     } Catch ex {
         Set tSC = ex.AsStatus()
         Write {"error": (ex.DisplayString())}.%ToJSON()
@@ -1650,9 +1708,32 @@ ClassMethod UploadClaimData() As %Status
     Quit tSC
 }
 
+/// Helper: insert a ClaimProjection row from a claim JSON object
+ClassMethod InsertProjectionFromClaim(pClaim As %DynamicObject, pStmt As %SQL.Statement, ByRef pCount As %Integer) [ Internal ]
+{
+    Try {
+        Set tPatId = $Piece(pClaim.patient.reference, "/", *)
+        Set tProvId = $Piece(pClaim.provider.reference, "/", *)
+        Set tAmount = +pClaim.total.value
+        Set tItemCount = 0
+        If $IsObject(pClaim.item) {
+            Set tICIter = pClaim.item.%GetIterator()
+            While tICIter.%GetNext(.tIK, .tItem) {
+                Set tItemCount = tItemCount + 1
+            }
+        }
+        Set tServiceDate = $EXTRACT(pClaim.created, 1, 10)
+        If tServiceDate = "" Set tServiceDate = $ZDate($Horolog, 3)
+
+        Do pStmt.%Execute(tPatId, tProvId, tAmount, tItemCount, 1, 45, 1, tServiceDate)
+        Set pCount = pCount + 1
+    } Catch {}
+}
+
 /// FHIR CapabilityStatement for SMART on FHIR compliance
 ClassMethod GetCapabilityStatement() As %Status
 {
+    If '##class(ClaimAudit.REST.Auth).RequireAuth() Quit $$$OK
     Set tSC = $$$OK
     Try {
         Set %response.ContentType = "application/fhir+json"
@@ -1690,6 +1771,7 @@ ClassMethod GetCapabilityStatement() As %Status
 }
 ClassMethod GetMetrics() As %Status
 {
+    If '##class(ClaimAudit.REST.Auth).RequireAuth() Quit $$$OK
     Set tSC = $$$OK
     Try {
         Set %response.ContentType = "text/plain; version=0.0.4"
@@ -1808,10 +1890,12 @@ ClassMethod ExportClaims() As %Status
         Set %response.ContentType = "text/csv; charset=utf-8"
         Set %response.Headers("Content-Disposition") = "attachment; filename=claimaudit_held_claims.csv"
 
-        Write "ClaimResponseID,PatientID,PatientName,CPTCode,ICDCode,RiskLevel,RiskScore,BilledAmount,Escalated,LastModified", !
+        Write "ClaimResponseID,PatientID,PatientName,CPTCode,ICDCode,RiskLevel,RiskScore,BilledAmount,LastModified", !
+
+        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
 
         Set tRS = ##class(%SQL.Statement).%ExecDirect(,
-        "SELECT CR.Key, CR.patient, CR.disposition, CR._lastUpdated, CR.request, "_
+        "SELECT CR.Key, CR.patient, CR._lastUpdated, "_
         "PP.Name AS patientName "_
         "FROM HSFHIR_X0001_S.ClaimResponse CR "_
         "LEFT JOIN ClaimAudit.PatientProjections PP ON SUBSTRING(CR.patient, 9) = PP.Key "_
@@ -1823,23 +1907,68 @@ ClassMethod ExportClaims() As %Status
             Set tPatientId = $Piece(tRS.%Get("patient"), "/", 2)
             Set tPatientName = tRS.%Get("patientName")
             If tPatientName = "" Set tPatientName = "Unknown"
-            Set tDisposition = tRS.%Get("disposition")
             Set tLastModified = tRS.%Get("_lastUpdated")
-            Set tClaimRef = tRS.%Get("request")
-            Set tClaimId = $Piece(tClaimRef, "/", 2)
 
-            Set tRiskLevel = "high"
-            Set tRiskScore = 0.70
-            If tDisposition [ "critical" { Set tRiskLevel = "critical"  Set tRiskScore = 0.92 }
-            ElseIf tDisposition [ "medium" { Set tRiskLevel = "medium"  Set tRiskScore = 0.45 }
+            // Read risk, CPT, ICD from FHIR extension — single source of truth
+            Set tRiskScore = 0.0
+            Set tRiskLevel = "medium"
+            Set tCptCode = "Unknown"
+            Set tIcdCode = "Unknown"
+            Set tBilledAmount = "0"
+
+            Try {
+                Set tReq = ##class(HS.FHIRServer.API.Data.Request).%New()
+                Set tReq.RequestMethod = "GET"
+                Set tReq.RequestPath = "/ClaimResponse/" _ tCRId
+                Set tReq.Interaction = "read"
+                Set tResp = ##class(HS.FHIRServer.API.Data.Response).%New()
+                Do tService.DispatchRequest(tReq, .tResp)
+
+                If $IsObject(tResp.Json) {
+                    Set tCRJson = tResp.Json
+                    If $IsObject(tCRJson.extension) {
+                        Set tExtIter = tCRJson.extension.%GetIterator()
+                        While tExtIter.%GetNext(.tK, .tExt) {
+                            If tExt.url = "https://claimauditai.com/fhir/extension/risk-score" {
+                                Set tRiskScore = +tExt.valueDecimal
+                            }
+                            If tExt.url = "https://claimauditai.com/fhir/extension/cpt-code" {
+                                Set tCptCode = tExt.valueString
+                            }
+                            If tExt.url = "https://claimauditai.com/fhir/extension/icd-code" {
+                                Set tIcdCode = tExt.valueString
+                            }
+                        }
+                    }
+                    If $IsObject(tCRJson.total) {
+                        For tTi = 0:1:tCRJson.total.%Size()-1 {
+                            Set tTotalEntry = tCRJson.total.%Get(tTi)
+                            If $IsObject(tTotalEntry.amount) {
+                                Set tBilledAmount = +tTotalEntry.amount.value
+                                Quit
+                            }
+                        }
+                    }
+                }
+            } Catch {}
+
+            If tRiskScore >= 0.86 {
+                Set tRiskLevel = "critical"
+            } ElseIf tRiskScore >= 0.50 {
+                Set tRiskLevel = "high"
+            } Else {
+                Set tRiskLevel = "medium"
+            }
 
             Write """"_tCRId_""","
             Write """"_tPatientId_""","
             Write """"_tPatientName_""","
-            Write "Unknown,Unknown,"
+            Write """"_tCptCode_""","
+            Write """"_tIcdCode_""","
             Write tRiskLevel_","
             Write tRiskScore_","
-            Write """"_($Extract(tDisposition, 1, 50))_""""
+            Write tBilledAmount_","
+            Write """"_tLastModified_""""
             Write !
         }
     } Catch ex {

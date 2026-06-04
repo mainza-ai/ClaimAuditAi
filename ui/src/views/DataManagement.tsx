@@ -8,7 +8,15 @@ import { Trash2, Database, Upload, RefreshCw, CheckCircle, AlertTriangle, FileJs
 interface DataStatus {
   claimResponses: number;
   tasks: number;
+  claims: number;
   patients: number;
+  documentReferences: number;
+  communicationRequests: number;
+  projectionClaims: number;
+  projectionPatients: number;
+  projectionProviders: number;
+  clinicalNotes: number;
+  lastSeededAt: string;
 }
 
 export function DataManagement() {
@@ -56,7 +64,14 @@ export function DataManagement() {
   const statusCards = [
     { label: 'Claim Responses', value: status?.claimResponses ?? '\u2014', icon: FileJson },
     { label: 'Tasks', value: status?.tasks ?? '\u2014', icon: Database },
+    { label: 'Claims', value: status?.claims ?? '\u2014', icon: Database },
     { label: 'Patients', value: status?.patients ?? '\u2014', icon: Database },
+    { label: 'Document References', value: status?.documentReferences ?? '\u2014', icon: Database },
+    { label: 'Comm. Requests', value: status?.communicationRequests ?? '\u2014', icon: Database },
+    { label: 'Projections (Claims)', value: status?.projectionClaims ?? '\u2014', icon: Database },
+    { label: 'Projections (Patients)', value: status?.projectionPatients ?? '\u2014', icon: Database },
+    { label: 'Projections (Providers)', value: status?.projectionProviders ?? '\u2014', icon: Database },
+    { label: 'Clinical Notes', value: status?.clinicalNotes ?? '\u2014', icon: Database },
   ];
 
   return (
@@ -75,7 +90,7 @@ export function DataManagement() {
             <RefreshCw size={13} /> Refresh
           </button>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12 }}>
           {statusCards.map(({ label, value, icon: Icon }) => (
             <div key={label} style={{ padding: 16, backgroundColor: 'var(--bg-page)', borderRadius: 8, border: '1px solid var(--border-default)', textAlign: 'center' }}>
               <Icon size={20} style={{ color: 'var(--accent-primary)', marginBottom: 8 }} />
@@ -84,6 +99,11 @@ export function DataManagement() {
             </div>
           ))}
         </div>
+        {status?.lastSeededAt && (
+          <p style={{ margin: '12px 0 0', fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
+            Last seeded: {new Date(status.lastSeededAt).toLocaleString()}
+          </p>
+        )}
       </div>
 
       <div className="card" style={{ padding: 20 }}>
@@ -106,7 +126,9 @@ export function DataManagement() {
           </p>
         )}
         {seedData.isError && (
-          <p style={{ margin: '10px 0 0', fontSize: 13, color: 'var(--color-danger)' }}>Error seeding data. Check the IRIS console for details.</p>
+          <p style={{ margin: '10px 0 0', fontSize: 13, color: 'var(--color-danger)' }}>
+            Error seeding data: {(seedData.error as Error)?.message || 'Unknown error'}
+          </p>
         )}
       </div>
 
@@ -121,19 +143,20 @@ export function DataManagement() {
         >
           <Upload size={24} style={{ color: 'var(--text-tertiary)', marginBottom: 12 }} />
           <p style={{ margin: 0, fontSize: 14, color: 'var(--text-primary)', fontWeight: 500 }}>Click to upload a FHIR JSON file</p>
-          <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-tertiary)' }}>FHIR R4 JSON \u2014 Claim or Bundle resource</p>
+          <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-tertiary)' }}>FHIR R4 JSON \u2014 Claim or Bundle resource (max 10 MB)</p>
           <input ref={fileInputRef} type="file" accept=".json,application/json" style={{ display: 'none' }}
             onChange={async (e) => {
               const file = e.target.files?.[0];
               if (!file) return;
               if (!file.name.endsWith('.json')) { setUploadStatus('error'); setUploadMessage('Only JSON files are supported.'); return; }
+              if (file.size > 10 * 1024 * 1024) { setUploadStatus('error'); setUploadMessage('File size exceeds the 10 MB limit.'); return; }
               setUploadStatus('loading');
               try {
                 const text = await file.text();
                 const jsonData = JSON.parse(text);
                 const res = await apiClient.post('/system/upload', jsonData);
                 setUploadStatus('success');
-                setUploadMessage(`Successfully submitted. FHIR status: ${res.data?.fhirStatus || 'OK'}`);
+                setUploadMessage(`Successfully submitted${res.data?.projectionsCreated ? ` with ${res.data.projectionsCreated} projections` : ''}. FHIR status: ${res.data?.fhirStatus || 'OK'}`);
                 qc.invalidateQueries({ queryKey: ['claims'] });
                 refetchStatus();
                 if (fileInputRef.current) fileInputRef.current.value = '';
@@ -152,7 +175,7 @@ export function DataManagement() {
       <div className="card" style={{ padding: 20, border: '1px solid var(--color-danger-border)', backgroundColor: 'var(--color-danger-bg)' }}>
         <h2 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600, color: 'var(--color-danger)' }}>Danger Zone \u2014 Clear All Data</h2>
         <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--text-secondary)' }}>
-          This cannot be undone. All ClaimResponse, Task, CommunicationRequest, and Patient resources will be permanently deleted.
+          This cannot be undone. All FHIR resources (Claims, ClaimResponses, Tasks, CommunicationRequests, Patients, DocumentReferences) and all projection tables (ClaimProjections, PatientProjections, ProviderProjections, ClinicalNotes) will be permanently deleted.
         </p>
         {!confirmClear ? (
           <button onClick={() => setConfirmClear(true)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', borderRadius: 6, border: '1px solid var(--color-danger-border)', backgroundColor: 'transparent', color: 'var(--color-danger)', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>
