@@ -1,10 +1,10 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import cytoscape from 'cytoscape';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../api/client';
 import { useThemeStore } from '../store/themeStore';
 import type { GraphData, GraphInsight } from '../types/graph';
-import { AlertTriangle, Network, Users, Building2, ZoomIn, ZoomOut, Maximize } from 'lucide-react';
+import { AlertTriangle, Network, Users, Building2, ZoomIn, ZoomOut, Maximize, RefreshCw } from 'lucide-react';
 
 const SEVERITY_COLORS: Record<string, string> = {
   critical: 'var(--color-danger)',
@@ -103,7 +103,10 @@ export function GraphView() {
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<cytoscape.Core | null>(null);
   const { theme } = useThemeStore();
+  const queryClient = useQueryClient();
   const [selectedNode, setSelectedNode] = useState<{ id: string; label: string; type: string } | null>(null);
+  const [selectedEdge, setSelectedEdge] = useState<{ id: string; source: string; target: string; amount: number; date: string } | null>(null);
+  const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
   const [layout, setLayout] = useState<'cose' | 'circle' | 'grid'>('cose');
 
   const { data: graph, isLoading, isError } = useQuery<GraphData>({
@@ -146,27 +149,55 @@ export function GraphView() {
       // Node click handler
       cy.on('tap', 'node', evt => {
         const node = evt.target;
+        setSelectedEdge(null);
         setSelectedNode({ id: node.id(), label: node.data('label'), type: node.data('type') });
       });
-      cy.on('tap', evt => {
-        if (evt.target === cy) setSelectedNode(null);
+
+      // Edge click handler — show transaction details
+      cy.on('tap', 'edge', evt => {
+        const edge = evt.target;
+        setSelectedNode(null);
+        setSelectedEdge({
+          id: edge.id(),
+          source: edge.data('source'),
+          target: edge.data('target'),
+          amount: edge.data('amount') || 0,
+          date: edge.data('date') || '',
+        });
       });
+
+      cy.on('tap', evt => {
+        if (evt.target === cy) { setSelectedNode(null); setSelectedEdge(null); }
+      });
+
+      // Hover tooltips
+      cy.on('mouseover', 'node', evt => {
+        const node = evt.target;
+        const pos = node.renderedPosition();
+        const addr = node.data('address');
+        setTooltip({
+          text: addr ? `${node.data('label')}\n${addr}` : node.data('label'),
+          x: pos.x, y: pos.y - 20,
+        });
+      });
+      cy.on('mouseout', 'node', () => setTooltip(null));
+      cy.on('mouseover', 'edge', evt => {
+        const edge = evt.target;
+        const pos = edge.midpoint();
+        setTooltip({
+          text: `$${(edge.data('amount') || 0).toLocaleString()} · ${edge.data('date')}`,
+          x: pos.x, y: pos.y - 10,
+        });
+      });
+      cy.on('mouseout', 'edge', () => setTooltip(null));
+
+      // Highlight insight elements on first load
+      highlightInsightElements(cy, graph.insights ?? [], false);
     } else {
       // Update elements without recreating instance — replace in place to avoid flicker
       cyRef.current.elements().remove();
       cyRef.current.add([...graph.nodes, ...graph.edges]);
-      (graph.insights ?? []).forEach((insight: GraphInsight) => {
-        if (insight.severity === 'critical') {
-          if (insight.providerId) {
-            const el = cyRef.current!.$(`#${insight.providerId}`);
-            if (el.length) el.addClass('flagged');
-          }
-          insight.claimIds?.forEach(cid => {
-            const el = cyRef.current!.$(`#${cid}`);
-            if (el.length) el.addClass('flagged');
-          });
-        }
-      });
+      highlightInsightElements(cyRef.current, graph.insights ?? [], false);
     }
   }, [graph]);
 
@@ -196,6 +227,34 @@ export function GraphView() {
   const handleZoomIn = () => cyRef.current?.zoom(cyRef.current.zoom() * 1.2);
   const handleZoomOut = () => cyRef.current?.zoom(cyRef.current.zoom() * 0.8);
   const handleFit = () => cyRef.current?.fit(undefined, 20);
+
+  const highlightInsightElements = (cy: cytoscape.Core, insights: GraphInsight[], flash: boolean) => {
+    cy.elements().removeClass('highlighted');
+    insights.forEach((insight: GraphInsight) => {
+      if (insight.severity === 'critical') {
+        if (insight.providerId) {
+          const el = cy.$(`#${insight.providerId}`);
+          if (el.length) el.addClass('highlighted').addClass('flagged');
+        }
+        insight.claimIds?.forEach(cid => {
+          const el = cy.$(`#${cid}`);
+          if (el.length) el.addClass('highlighted').addClass('flagged');
+        });
+      }
+    });
+    if (flash && insights.length > 0) {
+      const firstId = insights[0]?.providerId || insights[0]?.claimIds?.[0];
+      if (firstId) {
+        const el = cy.$(`#${firstId}`);
+        if (el.length) { cy.animate({ fit: { eles: el, padding: 60 }, duration: 500 }); }
+      }
+    }
+  };
+
+  const handleInsightClick = (insight: GraphInsight) => {
+    if (!cyRef.current) return;
+    highlightInsightElements(cyRef.current, [insight], true);
+  };
 
   if (containerRef.current) {
     containerRef.current.style.backgroundColor = isDark ? '#0F172A' : '#F9FAFB';
@@ -240,6 +299,9 @@ export function GraphView() {
           </button>
           <button onClick={handleFit} title="Fit to screen" style={{ padding: '5px 8px', borderRadius: 6, border: '1px solid var(--border-default)', backgroundColor: 'transparent', cursor: 'pointer', color: 'var(--text-secondary)' }}>
             <Maximize size={14} />
+          </button>
+          <button onClick={() => queryClient.invalidateQueries({ queryKey: ['graph'] })} title="Refresh graph" style={{ padding: '5px 8px', borderRadius: 6, border: '1px solid var(--border-default)', backgroundColor: 'transparent', cursor: 'pointer', color: 'var(--text-secondary)' }}>
+            <RefreshCw size={14} />
           </button>
         </div>
       </div>
@@ -308,6 +370,18 @@ export function GraphView() {
               overflow: 'hidden',
             }}
           />
+          {tooltip && (
+            <div style={{
+              position: 'absolute', left: tooltip.x, top: tooltip.y,
+              transform: 'translate(-50%, -100%)', pointerEvents: 'none', zIndex: 100,
+              padding: '4px 8px', borderRadius: 4, backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
+              border: '1px solid var(--border-default)', fontSize: 11, fontFamily: 'var(--font-mono)',
+              color: 'var(--text-primary)', boxShadow: 'var(--shadow-modal)', whiteSpace: 'pre-line',
+              maxWidth: 250,
+            }}>
+              {tooltip.text}
+            </div>
+          )}
         </div>
 
         {/* Right panel */}
@@ -326,8 +400,10 @@ export function GraphView() {
               {graph?.insights?.map((insight, i) => (
                 <div
                   key={i}
+                  onClick={() => handleInsightClick(insight)}
+                  title="Click to highlight on graph"
                   style={{
-                    padding: 10, borderRadius: 6,
+                    padding: 10, borderRadius: 6, cursor: 'pointer',
                     border: `1px solid ${insight.severity === 'critical' ? 'var(--color-danger-border)' : insight.severity === 'high' ? 'var(--color-warning-border)' : 'var(--border-default)'}`,
                     backgroundColor: SEVERITY_BG[insight.severity],
                   }}
@@ -369,6 +445,34 @@ export function GraphView() {
               <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-tertiary)' }}>
                 Type: {selectedNode.type === 'provider' ? 'Healthcare Provider' : 'Patient'}
               </p>
+            </div>
+          )}
+
+          {/* Selected edge detail */}
+          {selectedEdge && (
+            <div className="card" style={{ padding: 16 }}>
+              <p style={{ margin: '0 0 10px', fontSize: 12, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                Selected Transaction
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <p style={{ margin: 0, fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
+                  ID: {selectedEdge.id}
+                </p>
+                <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
+                  ${selectedEdge.amount.toLocaleString()}
+                </p>
+                <p style={{ margin: 0, fontSize: 12, color: 'var(--text-secondary)' }}>
+                  {selectedEdge.date}
+                </p>
+                <div style={{ borderTop: '1px solid var(--border-default)', paddingTop: 8, marginTop: 4 }}>
+                  <p style={{ margin: 0, fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
+                    From: {selectedEdge.source}
+                  </p>
+                  <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
+                    To: {selectedEdge.target}
+                  </p>
+                </div>
+              </div>
             </div>
           )}
         </div>
