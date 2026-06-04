@@ -91,13 +91,7 @@ ClassMethod Login() As %Status
         }
 
         // Validate credentials using IRIS login system
-        zn "%SYS"
-        Set tUserObj = ##class(Security.Users).%OpenId(tUsername)
-        Set tIsValid = 0
-        If $IsObject(tUserObj) {
-            Set tIsValid = ##class(Security.Users).CheckPassword(.tUserObj, tPassword)
-        }
-        zn "INTEROP"
+        Set tIsValid = ##class(%SYSTEM.Security).Login(tUsername, tPassword)
         If 'tIsValid {
             Set %response.Status = 401
             Write {"error": "invalid_grant", "error_description": "Invalid credentials"}.%ToJSON()

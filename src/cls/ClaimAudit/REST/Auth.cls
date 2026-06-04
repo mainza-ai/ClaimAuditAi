@@ -71,7 +71,7 @@ ClassMethod ValidateSMARTToken(pToken As %String) As %DynamicObject [ Internal ]
             Set tSecret = ..GetJWTSecret()
             If tSecret = "" Quit
 
-            Set tExpectedSigBin = $SYSTEM.Encryption.HMACSHA256(tInput, tSecret)
+            Set tExpectedSigBin = $SYSTEM.Encryption.HMACSHA(256, tInput, tSecret)
             Set tExpectedSigB64 = ..EncodeBase64Url(tExpectedSigBin)
 
             If tSigB64 '= tExpectedSigB64 Quit
@@ -98,14 +98,6 @@ ClassMethod ValidateSMARTToken(pToken As %String) As %DynamicObject [ Internal ]
 
         Set tUsername = tClaims.sub
         If tUsername = "" Quit
-
-        // Verify local user exists ONLY for HS256 dev flow
-        If tAlg = "HS256" {
-            zn "%SYS"
-            Set tExists = ##class(Security.Users).Exists(tUsername)
-            zn "INTEROP"
-            If 'tExists Quit
-        }
 
         // Extract roles (Keycloak realm_access mapping support)
         Set tRoles = tClaims.roles
@@ -234,17 +226,24 @@ ClassMethod IssueSmartOnFHIRToken(pUsername As %String, pClientId As %String = "
 {
     Set tResult = ""
     Try {
-        zn "%SYS"
-        Set tUserProps = ##class(Security.Users).Get(pUsername, .tProps)
-        Set tFullName = $Get(tProps("FullName"), pUsername)
+        // Since the process is already logged in as the user, we can get their roles from $Roles.
+        // Default FullName based on common local users.
+        Set tFullName = pUsername
+        If pUsername = "admin" Set tFullName = "ClaimAuditAI Admin"
+        If pUsername = "auditor" Set tFullName = "ClaimAuditAI Auditor"
+        If pUsername = "viewer" Set tFullName = "ClaimAuditAI Viewer"
+
+        Set tRolesStr = $Roles
         Set tRoles = []
-        Set tSub = ""
-        For {
-            Set tSub = $Order(^SYS("Security", "Users", pUsername, "Roles", tSub))
-            If tSub = "" Quit
-            Do tRoles.%Push(tSub)
+        For tI = 1:1:$Length(tRolesStr, ",") {
+            Set tRole = $Piece(tRolesStr, ",", tI)
+            If tRole = "ClaimAdmin" Do tRoles.%Push("Admin")
+            If tRole = "ClaimAuditor" Do tRoles.%Push("Auditor")
+            If tRole = "ClaimViewer" Do tRoles.%Push("Viewer")
+            If tRole = "Admin" Do tRoles.%Push("Admin")
+            If tRole = "Auditor" Do tRoles.%Push("Auditor")
+            If tRole = "Viewer" Do tRoles.%Push("Viewer")
         }
-        zn "INTEROP"
 
         Set tSecret = ..GetJWTSecret()
         If tSecret = "" Quit
@@ -275,13 +274,13 @@ ClassMethod IssueSmartOnFHIRToken(pUsername As %String, pClientId As %String = "
         Set tPayloadB64 = ..EncodeBase64Url(tPayloadJson)
 
         Set tInput = tHeaderB64 _ "." _ tPayloadB64
-        Set tSigBin = $SYSTEM.Encryption.HMACSHA256(tInput, tSecret)
+        Set tSigBin = $SYSTEM.Encryption.HMACSHA(256, tInput, tSecret)
         Set tSigB64 = ..EncodeBase64Url(tSigBin)
 
         Set tResult = tInput _ "." _ tSigB64
         Set tResult = $REPLACE($REPLACE(tResult, $CHAR(13), ""), $CHAR(10), "")
     } Catch ex {
-        zn "INTEROP"
+        Set ^ClaimAuditLastLoginError = ex.DisplayString()
     }
     Quit tResult
 }
@@ -358,10 +357,10 @@ ClassMethod GetJWKSKeys() As %DynamicObject
 
 ClassMethod GetOrCreateSecret() As %String [ Internal ]
 {
-    Set tSecret = $Get(^%SYS("ClaimAuditAI", "Secret"))
+    Set tSecret = $Get(^ClaimAuditAI("Secret"))
     If tSecret = "" {
         Set tSecret = $SYSTEM.Util.CreateGUID()
-        Set ^%SYS("ClaimAuditAI", "Secret") = tSecret
+        Set ^ClaimAuditAI("Secret") = tSecret
     }
     Quit tSecret
 }
