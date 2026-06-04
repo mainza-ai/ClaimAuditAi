@@ -9,16 +9,16 @@ We calculate the loss using the Mean Squared Error (MSE) formula:
 $$L(x, x') = \frac{1}{d} \sum_{i=1}^{d} (x_i - x'_i)^2$$
 
 Where:
-- $d$ represents the input dimensions (4).
-- $x_i$ represents the normalized input feature value.
-- $x'_i$ represents the reconstructed feature value returned by the decoder.
+- $d$ represents the input dimensions (5: BilledAmount, ItemCount, SpecialtyCode, PatientAge, DurationDays).
 
-If $L(x, x') > 	heta$ (where $	heta$ is our anomaly threshold, $0.47315$), the system flags the claim as an outlier.
+...
+
+If $L(x, x') > \theta$ (where $\theta$ is the anomaly threshold), the system flags the claim as an outlier.
 
 ## Key Details
 - **Loss Metric**: Mean Squared Error (MSE).
-- **Input Dimensions ($d$)**: 4.
-- **Anomaly Threshold ($	heta$)**: $0.47315$.
+- **Input Dimensions ($d$)**: 5.
+- **Anomaly Threshold ($\theta$)**: `max(95th percentile of training losses, 0.02)` — minimum floor prevents undetectable outliers from homogeneous training data.
 - **Adjudication Rule**: Reconstruction losses exceeding the threshold trigger an immediate anomaly flag.
 
 ## See Also

@@ -52,6 +52,18 @@ The `agent_orchestrator.py` Python module raises `ValueError: NVIDIA_API_KEY env
 2. **Update `Interactions.cls`** to fall back to `pFHIRRequest.Json.id` for the claim reference
 3. **Verify** by calling the seed endpoint and checking `^ClaimAuditStatusLog` for `status=2xx`
 
+### Autoencoder Training Order
+
+`LoadSampleData` now clears the `ClaimProjections` table **before** the NLP model warm-up (previously the warm-up ran before the table clear). This prevents the autoencoder from training on stale data from a previous seed, which caused evaluation features to mismatch the training distribution.
+
+### Sample Data Distribution
+
+The 8 sample claims have diversified features for testing all risk levels:
+- Ages: 23-78, Item counts: 1-4, Duration: 1-7 days
+- Providers 1 and 2 share the same address ("100 Main St Suite A, Boston MA") — triggers graph address collision
+- Claim 8 uses provider 1 (same address as provider 2) with extreme outlier features (age=29, items=4, days=7) — produces the critical (1.00) test case
+- Expected risk distribution: 1 critical, 3 high, 4 medium
+
 ### Verification
 ```bash
 # Check how many ClaimResponses were created

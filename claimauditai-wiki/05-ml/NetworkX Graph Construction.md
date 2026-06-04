@@ -20,9 +20,11 @@ The engine traverses the graph using NetworkX to identify anomalous patterns:
 
 ## Key Details
 - **Library**: `networkx` running natively inside Embedded Python.
-- **Graph Type**: Directed Graph (`nx.DiGraph`).
-- **Node Attributes**: `type` (provider/patient/address), `address`, `specialty`.
-- **Fraud Detection Cycles**: Identified using NetworkX cycle-finding algorithms (`nx.simple_cycles`).
+- **Graph Type**: Directed Multigraph (`nx.MultiDiGraph`) — supports multiple edges between same patient-provider pairs without overwriting.
+- **Node Attributes**: `type` (provider/patient), `address` (provider nodes only), `name`.
+- **Fraud Detection Cycles**: Identified using bounded `nx.cycle_basis` on an undirected copy of the graph (max cycle length 5).
+- **Caching**: Graph is built once per request (30s TTL) and invalidated after each claim audit so subsequent claims see newly added edges.
+- **Error Handling**: Exceptions during graph construction or analysis now flag the claim for review (fail-open) rather than silently returning `flagged=False`.
 
 ## See Also
 [[Tier 3 - Collusion Network Mapper]] · [[Embedded Python in IRIS]] · [[Dynamic Threshold Logic]]

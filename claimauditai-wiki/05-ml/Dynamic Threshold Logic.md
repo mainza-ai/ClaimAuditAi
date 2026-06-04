@@ -12,13 +12,12 @@ Where:
 - $\mu$ represents the historical mean reconstruction loss for the specialty.
 - $\sigma$ represents the standard deviation of reconstruction loss for that specialty.
 
-If the specialty has no historical data, the engine falls back to the default baseline threshold of $0.47315$.
+If the training data has low variance (homogeneous features), the 95th percentile may produce a threshold near zero. To prevent this, a **minimum floor of 0.02** is enforced: the effective threshold is `max(95th_percentile, 0.02)`.
 
 ## Key Details
-- **Baseline Threshold**: $0.47315$.
-- **Sensitivity Limit**: Three standard deviations ($3\sigma$) above the specialty's mean loss.
-- **Database Dependency**: Queries the `ProviderProjections` table.
-- **Specialty Resolution**: Lookups are performed using the provider's NPI.
+- **Threshold Calculation**: 95th percentile of per-sample MSE reconstruction losses across all training claims.
+- **Minimum Floor**: 0.02 — the threshold never drops below this, ensuring outlier detection even with homogeneous training data.
+- **When Untrained**: If fewer than 5 claims exist in the training dataset, the autoencoder returns `flagged=False` (tier gracefully bypassed) rather than producing an uncalibrated threshold.
 
 ## See Also
 [[Autoencoder Architecture]] · [[Reconstruction Loss Formula]] · [[Embedded Python in IRIS]]

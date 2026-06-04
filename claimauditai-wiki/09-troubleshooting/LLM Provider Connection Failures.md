@@ -88,5 +88,12 @@ llm_router.py
 
 `agent_orchestrator.py` uses `llm_router.generate()` instead of creating its own OpenAI client, ensuring all calls route through the same provider-agnostic interface.
 
+### Dependencies & Retries
+
+- **Package versions**: `openai==2.41.0`, `httpx>=0.28.1`. Older `openai` versions (<1.51.0) pass a `proxies` parameter to `httpx.Client` which was removed in `httpx>=0.28.0`, causing `Client.__init__() got an unexpected keyword argument 'proxies'` on every LLM call.
+- **Retry behavior**: `RETRY_COUNT=3` (exponential backoff: 1s, 2s, 4s). The rate-limit check (`_check_rate_limit()`) is inside the retry loop — if the rate limit is hit, the request waits and retries instead of failing immediately.
+- **Cache TTL**: LLM responses are cached with configurable TTL (default 86400s) to reduce duplicate API calls.
+- **Configuration precedence**: `.llm_settings.json` (runtime-configurable via UI) > environment variables from `.env` > hardcoded defaults.
+
 ## See Also
 [[AI Hub Tool Invocation Failures]] · [[Seed Data Disposition Validation]] · [[Embedded Python Import Errors]]

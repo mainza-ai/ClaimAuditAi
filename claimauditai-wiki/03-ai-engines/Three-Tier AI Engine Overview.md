@@ -32,8 +32,9 @@ By combining three distinct analytical engines, the platform identifies fraudule
 
 ## Key Details
 - **Cooperation Protocol**: The tiers execute concurrently inside the Embedded Python environment.
-- **Score Synthesis**: The outcomes of all three tiers are combined into a standardized anomaly object.
+- **Score Synthesis**: The outcomes of all three tiers are combined into a standardized anomaly object. Tier 1 (NLP) contributes +0.35, Tier 2 (Autoencoder) +0.35, Tier 3 (Graph) +0.30, capped at 1.0. The score is stored as a FHIR ClaimResponse extension (`risk-score`) — the single source of truth read by all endpoints.
 - **Default Action Limit**: Any single-tier failure or a combined threat score $\ge 0.35$ triggers a hold status.
+- **Risk Classification**: Unified across all endpoints using numeric thresholds on the stored risk-score extension: $\ge 0.86$ = critical, $\ge 0.50$ = high, else = medium. Disposition text matching is no longer used.
 - **Local Verification**: Supports offline evaluation via local CPU PyTorch execution and sentence transformers.
 
 ## See Also

@@ -12,8 +12,9 @@ The system calculates the reconstruction loss between the input $x$ and output $
 
 ## Key Details
 - **Framework**: PyTorch (`torch` running natively in Embedded Python).
-- **Input Dimensions**: 4 (Normalized claim features).
-- **Default Threshold**: $0.47315$ (MSE loss above this triggers an anomaly flag).
+- **Input Dimensions**: 5 (BilledAmount, ItemCount, SpecialtyCode, PatientAge, DurationDays).
+- **Dynamic Threshold**: 95th percentile of training reconstruction losses, with a minimum floor of 0.02. The effective threshold is `max(95th_percentile, 0.02)` to prevent false negatives with homogeneous training data.
+- **Insufficient Data**: When fewer than 5 claims exist in `ClaimProjections`, the tier returns `flagged=False` (gracefully bypassed — was previously `flagged=True`).
 - **Execution Mode**: Local CPU inference within the database transaction thread.
 
 ## See Also

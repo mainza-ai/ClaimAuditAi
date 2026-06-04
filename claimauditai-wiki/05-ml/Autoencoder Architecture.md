@@ -23,14 +23,19 @@ Output x' (Reconstruction)
 The model is trained on normal, historical billing data from `ClaimAudit.ClaimProjections`. When it processes an anomalous claim (such as an upcoded charge), the bottleneck layer cannot capture the out-of-distribution patterns, resulting in a high reconstruction loss.
 
 ## Minimum Training Data
-The autoencoder requires at least **5 real claims** in `ClaimAudit.ClaimProjections` to train a meaningful model. If the table has fewer than 5 rows, the training is skipped and the autoencoder tier is gracefully bypassed. The `LoadSampleData` endpoint seeds 8 claims into `ClaimProjections`, meeting the threshold.
+The autoencoder requires at least **5 real claims** in `ClaimAudit.ClaimProjections` to train a meaningful model. If the table has fewer than 5 rows, the training is skipped and the autoencoder tier returns `flagged=False` (gracefully bypassed — was previously `flagged=True` which incorrectly flagged all claims when training was unavailable).
+
+Once trained, the anomaly threshold has a **minimum floor of 0.02** — even with homogeneous training data, the threshold cannot drop below this value, ensuring outliers remain detectable. The effective threshold is `max(95th_percentile, 0.02)`.
+
+The `LoadSampleData` endpoint seeds 8 claims with diversified features (ages 23-78, item counts 1-4, duration 1-7 days) to produce a realistic mix of normal and outlier patterns.
 
 ## Key Details
 - **Input Dimensions**: 5 (BilledAmount, ItemCount, SpecialtyCode, PatientAge, DurationDays).
-- **Latent Bottleneck Dimensions**: 8 (deep compression with expansion layer).
+- **Latent Bottleneck Dimensions**: 4 (compressed from 5→16→8→4 for reconstruction).
 - **Framework**: PyTorch (`torch.nn.Module`).
 - **Hidden Layers**: Fully connected linear layers with ReLU activation functions.
-- **Training Data Source**: `ClaimAudit.ClaimProjections` table (populated by seed_fast.py and LoadSampleData).
+- **Training Data Source**: `ClaimAudit.ClaimProjections` table (populated by LoadSampleData).
+- **Minimum Threshold Floor**: 0.02 (prevents false negatives at extremely low reconstruction losses).
 
 ## See Also
 [[Reconstruction Loss Formula]] · [[Dynamic Threshold Logic]] · [[Embedded Python in IRIS]]

@@ -19,8 +19,9 @@ If the combined threat score is $\ge 0.35$ (or if any single-tier engine flags a
 ## Key Details
 - **Core Orchestrator**: `%AI.Agent` configured via high-performance cloud or local LLM gateways.
 - **Tool Mapping**: `%AI.Tool` bindings representing vector similarity, outlier analysis, and graph checks.
+- **Score Synthesis**: Tier 1 (NLP) +0.35, Tier 2 (Autoencoder) +0.35, Tier 3 (Graph) +0.30, capped at 1.0. Score stored as FHIR ClaimResponse extension.
 - **Threshold Limit**: Combined threat score $\ge 0.35$ triggers a hold status.
-- **Language Models**: Configured for `nvidia/nemotron-3-super-120b-a12b` (Nvidia cloud gateway, default) or `llama3` (local Ollama option).
+- **Language Models**: Provider-agnostic routing via `llm_router.py` — supports `nvidia`, `ollama`, and `openai` backends. Uses `openai==2.41.0` library with `httpx>=0.28.1`. RETRY_COUNT=3 with exponential backoff; rate-limit check inside retry loop.
 
 ## See Also
 [[Three-Tier AI Engine Overview]] · [[ClaimResponse - HOLD vs Pass]] · [[VECTOR_COSINE Query Pattern]]

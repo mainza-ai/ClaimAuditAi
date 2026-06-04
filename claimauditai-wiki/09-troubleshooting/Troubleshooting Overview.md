@@ -29,8 +29,8 @@ If your installation encounters errors, locate the symptom in the table below to
 | **LLM API key lost after saving settings** | UpdateLLMSettings overwrites file; key name mismatch between frontend and backend | [[LLM API Key Lost on Save]] |
 | **Autoencoder flags claims randomly** | Model trained on 200 synthetic random noise claims when real data < 10 | [[Autoencoder Trains on Random Noise]] |
 | **Claims in Bundles are not audited** | OnBeforeRequest only checks `Type="Claim"`, not `Type="Bundle"` | [[Bundle Claims Not Intercepted]] |
-| **Collusion graph hangs with many claims** | Unbounded `nx.simple_cycles()` causes exponential blowup | [[Collusion Graph Performance Degradation]] |
-| **Risk distribution shows all "high" / wrong levels** | GetStats used disposition text matching instead of risk-score extension values | [[Seed Data Disposition Validation]] |
+| **Collusion graph fails to detect new edges / flags silently suppressed** | Graph was cached with 30s TTL and not invalidated between claims; exceptions returned `flagged=False` masking infrastructure failures | [[Collusion Graph Performance Degradation]] |
+| **Risk distribution shows all same level / mismatched between pages** | GetClaimDetail used LLM disposition text matching instead of risk-score extension with numeric thresholds (≥0.86→critical, ≥0.50→high, else→medium) | [[Seed Data Disposition Validation]] |
 
 ## Key Details
 - **Primary Diagnostic Command**: `docker logs --tail 100 claimaudit-iris`

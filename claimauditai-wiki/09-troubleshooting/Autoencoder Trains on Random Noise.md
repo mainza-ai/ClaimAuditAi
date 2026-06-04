@@ -21,7 +21,9 @@ The resulting anomaly threshold could not distinguish real outliers from normal 
 
 - Removed the synthetic data generation entirely
 - Added a minimum threshold: **5 real claims required** to train a meaningful model
-- If fewer than 5 real claims exist, the autoencoder returns `{status: "skipped"}` — the tier is gracefully bypassed
+- If fewer than 5 real claims exist, the autoencoder returns `flagged=False` — the tier is gracefully bypassed (was previously `flagged=True` which incorrectly flagged all claims when training was unavailable)
+- Added a **minimum threshold floor of 0.02** — the reconstruction loss threshold cannot drop below this, even with homogeneous training data. The effective threshold is `max(95th_percentile, 0.02)`.
+- `LoadSampleData` now runs the table clear **before** the autoencoder warm-up (was after), preventing training on stale data from a previous seed
 
 ```python
 # Fixed — requires real data
@@ -29,13 +31,9 @@ if len(historical_claims) < 5:
     return {"status": "skipped", "message": f"Insufficient training data ({len(historical_claims)} < 5)."}
 ```
 
-## Related Issue: Hardcoded Engine Features
+## Related Issue: Feature Extraction
 
-The `Engine.AuditClaim()` method feeds the autoencoder with hardcoded default values for `specialtyCode` (1), `patientAge` (45), and `durationDays` (1). Only `billedAmount` comes from the actual claim data. The seed now populates `ClaimAudit.ClaimProjections` with these values, making them consistent between training and evaluation.
-
-## Affected Files
-- `src/python/autoencoder_train.py` — `train_autoencoder()` function
-- `src/cls/ClaimAudit/AI/Engine.cls` — `AuditClaim()` defaults documented
+The `Engine.AuditClaim()` method queries `ClaimAudit.ClaimProjections` for `SpecialtyCode`, `PatientAge`, and `DurationDays` per-claim, using the patient key from the incoming claim. This ensures evaluation features match the training data distribution. Prior to this fix, hardcoded defaults (age=45, days=1) were used for all claims, making the autoencoder blind to diverse feature patterns in the training data.
 
 ## Verification
-The autoencoder tier is only useful after at least 5 real claims have been submitted. Use the `loadSampleData` endpoint or the Data Management page to seed sample claims, which populates `ClaimProjections` with 8 rows of training data.
+The autoencoder tier is only useful after at least 5 real claims have been submitted. Use the `loadSampleData` endpoint or the Data Management page to seed sample claims, which populates `ClaimProjections` with 8 rows of diversified training data (ages 23-78, item counts 1-4, duration 1-7 days). Claim 8 uses `claimaudit-prov` (shares address with prov2) to trigger the graph tier simultaneously, producing the critical test case.

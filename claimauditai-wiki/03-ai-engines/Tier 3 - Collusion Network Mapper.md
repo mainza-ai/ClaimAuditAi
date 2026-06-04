@@ -15,9 +15,10 @@ By traversing the active subgraph of the involved entities, the engine checks fo
 
 ## Key Details
 - **Library**: `networkx` running natively inside Embedded Python.
-- **Node Categories**: Provider (NPI), Patient (ID), Doctor (ID), Address.
-- **Relational Flag Criteria**: Geodetic distance conflicts > 150 miles per day; cyclic pathways in directed subgraphs.
-- **Relational Database Sync**: Dynamically populated from projections on the `ClaimProjections` and `ProviderProjections` tables.
+- **Node Categories**: Provider (NPI with address), Patient (ID with name), edges represent claims.
+- **Detection Patterns**: Address collision (different providers at same physical address), geo-temporal leap (patient billed in different states same day), referral ring cycles (alternating patient-provider paths).
+- **Relational Database Sync**: Dynamically populated from `ClaimProjections` and `ProviderProjections` tables. Graph is cached and invalidated after each claim audit so the next claim sees newly added edges.
+- **Error Handling**: Fail-open — if graph analysis raises an exception, the claim is flagged for review rather than silently passed. Infrastructure failures should never hide potential fraud.
 
 ## See Also
 [[Three-Tier AI Engine Overview]] · [[NetworkX Graph Construction]] · [[Dynamic Threshold Logic]]

@@ -89,7 +89,7 @@ The `GET /api/stats` endpoint returns:
 ```
 
 - `approvedToday` is scoped to the current date via `SUBSTRING(_lastUpdated,1,10) = today`
-- `riskDistribution` is derived from the `risk-score` ClaimResponse extension value (not disposition text). Thresholds: critical≥0.86 (all 3 AI tiers), high≥0.50 (2 tiers), medium≥0.30 (1 tier).
+- `riskDistribution` is derived from the `risk-score` ClaimResponse extension value (not disposition text). Thresholds: critical≥0.86 (all 3 AI tiers flagging), high≥0.50 (2 tiers), else medium (default). All three endpoints (GetHeldClaims, GetStats, GetClaimDetail) use the same classification logic.
 - `dailyInterceptedCounts` covers the trailing 7 days
 
 ## Error Format
