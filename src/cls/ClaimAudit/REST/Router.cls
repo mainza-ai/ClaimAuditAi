@@ -1585,6 +1585,14 @@ ClassMethod ClearAllData() As %Status
         Do ##class(%SQL.Statement).%ExecDirect(, "DELETE FROM ClaimAudit.PatientProjections")
         Do ##class(%SQL.Statement).%ExecDirect(, "DELETE FROM ClaimAudit.ProviderProjections")
         Do ##class(%SQL.Statement).%ExecDirect(, "DELETE FROM ClaimAudit.ClaimProjections")
+
+        // Invalidate Python graph cache so the UI doesn't show stale nodes from deleted data
+        Try {
+            Do ##class(ClaimAudit.AI.Engine).ConfigurePythonPath()
+            Set tGA = ##class(%SYS.Python).Import("graph_analyzer")
+            Do tGA."invalidate_graph_cache"()
+        } Catch {}
+
         Write {"success": true, "message": "All FHIR test data cleared."}.%ToJSON()
     } Catch ex {
         Set tSC = ex.AsStatus()

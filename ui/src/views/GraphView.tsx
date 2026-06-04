@@ -124,6 +124,8 @@ export function GraphView() {
         elements: [...graph.nodes, ...graph.edges],
         style: getGraphStyle(isDark) as any,
         layout: { name: layout, padding: 60, animate: true, animationDuration: 400 } as any,
+        minZoom: 0.1,
+        maxZoom: 3,
       });
       cyRef.current = cy;
 
@@ -135,7 +137,7 @@ export function GraphView() {
             if (el.length) el.addClass('flagged');
           }
           insight.claimIds?.forEach(cid => {
-            const el = cy.$(`#edge-${cid}`);
+            const el = cy.$(`#${cid}`);
             if (el.length) el.addClass('flagged');
           });
         }
@@ -150,7 +152,7 @@ export function GraphView() {
         if (evt.target === cy) setSelectedNode(null);
       });
     } else {
-      // Update elements without recreating instance
+      // Update elements without recreating instance — replace in place to avoid flicker
       cyRef.current.elements().remove();
       cyRef.current.add([...graph.nodes, ...graph.edges]);
       (graph.insights ?? []).forEach((insight: GraphInsight) => {
@@ -160,18 +162,21 @@ export function GraphView() {
             if (el.length) el.addClass('flagged');
           }
           insight.claimIds?.forEach(cid => {
-            const el = cyRef.current!.$(`#edge-${cid}`);
+            const el = cyRef.current!.$(`#${cid}`);
             if (el.length) el.addClass('flagged');
           });
         }
       });
     }
+  }, [graph]);
 
+  // Destroy on unmount only (not on every data update)
+  useEffect(() => {
     return () => {
       cyRef.current?.destroy();
       cyRef.current = null;
     };
-  }, [graph]);
+  }, []);
 
   // Update styles on theme change without recreating instance
   useEffect(() => {

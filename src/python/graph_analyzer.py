@@ -72,8 +72,9 @@ def build_relational_graph() -> nx.MultiDiGraph:
             G.add_edge(p_key, npi, transaction="claim", amount=amount, date=date)
             claim_count += 1
             
-        # Fallback to mock data if database is empty for demonstration purposes
-        if claim_count == 0:
+        # Fallback to mock data ONLY in non-IRIS environments (ZPM testing).
+        # In production, an empty graph with zero claims is valid — no fake nodes.
+        if not iris and claim_count == 0:
             G.add_node("Pat_Alice", type="patient")
             G.add_node("Pat_Bob", type="patient")
             G.add_node("NPI_12345", type="provider", address="100 Main St Suite A, Boston MA".lower())
