@@ -226,8 +226,15 @@ def check_collusion_network(patient_id: str, provider_npi: str, service_date: st
         }
         
     except Exception as e:
-        sys.stderr.write(f"Error in collusion network check: {str(e)}\n")
-        return {"flagged": False, "findings": [], "reason": f"Graph analysis error: {str(e)}"}
+        # Log the error clearly but NEVER silently return flagged=False for internal errors.
+        # Silent suppression hides real anomalies and masks infrastructure failures.
+        # Instead, flag the claim for manual review with full error context.
+        sys.stderr.write(f"CRITICAL: Graph analysis error in check_collusion_network: {str(e)}\n")
+        return {
+            "flagged": True,
+            "findings": [f"Graph analysis infrastructure error: {str(e)}"],
+            "reason": f"Tier 3 (Graph) encountered an internal error: {str(e)}. Claim requires manual adjudication review."
+        }
 
 def export_graph_for_ui() -> str:
     """

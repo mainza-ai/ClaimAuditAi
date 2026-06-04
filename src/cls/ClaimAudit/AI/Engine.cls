@@ -289,6 +289,12 @@ ClassMethod AuditClaim(pClaimJson As %DynamicObject, Output pResult As %DynamicO
         If (patientId '= "") && (providerNpi '= "") {
             Do ##class(ClaimAudit.Data.GraphStore).UpsertEdge(patientId, providerNpi, billedAmount, serviceDate)
         }
+        // Invalidate graph cache so the next claim audit sees this claim's edges.
+        // Without this, claims 2-8 hit the 30s TTL cache and see an empty/stale graph.
+        Try {
+            Set pyGA = ##class(%SYS.Python).Import("graph_analyzer")
+            Do pyGA."invalidate_graph_cache"()
+        } Catch {}
         
     } Catch ex {
         Set sc = ex.AsStatus()

@@ -131,7 +131,7 @@ def train_autoencoder() -> str:
         with torch.no_grad():
             reconstructed = model(tensor_data)
             mse_losses = torch.mean((reconstructed - tensor_data) ** 2, dim=1).numpy()
-            threshold = np.percentile(mse_losses, 95)
+            threshold = max(np.percentile(mse_losses, 95), 0.02)
             
         # Save model state and parameters
         torch.save(model.state_dict(), MODEL_PATH)
@@ -159,7 +159,11 @@ def _get_cached_model():
         stats = np.load(STATS_PATH)
         means = stats["means"]
         stds = stats["stds"]
-        threshold = float(stats["threshold"]) if "threshold" in stats else 0.02
+        # Minimum absolute threshold floor — even with homogeneous training data,
+        # the model must maintain a floor so outliers are detectable. Without this,
+        # training on identical features produces a threshold near zero, hiding all anomalies.
+        percentile_threshold = float(stats["threshold"]) if "threshold" in stats else 0.02
+        threshold = max(percentile_threshold, 0.02)
 
         model = ClaimAutoencoder(input_dim=5)
         model.load_state_dict(torch.load(MODEL_PATH, weights_only=True))
@@ -185,12 +189,17 @@ def evaluate_claim_anomaly(billed_amount: float, item_count: float, specialty_co
     try:
         # Train model if it doesn't exist
         if not os.path.exists(MODEL_PATH) or not os.path.exists(STATS_PATH):
-            train_autoencoder()
+            result = train_autoencoder()
             _invalidate_cache()
+            # If training was skipped due to insufficient data, return not-flagged (not enough data to judge)
+            if isinstance(result, dict) and result.get("status") == "skipped":
+                return {"loss": 0.0, "threshold": 0.02, "flagged": False, "reason": f"Tier 2 autoencoder: {result['message']}"}
 
         cache = _get_cached_model()
         if cache is None:
-            train_autoencoder()
+            result = train_autoencoder()
+            if isinstance(result, dict) and result.get("status") == "skipped":
+                return {"loss": 0.0, "threshold": 0.02, "flagged": False, "reason": f"Tier 2 autoencoder: {result['message']}"}
             cache = _get_cached_model()
         if cache is None:
             return {"loss": 0.0, "threshold": 0.1, "flagged": True, "reason": "Tier 2 autoencoder: model training failed. Manual review required."}

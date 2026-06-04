@@ -196,20 +196,6 @@ ClassMethod GetHeldClaims() As %Status
             Set tPatientName = tRS.%Get("patientName")
             If tPatientName = "" Set tPatientName = "Unknown Patient"
 
-            // Derive default risk level from disposition keywords
-            Set tRiskScore = 0.70
-            Set tRiskLevel = "high"
-            If tDisposition [ "critical" {
-                Set tRiskScore = 0.92
-                Set tRiskLevel = "critical"
-            } ElseIf tDisposition [ "high" {
-                Set tRiskScore = 0.70
-                Set tRiskLevel = "high"
-            } ElseIf tDisposition [ "medium" {
-                Set tRiskScore = 0.45
-                Set tRiskLevel = "medium"
-            }
-
             // Escalated check
             Set tEscalated = 0
             If tRequestRef '= "" {
@@ -527,17 +513,22 @@ ClassMethod GetClaimDetail(id As %String) As %Status
             } Catch {}
         }
 
-        // Calculate risk levels
-        Set tRiskScore = 0.70
-        Set tRiskLevel = "high"
-        If tDisposition [ "critical" {
-            Set tRiskScore = 0.92
+        // Derive risk level from stored FHIR extension (single source of truth — not LLM disposition text)
+        Set tRiskScore = 0.0
+        Set tRiskLevel = "medium"
+        If $IsObject(tCRJson.extension) {
+            Set tExtIter = tCRJson.extension.%GetIterator()
+            While tExtIter.%GetNext(.tK, .tExt) {
+                If tExt.url = "https://claimauditai.com/fhir/extension/risk-score" {
+                    Set tRiskScore = +tExt.valueDecimal
+                }
+            }
+        }
+        If tRiskScore >= 0.86 {
             Set tRiskLevel = "critical"
-        } ElseIf tDisposition [ "high" {
-            Set tRiskScore = 0.70
+        } ElseIf tRiskScore >= 0.50 {
             Set tRiskLevel = "high"
-        } ElseIf tDisposition [ "medium" {
-            Set tRiskScore = 0.45
+        } Else {
             Set tRiskLevel = "medium"
         }
 
@@ -1331,8 +1322,20 @@ ClassMethod LoadSampleData() As %Status
                     Set tSpecialty = 1
                     If tClaim.id = "claimaudit-claim2" Set tSpecialty = 2
 
+                    // Diverse feature assignment for development/testing — varied age, items, duration
+                    // so the autoencoder can detect true statistical anomalies (not all claims identical)
+                    Set tAge = 45, tItems = 1, tDuration = 1
+                    If tClaim.id = "claimaudit-claim1" { Set tAge = 45, tItems = 1, tDuration = 1 }
+                    ElseIf tClaim.id = "claimaudit-claim2" { Set tAge = 67, tItems = 1, tDuration = 1 }
+                    ElseIf tClaim.id = "claimaudit-claim3" { Set tAge = 34, tItems = 1, tDuration = 1 }
+                    ElseIf tClaim.id = "claimaudit-claim4" { Set tAge = 78, tItems = 1, tDuration = 1 }
+                    ElseIf tClaim.id = "claimaudit-claim5" { Set tAge = 23, tItems = 1, tDuration = 1 }
+                    ElseIf tClaim.id = "claimaudit-claim6" { Set tAge = 55, tItems = 3, tDuration = 2 }
+                    ElseIf tClaim.id = "claimaudit-claim7" { Set tAge = 42, tItems = 1, tDuration = 1 }
+                    ElseIf tClaim.id = "claimaudit-claim8" { Set tAge = 29, tItems = 4, tDuration = 7 }
+
                     Do tStatement.%Prepare("INSERT INTO ClaimAudit.ClaimProjections (PatientKey, ProviderNPI, BilledAmount, ItemCount, SpecialtyCode, PatientAge, DurationDays, ServiceDate) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-                    Do tStatement.%Execute(tPatId, tProvId, tAmount, 1, tSpecialty, 45, 1, "2026-05-29")
+                    Do tStatement.%Execute(tPatId, tProvId, tAmount, tItems, tSpecialty, tAge, tDuration, "2026-05-29")
 
                     // Dispatch Claim to FHIR server — will trigger interactions strategy & python agent!
                     Set tReqClaim = ##class(HS.FHIRServer.API.Data.Request).%New()
