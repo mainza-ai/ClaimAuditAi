@@ -8,7 +8,7 @@ summary: string;
 const tierResults: AuditTierResult[] = [];
 
 // Extract Tier 1
-const t1Match = disposition.match(/###\s*\[NLP\][^\n]*\n([\s\S]*?)(?=###|$)/i) || disposition.match(/-\s*Tier 1[^\n]*\n([\s\S]*?)(?=-|$)/i);
+const t1Match = disposition.match(/###\s*(?:Tier\s*1|\[NLP\])[^\n]*\n([\s\S]*?)(?=###|$|##)/i) || disposition.match(/-\s*(?:Tier\s*1|NLP)[^\n]*\n([\s\S]*?)(?=-|$|#)/i);
 if (t1Match) {
 const body = t1Match[1] || t1Match[0];
 const simMatch = body.match(/Similarity[:\s]+([\d.]+)/i);
@@ -23,7 +23,7 @@ summary: firstSentence(body),
 }
 
 // Extract Tier 2
-const t2Match = disposition.match(/###\s*\[Adjudication\][^\n]*\n([\s\S]*?)(?=###|$)/i) || disposition.match(/-\s*Tier 2[^\n]*\n([\s\S]*?)(?=-|$)/i);
+const t2Match = disposition.match(/###\s*(?:Tier\s*2|\[Adjudication\]|\[ML\])[^\n]*\n([\s\S]*?)(?=###|$|##)/i) || disposition.match(/-\s*(?:Tier\s*2|Adjudication|ML)[^\n]*\n([\s\S]*?)(?=-|$|#)/i);
 if (t2Match) {
 const body = t2Match[1] || t2Match[0];
 const lossMatch = body.match(/Loss[:\s]+([\d.]+)/i) || body.match(/loss[:\s]+([\d.]+)/i);
@@ -41,7 +41,7 @@ summary: firstSentence(body),
 }
 
 // Extract Tier 3
-const t3Match = disposition.match(/Tier 3[^\n]*\n([\s\S]*?)(?=-|$)/i);
+const t3Match = disposition.match(/###\s*(?:Tier\s*3|\[Graph\]|\[Collusion\])[^\n]*\n([\s\S]*?)(?=###|$|##)/i) || disposition.match(/-\s*(?:Tier\s*3|Graph|Collusion)[^\n]*\n([\s\S]*?)(?=-|$|#)/i);
 if (t3Match) {
 const body = t3Match[1] || t3Match[0];
 tierResults.push({

@@ -267,9 +267,10 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
                 Set claimResponse.total = tTotalArr
             }
 
-            // Embed CPT, ICD, and risk score as extensions so they can be read without the Claim resource
+            // Embed CPT, ICD, risk score, and full explanation as extensions so they can be read without the Claim resource and bypass length limitations
             Set tExtensions = []
             Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/risk-score", "valueDecimal": (score)})
+            Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/explanation", "valueString": (summary)})
             If tCptCode '= "" {
                 Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/cpt-code", "valueString": (tCptCode)})
             }
@@ -279,7 +280,7 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
             Set claimResponse.extension = tExtensions
 
             Set crEntry = {
-                "fullUrl": "urn:uuid:claimresponse-1",
+                "fullUrl": "https://claimauditai.com/fhir/ClaimResponse/claimresponse-1",
                 "resource": (claimResponse),
                 "request": {
                     "method": "POST",
@@ -339,7 +340,7 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
                 ],
                 "about": [
                     { "reference": ("Claim/" _ claimId) },
-                    { "reference": "urn:uuid:claimresponse-1" }
+                    { "reference": "https://claimauditai.com/fhir/ClaimResponse/claimresponse-1" }
                 ]
             }
             Set commEntry = {
@@ -363,6 +364,9 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
 
             If ($Extract(tResponseBundle.Status, 1) '= "2") {
                 Set ^ClaimAuditStatusLog($ZTS, "Bundle", "status") = tResponseBundle.Status
+                If $IsObject(tResponseBundle.Json) {
+                    Set ^ClaimAuditStatusLog($ZTS, "Bundle", "error") = tResponseBundle.Json.%ToJSON()
+                }
                 Set pFHIRResponse.Status = 500
                 Set pFHIRResponse.Json = {"error": "Failed to execute atomic FHIR transaction Bundle"}
                 Quit
@@ -478,9 +482,10 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
                             Set claimResponse.total = tTotalArr
                         }
                         
-                        // Embed CPT, ICD, risk score extensions
+                        // Embed CPT, ICD, risk score, and full explanation as extensions
                         Set tExtensions = []
                         Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/risk-score", "valueDecimal": (score)})
+                        Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/explanation", "valueString": (summary)})
                         If tCptCode '= "" {
                             Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/cpt-code", "valueString": (tCptCode)})
                         }
@@ -490,7 +495,7 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
                         Set claimResponse.extension = tExtensions
                         
                         // Unique fullUrl in this transaction
-                        Set crUuid = "urn:uuid:claimresponse-bundle-" _ tKey
+                        Set crUuid = "https://claimauditai.com/fhir/ClaimResponse/claimresponse-bundle-" _ tKey
                         
                         Set crEntry = {
                             "fullUrl": (crUuid),
@@ -620,6 +625,9 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
                     Set ^ClaimAuditStatusLog($ZTS, "BundleBatch", "status") = tResponseBundle.Status
                 } Else {
                     Set ^ClaimAuditError($ZTS) = "Failed to dispatch holds transaction for batch Bundle: " _ tResponseBundle.Status
+                    If $IsObject(tResponseBundle.Json) {
+                        Set ^ClaimAuditError($ZTS, "error") = tResponseBundle.Json.%ToJSON()
+                    }
                 }
             }
             
@@ -627,9 +635,7 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
         } Catch ex {
             Set ^ClaimAuditError($ZTS) = ex.DisplayString()
             Kill ^||ClaimAuditFlag
-        }
     }
 }
 }
-
 }

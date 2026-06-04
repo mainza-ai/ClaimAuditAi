@@ -23,6 +23,29 @@ _response_cache_lock = __import__('threading').Lock()
 RETRY_COUNT = 1
 RETRY_BASE_DELAY = 1.0  # seconds
 
+def _load_env():
+    # Load environment variables from .env file since IRIS Embedded Python
+    # processes do not inherit environment variables from the container shell.
+    env_path = "/home/irisowner/dev/.env"
+    if os.path.exists(env_path):
+        try:
+            with open(env_path) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    if "=" in line:
+                        k, v = line.split("=", 1)
+                        k = k.strip()
+                        v = v.strip().strip("'\"")
+                        if k:
+                            os.environ[k] = v
+        except Exception as e:
+            logger.warning(f"Could not load .env file in llm_router: {e}")
+
+# Initial load on import
+_load_env()
+
 def clean_non_bmp(text: str) -> str:
     return "".join(c for c in text if ord(c) <= 0xFFFF)
 
@@ -49,6 +72,7 @@ def _check_rate_limit():
         _request_timestamps.append(now)
 
 def _get_client_and_model():
+    _load_env()
     settings = _load_settings()
     provider = settings.get("provider") or os.environ.get("LLM_PROVIDER", "nvidia").strip().lower()
 
@@ -115,7 +139,7 @@ def chat(system_prompt: str, messages_json: str, max_tokens: int = 1024, timeout
 
     # Determine timeout and retry count dynamically from settings
     if timeout is None:
-        timeout = float(settings.get("timeout", 30.0))
+        timeout = float(settings.get("timeout", 60.0))
     retry_count = int(settings.get("retryCount", 1))
 
     last_error = None
@@ -170,7 +194,7 @@ def invalidate_client_cache():
 def generate(prompt: str, max_tokens: int = 2048) -> str:
     settings = _load_settings()
     # Default to a lower timeout for inline claims processing to avoid blocking FHIR transaction loops
-    audit_timeout = float(settings.get("auditTimeout", 15.0))
+    audit_timeout = float(settings.get("auditTimeout", 60.0))
     return chat(
         system_prompt="You are a healthcare payment integrity AI. Generate precise, structured, clinically accurate audit reports in markdown format. Always include sections for Tier 1, Tier 2, Tier 3 findings, and a final Risk Score summary.",
         messages_json=json.dumps([{"role": "user", "content": prompt}]),
@@ -190,7 +214,7 @@ def chat_stream(system_prompt: str, messages_json: str, max_tokens: int = 1024, 
 
     settings = _load_settings()
     if timeout is None:
-        timeout = float(settings.get("timeout", 30.0))
+        timeout = float(settings.get("timeout", 60.0))
 
     client, model = _get_client_and_model()
     try:
@@ -229,6 +253,7 @@ def summarize_user_reason(action: str, user_text: str) -> str:
     return chat(system_prompt=system, messages_json=json.dumps([{"role": "user", "content": user_msg}]), max_tokens=256)
 
 def list_ollama_models(base_url: str = None) -> list:
+    _load_env()
     url = (base_url or os.environ.get("OLLAMA_BASE_URL", "http://host.docker.internal:11434"))
     if url.endswith("/v1"):
         url = url[:-3]
