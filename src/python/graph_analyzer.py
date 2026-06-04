@@ -14,25 +14,10 @@ _graph_lock = threading.Lock()
 
 def build_relational_graph() -> nx.MultiDiGraph:
     """Query IRIS database relations and construct a NetworkX MultiDiGraph representing entity connections.
-    MultiDiGraph prevents duplicate edge overwrites between the same patient-provider pair."""
+    MultiDiGraph prevents duplicate edge overwrites between the same patient-provider pair.
+    When running outside IRIS (iris module unavailable), returns an empty graph — no mock data."""
     G = nx.MultiDiGraph()
     if not iris:
-        # If not running in IRIS, return a pre-populated mock graph for ZPM verification
-        # Nodes: Patients, NPIs (Practitioners), Clinics (Addresses)
-        G.add_node("Pat_Alice", type="patient")
-        G.add_node("Pat_Bob", type="patient")
-        G.add_node("NPI_12345", type="provider", address="100 Main St Suite A, Boston MA")
-        G.add_node("NPI_67890", type="provider", address="100 Main St Suite A, Boston MA") # Address collision!
-        G.add_node("Pat_Charlie", type="patient")
-        G.add_node("NPI_99999", type="provider", address="200 Broadway St, Seattle WA")
-        G.add_node("NPI_88888", type="provider", address="500 Elm St, Miami FL") # Geographic anomaly!
-        
-        # Add edges representing claims
-        G.add_edge("Pat_Alice", "NPI_12345", transaction="claim", amount=500.0, date="2026-05-29")
-        G.add_edge("Pat_Alice", "NPI_67890", transaction="claim", amount=1200.0, date="2026-05-29")
-        G.add_edge("Pat_Bob", "NPI_12345", transaction="claim", amount=250.0, date="2026-05-28")
-        G.add_edge("Pat_Charlie", "NPI_99999", transaction="claim", amount=450.0, date="2026-05-29")
-        G.add_edge("Pat_Charlie", "NPI_88888", transaction="claim", amount=1500.0, date="2026-05-29") # Geographically distant on same day!
         return G
 
     try:
@@ -71,25 +56,7 @@ def build_relational_graph() -> nx.MultiDiGraph:
                 
             G.add_edge(p_key, npi, transaction="claim", amount=amount, date=date)
             claim_count += 1
-            
-        # Fallback to mock data ONLY in non-IRIS environments (ZPM testing).
-        # In production, an empty graph with zero claims is valid — no fake nodes.
-        if not iris and claim_count == 0:
-            G.add_node("Pat_Alice", type="patient")
-            G.add_node("Pat_Bob", type="patient")
-            G.add_node("NPI_12345", type="provider", address="100 Main St Suite A, Boston MA".lower())
-            G.add_node("NPI_67890", type="provider", address="100 Main St Suite A, Boston MA".lower()) # Address collision!
-            G.add_node("Pat_Charlie", type="patient")
-            G.add_node("NPI_99999", type="provider", address="200 Broadway St, Seattle WA".lower())
-            G.add_node("NPI_88888", type="provider", address="500 Elm St, Miami FL".lower()) # Geographic anomaly!
-            
-            # Add edges representing claims
-            G.add_edge("Pat_Alice", "NPI_12345", transaction="claim", amount=500.0, date="2026-05-29")
-            G.add_edge("Pat_Alice", "NPI_67890", transaction="claim", amount=1200.0, date="2026-05-29")
-            G.add_edge("Pat_Bob", "NPI_12345", transaction="claim", amount=250.0, date="2026-05-28")
-            G.add_edge("Pat_Charlie", "NPI_99999", transaction="claim", amount=450.0, date="2026-05-29")
-            G.add_edge("Pat_Charlie", "NPI_88888", transaction="claim", amount=1500.0, date="2026-05-29") # Geographically distant on same day!
-            
+
         return G
     except Exception as e:
         sys.stderr.write(f"Graph Construction Error: {str(e)}\n")
