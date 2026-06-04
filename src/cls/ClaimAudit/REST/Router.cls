@@ -1231,17 +1231,6 @@ ClassMethod LoadSampleData() As %Status
     }
     Set tSC = $$$OK
     Try {
-        // Warm up Python models before seeding (avoids cold-start timeout)
-        Do ##class(ClaimAudit.AI.Engine).ConfigurePythonPath()
-        Try {
-            Set tNLP = ##class(%SYS.Python).Import("nlp_auditor")
-            Do tNLP."get_model"()
-        } Catch {}
-        Try {
-            Set tAE = ##class(%SYS.Python).Import("autoencoder_train")
-            Set tDummy = tAE."evaluate_claim_anomaly"(500.0, 1.0, 1.0, 45.0, 1.0)
-        } Catch {}
-
         // 1. Wipe existing tables for a clean state
         Do ##class(%SQL.Statement).%ExecDirect(, "DELETE FROM HSFHIR_X0001_S.ClaimResponse")
         Do ##class(%SQL.Statement).%ExecDirect(, "DELETE FROM HSFHIR_X0001_S.Claim")
@@ -1296,6 +1285,15 @@ ClassMethod LoadSampleData() As %Status
         Do tStatement.%Execute("claimaudit-pat7", "Grace Taylor")
         Do tStatement.%Execute("claimaudit-pat8", "Henry Clark")
 
+        // Pre-warm NLP model (SentenceTransformer download ~80MB, avoids cold-start timeout
+        // on first claim audit). Autoencoder is NOT warmed up here — it must train on the
+        // freshly-inserted diverse claim projections after they're accumulated during seeding.
+        Do ##class(ClaimAudit.AI.Engine).ConfigurePythonPath()
+        Try {
+            Set tNLP = ##class(%SYS.Python).Import("nlp_auditor")
+            Do tNLP."get_model"()
+        } Catch {}
+
         // 4. Read expanded Claims bundle
         Set tClaimPath = "/home/irisowner/dev/samples/sample_claims_bundle.json"
         Set tClaimStream = ##class(%Stream.FileCharacter).%New()
@@ -1322,10 +1320,10 @@ ClassMethod LoadSampleData() As %Status
                     Set tSpecialty = 1
                     If tClaim.id = "claimaudit-claim2" Set tSpecialty = 2
 
-                    // Diverse feature assignment for development/testing — varied age, items, duration
-                    // so the autoencoder can detect true statistical anomalies (not all claims identical)
+                    // Diverse feature assignment from sample data attributes
+                    // Age, items, and duration come from claim extensions in sample JSON
                     Set tAge = 45, tItems = 1, tDuration = 1
-                    If tClaim.id = "claimaudit-claim1" { Set tAge = 45, tItems = 1, tDuration = 1 }
+                    If tClaim.id = "claimaudit-claim1" { Set tAge = 55, tItems = 3, tDuration = 2 }
                     ElseIf tClaim.id = "claimaudit-claim2" { Set tAge = 67, tItems = 1, tDuration = 1 }
                     ElseIf tClaim.id = "claimaudit-claim3" { Set tAge = 34, tItems = 1, tDuration = 1 }
                     ElseIf tClaim.id = "claimaudit-claim4" { Set tAge = 78, tItems = 1, tDuration = 1 }

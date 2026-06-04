@@ -8,22 +8,38 @@
         "id": "claimaudit-claim1",
         "status": "active",
         "use": "claim",
-        "patient": { "reference": "Patient/claimaudit-pat" },
+        "patient": {
+          "reference": "Patient/claimaudit-pat"
+        },
         "created": "2026-05-29T14:54:20Z",
-        "provider": { "reference": "Practitioner/claimaudit-prov" },
-        "insurer": { "reference": "Organization/claimaudit-payer" },
-        "total": { "value": 2500.0, "currency": "USD" },
-        "item": [{
-          "sequence": 1,
-          "productOrService": {
-            "coding": [{
-              "system": "http://www.ama-assn.org/go/cpt",
-              "code": "99291",
-              "display": "CPT 99291: Critical care, evaluation and management of the unstable critically ill or critically injured patient; first 30-74 minutes."
-            }]
-          },
-          "unitPrice": { "value": 2500.0, "currency": "USD" }
-        }]
+        "provider": {
+          "reference": "Practitioner/claimaudit-prov"
+        },
+        "insurer": {
+          "reference": "Organization/claimaudit-payer"
+        },
+        "total": {
+          "value": 2500.0,
+          "currency": "USD"
+        },
+        "item": [
+          {
+            "sequence": 1,
+            "productOrService": {
+              "coding": [
+                {
+                  "system": "http://www.ama-assn.org/go/cpt",
+                  "code": "99291",
+                  "display": "CPT 99291: Critical care, evaluation and management of the unstable critically ill or critically injured patient; first 30-74 minutes."
+                }
+              ]
+            },
+            "unitPrice": {
+              "value": 2500.0,
+              "currency": "USD"
+            }
+          }
+        ]
       }
     },
     {
@@ -32,22 +48,38 @@
         "id": "claimaudit-claim2",
         "status": "active",
         "use": "claim",
-        "patient": { "reference": "Patient/claimaudit-pat2" },
+        "patient": {
+          "reference": "Patient/claimaudit-pat2"
+        },
         "created": "2026-05-29T15:10:20Z",
-        "provider": { "reference": "Practitioner/claimaudit-prov2" },
-        "insurer": { "reference": "Organization/claimaudit-payer" },
-        "total": { "value": 14850.0, "currency": "USD" },
-        "item": [{
-          "sequence": 1,
-          "productOrService": {
-            "coding": [{
-              "system": "http://www.ama-assn.org/go/cpt",
-              "code": "33510",
-              "display": "CPT 33510: Coronary artery bypass, vein only; single coronary venous graft."
-            }]
-          },
-          "unitPrice": { "value": 14850.0, "currency": "USD" }
-        }]
+        "provider": {
+          "reference": "Practitioner/claimaudit-prov2"
+        },
+        "insurer": {
+          "reference": "Organization/claimaudit-payer"
+        },
+        "total": {
+          "value": 14850.0,
+          "currency": "USD"
+        },
+        "item": [
+          {
+            "sequence": 1,
+            "productOrService": {
+              "coding": [
+                {
+                  "system": "http://www.ama-assn.org/go/cpt",
+                  "code": "33510",
+                  "display": "CPT 33510: Coronary artery bypass, vein only; single coronary venous graft."
+                }
+              ]
+            },
+            "unitPrice": {
+              "value": 14850.0,
+              "currency": "USD"
+            }
+          }
+        ]
       }
     },
     {
@@ -56,22 +88,38 @@
         "id": "claimaudit-claim3",
         "status": "active",
         "use": "claim",
-        "patient": { "reference": "Patient/claimaudit-pat3" },
+        "patient": {
+          "reference": "Patient/claimaudit-pat3"
+        },
         "created": "2026-05-28T09:30:20Z",
-        "provider": { "reference": "Practitioner/claimaudit-prov3" },
-        "insurer": { "reference": "Organization/claimaudit-payer" },
-        "total": { "value": 850.0, "currency": "USD" },
-        "item": [{
-          "sequence": 1,
-          "productOrService": {
-            "coding": [{
-              "system": "http://www.ama-assn.org/go/cpt",
-              "code": "99214",
-              "display": "CPT 99214: Office or other outpatient visit for the evaluation and management of an established patient, moderate level of decision making."
-            }]
-          },
-          "unitPrice": { "value": 850.0, "currency": "USD" }
-        }]
+        "provider": {
+          "reference": "Practitioner/claimaudit-prov3"
+        },
+        "insurer": {
+          "reference": "Organization/claimaudit-payer"
+        },
+        "total": {
+          "value": 850.0,
+          "currency": "USD"
+        },
+        "item": [
+          {
+            "sequence": 1,
+            "productOrService": {
+              "coding": [
+                {
+                  "system": "http://www.ama-assn.org/go/cpt",
+                  "code": "99214",
+                  "display": "CPT 99214: Office or other outpatient visit for the evaluation and management of an established patient, moderate level of decision making."
+                }
+              ]
+            },
+            "unitPrice": {
+              "value": 850.0,
+              "currency": "USD"
+            }
+          }
+        ]
       }
     },
     {
@@ -80,22 +128,38 @@
         "id": "claimaudit-claim4",
         "status": "active",
         "use": "claim",
-        "patient": { "reference": "Patient/claimaudit-pat4" },
+        "patient": {
+          "reference": "Patient/claimaudit-pat4"
+        },
         "created": "2026-05-27T10:45:20Z",
-        "provider": { "reference": "Practitioner/claimaudit-prov4" },
-        "insurer": { "reference": "Organization/claimaudit-payer" },
-        "total": { "value": 24500.0, "currency": "USD" },
-        "item": [{
-          "sequence": 1,
-          "productOrService": {
-            "coding": [{
-              "system": "http://www.ama-assn.org/go/cpt",
-              "code": "99292",
-              "display": "CPT 99292: Critical care, evaluation and management of the unstable critically ill or critically injured patient; each additional 30 minutes."
-            }]
-          },
-          "unitPrice": { "value": 24500.0, "currency": "USD" }
-        }]
+        "provider": {
+          "reference": "Practitioner/claimaudit-prov4"
+        },
+        "insurer": {
+          "reference": "Organization/claimaudit-payer"
+        },
+        "total": {
+          "value": 24500.0,
+          "currency": "USD"
+        },
+        "item": [
+          {
+            "sequence": 1,
+            "productOrService": {
+              "coding": [
+                {
+                  "system": "http://www.ama-assn.org/go/cpt",
+                  "code": "99292",
+                  "display": "CPT 99292: Critical care, evaluation and management of the unstable critically ill or critically injured patient; each additional 30 minutes."
+                }
+              ]
+            },
+            "unitPrice": {
+              "value": 24500.0,
+              "currency": "USD"
+            }
+          }
+        ]
       }
     },
     {
@@ -104,22 +168,38 @@
         "id": "claimaudit-claim5",
         "status": "active",
         "use": "claim",
-        "patient": { "reference": "Patient/claimaudit-pat5" },
+        "patient": {
+          "reference": "Patient/claimaudit-pat5"
+        },
         "created": "2026-05-26T16:20:20Z",
-        "provider": { "reference": "Practitioner/claimaudit-prov5" },
-        "insurer": { "reference": "Organization/claimaudit-payer" },
-        "total": { "value": 125.0, "currency": "USD" },
-        "item": [{
-          "sequence": 1,
-          "productOrService": {
-            "coding": [{
-              "system": "http://www.ama-assn.org/go/cpt",
-              "code": "93000",
-              "display": "CPT 93000: Routine dental prophylaxis and cleaning."
-            }]
-          },
-          "unitPrice": { "value": 125.0, "currency": "USD" }
-        }]
+        "provider": {
+          "reference": "Practitioner/claimaudit-prov5"
+        },
+        "insurer": {
+          "reference": "Organization/claimaudit-payer"
+        },
+        "total": {
+          "value": 125.0,
+          "currency": "USD"
+        },
+        "item": [
+          {
+            "sequence": 1,
+            "productOrService": {
+              "coding": [
+                {
+                  "system": "http://www.ama-assn.org/go/cpt",
+                  "code": "93000",
+                  "display": "CPT 93000: Routine dental prophylaxis and cleaning."
+                }
+              ]
+            },
+            "unitPrice": {
+              "value": 125.0,
+              "currency": "USD"
+            }
+          }
+        ]
       }
     },
     {
@@ -128,22 +208,38 @@
         "id": "claimaudit-claim6",
         "status": "active",
         "use": "claim",
-        "patient": { "reference": "Patient/claimaudit-pat6" },
+        "patient": {
+          "reference": "Patient/claimaudit-pat6"
+        },
         "created": "2026-05-25T11:15:20Z",
-        "provider": { "reference": "Practitioner/claimaudit-prov6" },
-        "insurer": { "reference": "Organization/claimaudit-payer" },
-        "total": { "value": 6200.0, "currency": "USD" },
-        "item": [{
-          "sequence": 1,
-          "productOrService": {
-            "coding": [{
-              "system": "http://www.ama-assn.org/go/cpt",
-              "code": "32551",
-              "display": "CPT 32551: Tube thoracostomy, includes water seal (eg, for abscess, hemothorax, empyema), with or without pleural procedure."
-            }]
-          },
-          "unitPrice": { "value": 6200.0, "currency": "USD" }
-        }]
+        "provider": {
+          "reference": "Practitioner/claimaudit-prov6"
+        },
+        "insurer": {
+          "reference": "Organization/claimaudit-payer"
+        },
+        "total": {
+          "value": 6200.0,
+          "currency": "USD"
+        },
+        "item": [
+          {
+            "sequence": 1,
+            "productOrService": {
+              "coding": [
+                {
+                  "system": "http://www.ama-assn.org/go/cpt",
+                  "code": "32551",
+                  "display": "CPT 32551: Tube thoracostomy, includes water seal (eg, for abscess, hemothorax, empyema), with or without pleural procedure."
+                }
+              ]
+            },
+            "unitPrice": {
+              "value": 6200.0,
+              "currency": "USD"
+            }
+          }
+        ]
       }
     },
     {
@@ -152,22 +248,38 @@
         "id": "claimaudit-claim7",
         "status": "active",
         "use": "claim",
-        "patient": { "reference": "Patient/claimaudit-pat7" },
+        "patient": {
+          "reference": "Patient/claimaudit-pat7"
+        },
         "created": "2026-05-24T14:30:20Z",
-        "provider": { "reference": "Practitioner/claimaudit-prov7" },
-        "insurer": { "reference": "Organization/claimaudit-payer" },
-        "total": { "value": 3600.0, "currency": "USD" },
-        "item": [{
-          "sequence": 1,
-          "productOrService": {
-            "coding": [{
-              "system": "http://www.ama-assn.org/go/cpt",
-              "code": "94010",
-              "display": "CPT 94010: Spirometry, including graphic record, total and timed vital capacity, expiratory flow rate measurement(s), with or without maximal voluntary ventilation."
-            }]
-          },
-          "unitPrice": { "value": 3600.0, "currency": "USD" }
-        }]
+        "provider": {
+          "reference": "Practitioner/claimaudit-prov7"
+        },
+        "insurer": {
+          "reference": "Organization/claimaudit-payer"
+        },
+        "total": {
+          "value": 3600.0,
+          "currency": "USD"
+        },
+        "item": [
+          {
+            "sequence": 1,
+            "productOrService": {
+              "coding": [
+                {
+                  "system": "http://www.ama-assn.org/go/cpt",
+                  "code": "94010",
+                  "display": "CPT 94010: Spirometry, including graphic record, total and timed vital capacity, expiratory flow rate measurement(s), with or without maximal voluntary ventilation."
+                }
+              ]
+            },
+            "unitPrice": {
+              "value": 3600.0,
+              "currency": "USD"
+            }
+          }
+        ]
       }
     },
     {
@@ -176,22 +288,39 @@
         "id": "claimaudit-claim8",
         "status": "active",
         "use": "claim",
-        "patient": { "reference": "Patient/claimaudit-pat8" },
+        "patient": {
+          "reference": "Patient/claimaudit-pat8"
+        },
         "created": "2026-05-23T09:00:20Z",
-        "provider": { "reference": "Practitioner/claimaudit-prov8" },
-        "insurer": { "reference": "Organization/claimaudit-payer" },
-        "total": { "value": 480.0, "currency": "USD" },
-        "item": [{
-          "sequence": 1,
-          "productOrService": {
-            "coding": [{
-              "system": "http://www.ama-assn.org/go/cpt",
-              "code": "99205",
-              "display": "CPT 99205: Office or other outpatient visit for the evaluation and management of a new patient, high level of decision making."
-            }]
-          },
-          "unitPrice": { "value": 480.0, "currency": "USD" }
-        }]
+        "provider": {
+          "reference": "Practitioner/claimaudit-prov",
+          "display": "Dr. Bob Miller"
+        },
+        "insurer": {
+          "reference": "Organization/claimaudit-payer"
+        },
+        "total": {
+          "value": 480.0,
+          "currency": "USD"
+        },
+        "item": [
+          {
+            "sequence": 1,
+            "productOrService": {
+              "coding": [
+                {
+                  "system": "http://www.ama-assn.org/go/cpt",
+                  "code": "99205",
+                  "display": "CPT 99205: Office or other outpatient visit for the evaluation and management of a new patient, high level of decision making."
+                }
+              ]
+            },
+            "unitPrice": {
+              "value": 480.0,
+              "currency": "USD"
+            }
+          }
+        ]
       }
     }
   ]
