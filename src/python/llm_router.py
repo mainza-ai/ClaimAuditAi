@@ -95,7 +95,7 @@ def _create_client(provider: str, settings: dict):
         raise ValueError(f"Unknown LLM_PROVIDER '{provider}'. Valid values: nvidia, ollama, openai")
 
 
-def chat(system_prompt: str, messages_json: str, max_tokens: int = 1024) -> str:
+def chat(system_prompt: str, messages_json: str, max_tokens: int = 1024, timeout: float = None) -> str:
     settings = _load_settings()
     cache_ttl = int(settings.get("cacheTTL", 86400))
     cache_key = (system_prompt, messages_json, max_tokens)
@@ -113,8 +113,13 @@ def chat(system_prompt: str, messages_json: str, max_tokens: int = 1024) -> str:
     # 2. Check rate limit before executing request
     _check_rate_limit()
 
+    # Determine timeout and retry count dynamically from settings
+    if timeout is None:
+        timeout = float(settings.get("timeout", 30.0))
+    retry_count = int(settings.get("retryCount", 1))
+
     last_error = None
-    for attempt in range(RETRY_COUNT + 1):
+    for attempt in range(retry_count + 1):
         try:
             client, model = _get_client_and_model()
             try:
@@ -127,7 +132,7 @@ def chat(system_prompt: str, messages_json: str, max_tokens: int = 1024) -> str:
                 messages=full_messages,
                 max_tokens=max_tokens,
                 temperature=0.3,
-                timeout=5.0,
+                timeout=timeout,
             )
             if not response.choices:
                 raise ValueError("LLM returned empty response — no choices available")
@@ -142,13 +147,13 @@ def chat(system_prompt: str, messages_json: str, max_tokens: int = 1024) -> str:
             return content
         except Exception as e:
             last_error = e
-            if attempt < RETRY_COUNT:
+            if attempt < retry_count:
                 delay = RETRY_BASE_DELAY * (2 ** attempt)
                 logger.warning(f"LLM attempt {attempt + 1} failed: {e}. Retrying in {delay:.1f}s...")
                 time.sleep(delay)
             else:
-                logger.error(f"LLM failed after {RETRY_COUNT + 1} attempts: {e}")
-    raise RuntimeError(f"LLM request failed after {RETRY_COUNT + 1} attempts: {last_error}")
+                logger.error(f"LLM failed after {retry_count + 1} attempts: {e}")
+    raise RuntimeError(f"LLM request failed after {retry_count + 1} attempts: {last_error}")
 
 
 def invalidate_llm_cache():
@@ -163,14 +168,18 @@ def invalidate_client_cache():
     invalidate_llm_cache()
 
 def generate(prompt: str, max_tokens: int = 2048) -> str:
+    settings = _load_settings()
+    # Default to a lower timeout for inline claims processing to avoid blocking FHIR transaction loops
+    audit_timeout = float(settings.get("auditTimeout", 15.0))
     return chat(
         system_prompt="You are a healthcare payment integrity AI. Generate precise, structured, clinically accurate audit reports in markdown format. Always include sections for Tier 1, Tier 2, Tier 3 findings, and a final Risk Score summary.",
         messages_json=json.dumps([{"role": "user", "content": prompt}]),
         max_tokens=max_tokens,
+        timeout=audit_timeout,
     )
 
 
-def chat_stream(system_prompt: str, messages_json: str, max_tokens: int = 1024):
+def chat_stream(system_prompt: str, messages_json: str, max_tokens: int = 1024, timeout: float = None):
     """Generator that yields streaming chunks via OpenAI SSE for IRIS SSE passthrough.
     Each yielded string is a complete SSE 'data: ...' line."""
     try:
@@ -178,6 +187,10 @@ def chat_stream(system_prompt: str, messages_json: str, max_tokens: int = 1024):
     except Exception as e:
         yield f"\n\n[Streaming error: {str(e)}]"
         return
+
+    settings = _load_settings()
+    if timeout is None:
+        timeout = float(settings.get("timeout", 30.0))
 
     client, model = _get_client_and_model()
     try:
@@ -193,7 +206,7 @@ def chat_stream(system_prompt: str, messages_json: str, max_tokens: int = 1024):
             messages=full_messages,
             max_tokens=max_tokens,
             temperature=0.3,
-            timeout=5.0,
+            timeout=timeout,
             stream=True,
         )
         for chunk in stream:
