@@ -12,13 +12,14 @@ If your installation encounters errors, locate the symptom in the table below to
 | Anomaly scores are too low (no holds) | Autoencoder bottleneck saturation or poor learning rates | [[Autoencoder Not Detecting Anomalies]] |
 | Vector search returns empty sets | Malformed TO_VECTOR casting or missing HNSW index | [[Vector Search Returns No Results]] |
 | AI Agent or MCP tools fail | Incorrect API keys, firewall limits, or port conflicts | [[AI Hub Tool Invocation Failures]] |
+| **Login returns "Invalid credentials" for valid users** | `%SYSTEM.Security.Login()` incompatible with REST context; CSP UnknownUser lacks `%SYS` access | [[Security Users Validate Crash]] |
 | **UI shows blank page / crashes on load** | API returns HTML/error instead of JSON; `.filter()` called on non-array | [[Blank UI Due to API Error Responses]] |
 | **API returns `<METHOD DOES NOT EXIST> %Get,%SQL.StatementResult`** | ObjectScript consumes single quotes inside SQL strings | [[ObjectScript SQL Single-Quote Consumption]] |
 | **Seed Sample Data button does nothing** | Emoji/CRLF chars in disposition violate FHIR string regex; empty claim reference | [[Seed Data Disposition Validation]] |
 | **iris.script commands not executing** | Indented lines treated as continuations, never run as commands | [[iris.script Indentation Pitfalls]] |
 | **Claim amounts always $0 in UI** | Claim resources not persisted by FHIR interceptor; total not stored in ClaimResponse | [[Claim Amounts Always $0]] |
-| **LLM adjudication fails / Python exception** | NVIDIA_API_KEY invisible to Embedded Python; missing .llm_settings.json | [[LLM Provider Connection Failures]] |
-| **Claim actions return success but claim stays in queue** | FHIR datetime extension format rejected (missing ISO 8601 T/Z separators) | [[Claim Actions Silently Fail]] |
+| **LLM adjudication fails / Python exception** | NVIDIA_API_KEY invisible to Embedded Python; missing .llm_settings.json; httpx/openai version conflict | [[LLM Provider Connection Failures]] |
+| **Claim actions return 404 or silently fail** | Missing UrlMap routes, PUT response not validated, FHIR datetime format rejected, `$Get()` on dynamic object | [[Claim Actions Silently Fail]] |
 | **Rejected claims do not appear in the audit ledger** | GetLedger SQL query excludes `status='cancelled'` tasks | [[Rejected Claims Missing From Ledger]] |
 | **Dashboard metrics never update after claim actions** | Dashboard queries have no `refetchInterval`; HoldQueue refetches stale cache | [[Dashboard Metrics Stale After Actions]] |
 | **Daily intercepted chart shows all zeros** | `CAST(_lastUpdated AS DATE)` returns horolog integer, not date string | [[Dashboard Daily Counts Always Zero]] |
@@ -29,6 +30,7 @@ If your installation encounters errors, locate the symptom in the table below to
 | **Autoencoder flags claims randomly** | Model trained on 200 synthetic random noise claims when real data < 10 | [[Autoencoder Trains on Random Noise]] |
 | **Claims in Bundles are not audited** | OnBeforeRequest only checks `Type="Claim"`, not `Type="Bundle"` | [[Bundle Claims Not Intercepted]] |
 | **Collusion graph hangs with many claims** | Unbounded `nx.simple_cycles()` causes exponential blowup | [[Collusion Graph Performance Degradation]] |
+| **Risk distribution shows all "high" / wrong levels** | GetStats used disposition text matching instead of risk-score extension values | [[Seed Data Disposition Validation]] |
 
 ## Key Details
 - **Primary Diagnostic Command**: `docker logs --tail 100 claimaudit-iris`

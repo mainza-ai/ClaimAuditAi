@@ -7,7 +7,11 @@
 The build process is automated using the `iris.script` manifest, which executes during the Docker build (`RUN iris start IRIS && iris session IRIS < iris.script && iris stop IRIS quietly`):
 
 ```
-[iris.script] ──> Install ZPM ──> Create INTEROP Namespace
+[iris.script] ──> Install ZPM ──> Create INTEROP Namespace ──> Create Roles & Users (%SYS)
+                       │
+                       v
+               Store Credential Hashes
+               (^ClaimAuditAI globals in INTEROP)
                        │
                        v
                Compile Non-FHIR Classes
@@ -20,6 +24,21 @@ The build process is automated using the `iris.script` manifest, which executes 
                Load ZPM Module (module.xml)
                (REST.PKG + AI.PKG only; FHIR classes excluded)
 ```
+
+### Credential Hash Storage
+
+During the build phase, `iris.script` creates users in the `%SYS` namespace (`admin`, `auditor`, `viewer`) then switches to `INTEROP` and stores HMAC-SHA256 credential hashes + roles in local globals:
+
+```objectscript
+zn "INTEROP"
+Set tSalt = "ClaimAuditAI_Salt"
+Set ^ClaimAuditAI("Users","admin","hash") = $SYSTEM.Encryption.HMACSHA(256, "ClaimAuditAdmin2026!", tSalt)
+Set ^ClaimAuditAI("Users","admin","fullName") = "ClaimAuditAI Admin"
+Set ^ClaimAuditAI("Users","admin","roles","Admin") = ""
+; ... same for auditor, viewer
+```
+
+This is critical: the CSP Gateway dispatches REST requests as `UnknownUser` — a user without `%SYS` database access. Storing credentials in INTEROP globals allows the `Login()` method to validate passwords without namespace switching or `%SYS` permissions. See [[Security Users Validate Crash]] for the full architecture.
 
 ### Critical Rules for `iris.script`
 

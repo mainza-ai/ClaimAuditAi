@@ -4,7 +4,13 @@
 
 ## Authentication & Token Flow
 
-To authenticate and obtain a JWT token, use the `/api/auth/login` public endpoint with valid credentials (e.g., `_SYSTEM` / `SYS`, `auditor` / `AuditReview2026!`, or `admin` / `ClaimAuditAdmin2026!`).
+To authenticate and obtain a JWT token, use the `/api/auth/login` public endpoint with valid credentials:
+- **Admin:** `admin` / `ClaimAuditAdmin2026!` (full system access, seed/clear data)
+- **Auditor:** `auditor` / `AuditReview2026!` (review holds, approve/reject/escalate)
+- **Viewer:** `viewer` / `ViewDash2026!` (read-only dashboard access)
+
+Credentials are stored as HMAC-SHA256 hashes in INTEROP namespace globals (`^ClaimAuditAI("Users",...)`) — no namespace switching or `%SYS` access required. See [[Security Users Validate Crash]] for the authentication architecture.
+
 Standard SMART on FHIR token validation also supports federated OpenID Connect (OIDC) identities via Keycloak (RS256 JWKS signatures).
 
 ### Login Request Body
@@ -83,7 +89,7 @@ The `GET /api/stats` endpoint returns:
 ```
 
 - `approvedToday` is scoped to the current date via `SUBSTRING(_lastUpdated,1,10) = today`
-- `riskDistribution` is derived from disposition text keyword matching
+- `riskDistribution` is derived from the `risk-score` ClaimResponse extension value (not disposition text). Thresholds: critical≥0.86 (all 3 AI tiers), high≥0.50 (2 tiers), medium≥0.30 (1 tier).
 - `dailyInterceptedCounts` covers the trailing 7 days
 
 ## Error Format

@@ -43,7 +43,7 @@ For local development, testing, and automated seeding where Keycloak is not depl
   - Environment variable `JWT_SECRET` is checked first.
   - In development environments (`CLAIMAUDIT_ENV != "production"`), if `JWT_SECRET` is not set, a persistent random UUID is generated on startup and stored securely in the local namespace global `^ClaimAuditAI("Secret")`.
   - In production mode, a missing `JWT_SECRET` is treated as a critical security violation, logging a timestamped alert to `^ClaimAuditSecurityError` and throwing a hard error to prevent weak token signing.
-- **User Validation**: Validates the username and password against the local InterSystems IRIS security users database (e.g., `admin`, `auditor`, `viewer`).
+- **User Validation**: Validates username and password against HMAC-SHA256 credential hashes stored in INTEROP namespace globals (`^ClaimAuditAI("Users",...)`). These hashes are populated at build time by `iris.script` and do not require `%SYS` namespace access or interactive context. See [[Security Users Validate Crash]] for the architecture rationale.
 
 ---
 
