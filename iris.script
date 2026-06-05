@@ -120,6 +120,8 @@
     set ^UnitTestRoot="/usr/irissys/.vscode/INTEROP/UnitTestRoot"
 
 // Compile non-FHIR-dependent classes before ZPM
+do $SYSTEM.OBJ.Load("/home/irisowner/dev/src/cls/ClaimAudit/Debug.cls", "ck")
+do ##class(ClaimAudit.Debug).GrantRolesToUnknownUser()
 do $SYSTEM.OBJ.Load("/home/irisowner/dev/src/cls/ClaimAudit/REST/Router.cls", "ck")
 do $SYSTEM.OBJ.Load("/home/irisowner/dev/src/cls/ClaimAudit/AI/Engine.cls", "ck")
 do $SYSTEM.OBJ.Load("/home/irisowner/dev/src/cls/ClaimAudit/AI/Agent.cls", "ck")

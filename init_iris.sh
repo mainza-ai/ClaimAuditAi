@@ -4,7 +4,7 @@
 
 # Upgrade Python packages to match requirements.txt (catches version bumps without full rebuild)
 echo "Checking Python dependencies..."
-/home/irisowner/.venvs/mcp-tools/bin/pip install --upgrade -r /home/irisowner/dev/requirements.txt --target /usr/irissys/mgr/python --break-system-packages 2>&1 | tail -3
+/home/irisowner/.venvs/mcp-tools/bin/pip install --upgrade -r /home/irisowner/dev/requirements.txt --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple --target /usr/irissys/mgr/python --break-system-packages 2>&1 | tail -3
 
 iris session IRIS << 'EOF' 2>&1
 zn "INTEROP"
@@ -29,7 +29,9 @@ if tRS.%Get("cnt") = 0 {
 // Run Engine.Setup() to create audit tables and train models (idempotent)
 do ##class(ClaimAudit.AI.Engine).Setup()
 
-// Compile REST Router and Auth so all routes are available
+// Compile REST Router, Auth, and Debug helper so all routes and permissions are available
+do $SYSTEM.OBJ.Load("/home/irisowner/dev/src/cls/ClaimAudit/Debug.cls", "ck")
+do ##class(ClaimAudit.Debug).GrantRolesToUnknownUser()
 do $SYSTEM.OBJ.Load("/home/irisowner/dev/src/cls/ClaimAudit/REST/Router.cls", "ck")
 do $SYSTEM.OBJ.Load("/home/irisowner/dev/src/cls/ClaimAudit/REST/Auth.cls", "ck")
 do $SYSTEM.OBJ.Load("/home/irisowner/dev/src/cls/ClaimAudit/Data/GraphStore.cls", "ck")

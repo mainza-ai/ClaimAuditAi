@@ -81,7 +81,7 @@ ClaimAuditAI shifts the payment integrity paradigm from retrospective "pay-and-c
 - [[ClaimResponse FHIR Validation]] — `total` field must use BackboneElement array, not Money object.
 - [[LLM Provider Connection Failures]] — NVIDIA_API_KEY invisible to Embedded Python; runtime settings via `.llm_settings.json`.
 - [[Claim Actions Silently Fail]] — FHIR datetime extension format causes silent PUT rejection.
-- [[Rejected Claims Missing From Ledger]] — GetLedger excluded `status='cancelled'` tasks.
+- [[Rejected Claims Missing From Ledger]] — Solving status misclassifications, missing rationales, and stale details.
 - [[Dashboard Metrics Stale After Actions]] — Missing `refetchInterval`, stale cache on navigation.
 - [[Dashboard Daily Counts Always Zero]] — `CAST(_lastUpdated AS DATE)` incompatibility.
 - [[Theme Not Applied on Page Load]] — `applyTheme()` not called on store initialization.

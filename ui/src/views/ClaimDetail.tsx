@@ -239,15 +239,15 @@ export function ClaimDetail() {
           <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
             <div>
               <strong>Authorized By:</strong>{' '}
-              {claim.actionHistory?.find((h) => h.type === 'authorized-by')?.value || 'System/Auditor'}
+              {claim.actionHistory && [...claim.actionHistory].reverse().find((h) => h.type === 'authorized-by')?.value || 'System/Auditor'}
             </div>
-            {claim.actionHistory?.find((h) => h.type === 'decision-timestamp')?.value && (
+            {claim.actionHistory && [...claim.actionHistory].reverse().find((h) => h.type === 'decision-timestamp')?.value && (
               <div style={{ marginTop: 2 }}>
                 <strong>Decided At:</strong>{' '}
-                {new Date(claim.actionHistory.find((h) => h.type === 'decision-timestamp')!.value).toLocaleString()}
+                {new Date([...claim.actionHistory].reverse().find((h) => h.type === 'decision-timestamp')!.value).toLocaleString()}
               </div>
             )}
-            {claim.actionHistory?.find((h) => h.type === 'rationale')?.value && (
+            {claim.actionHistory && [...claim.actionHistory].reverse().find((h) => h.type === 'rationale')?.value && (
               <div
                 style={{
                   marginTop: 6,
@@ -260,7 +260,7 @@ export function ClaimDetail() {
                 }}
               >
                 <strong>Override Rationale Note:</strong>{' '}
-                {claim.actionHistory.find((h) => h.type === 'rationale')!.value}
+                {[...claim.actionHistory].reverse().find((h) => h.type === 'rationale')!.value}
               </div>
             )}
           </div>

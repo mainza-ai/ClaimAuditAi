@@ -1589,13 +1589,14 @@ ClassMethod GetLedger() As %Status
             Set tPriority = tRS.%Get("priority")
             Set tFocus = tRS.%Get("focus")
             Set tLastUpdated = tRS.%Get("_lastUpdated")
+            Set tRationale = ""
 
             Set tClaimId = $Piece(tFocus, "/", 2)
-            Set tAction = "approved"
-            If tStatus = "cancelled" {
+            Set tAction = "escalated"
+            If tStatus = "completed" {
+                Set tAction = "approved"
+            } ElseIf tStatus = "cancelled" {
                 Set tAction = "rejected"
-            } ElseIf tPriority = "stat" {
-                Set tAction = "escalated"
             }
 
             // Patient ID from ClaimResponse.patient (JOIN'd)
@@ -1645,13 +1646,15 @@ ClassMethod GetLedger() As %Status
                             }
                         }
 
-                        // Parse extensions for authorized-by
+                        // Parse extensions for authorized-by and rationale
                         Set tExtJson = tCRJson.extension
                         If $IsObject(tExtJson) {
                             Set tExtIter = tExtJson.%GetIterator()
                             While tExtIter.%GetNext(.tK, .tExt) {
                                 If tExt.url = "https://claimauditai.com/fhir/extension/authorized-by" {
                                     Set tAuthorizedBy = tExt.valueString
+                                } ElseIf tExt.url = "https://claimauditai.com/fhir/extension/rationale" {
+                                    Set tRationale = tExt.valueString
                                 }
                             }
                         }
@@ -1659,15 +1662,17 @@ ClassMethod GetLedger() As %Status
                 } Catch {}
             }
 
-            // Reason from disposition
-            Set tDisp = tRS.%Get("disposition")
-            Set tReason = ""
-            If tAction = "approved" {
-                Set tReason = "Auditor override: claim approved for disbursal. " _ $Extract(tDisp, 1, 200)
-            } ElseIf tAction = "rejected" {
-                Set tReason = "Claim denied by auditor review. " _ $Extract(tDisp, 1, 200)
-            } Else {
-                Set tReason = "Escalated for peer review. " _ $Extract(tDisp, 1, 200)
+            // Reason from human rationale if present, otherwise fallback to disposition prefix
+            Set tReason = tRationale
+            If tReason = "" {
+                Set tDisp = tRS.%Get("disposition")
+                If tAction = "approved" {
+                    Set tReason = "Auditor override: claim approved for disbursal. " _ $Extract(tDisp, 1, 200)
+                } ElseIf tAction = "rejected" {
+                    Set tReason = "Claim denied by auditor review. " _ $Extract(tDisp, 1, 200)
+                } Else {
+                    Set tReason = "Escalated for peer review. " _ $Extract(tDisp, 1, 200)
+                }
             }
             If tReason = "" {
                 If tAction = "rejected" {
