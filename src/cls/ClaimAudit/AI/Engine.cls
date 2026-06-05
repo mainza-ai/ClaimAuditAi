@@ -370,13 +370,13 @@ ClassMethod AuditClaim(pClaimJson As %DynamicObject, Output pResult As %DynamicO
         // Populate fallback tierResults so the FHIR extension is always stored
         Set pResult.tierResults = ##class(%DynamicArray).%New()
         Do pResult.tierResults.%Push({
-            "tier": 1, "label": "Semantic Clinical Audit", "score": 0.0, "flags": [], "summary": ("Engine error: " _ ex.DisplayString())
+            "tier": 1, "label": "Semantic Clinical Audit", "score": 0.0, "flags": (##class(%DynamicArray).%New()), "summary": ("NLP audit pipeline failed: " _ ex.DisplayString() _ ". Verify NVIDIA_API_KEY and Python orchestration logs.")
         })
         Do pResult.tierResults.%Push({
-            "tier": 2, "label": "Statistical Outlier Profiler", "score": 0.0, "threshold": 0, "flags": [], "summary": ("Engine error: " _ ex.DisplayString())
+            "tier": 2, "label": "Statistical Outlier Profiler", "score": 0.0, "threshold": 0, "flags": (##class(%DynamicArray).%New()), "summary": ("Autoencoder anomaly detection failed: " _ ex.DisplayString())
         })
         Do pResult.tierResults.%Push({
-            "tier": 3, "label": "Collusion Network Analysis", "score": 0.0, "flags": [], "summary": ("Engine error: " _ ex.DisplayString())
+            "tier": 3, "label": "Collusion Network Analysis", "score": 0.0, "flags": (##class(%DynamicArray).%New()), "summary": ("Graph collusion analysis failed: " _ ex.DisplayString())
         })
     }
     Quit sc

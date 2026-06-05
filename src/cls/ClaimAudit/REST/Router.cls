@@ -23,7 +23,8 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
     <Route Url="/claims/:id"            Method="GET"  Call="GetClaimDetail"/>
     <Route Url="/claims/:id/approve"   Method="POST" Call="ApproveClaim"/>
     <Route Url="/claims/:id/escalate"  Method="POST" Call="EscalateClaim"/>
-    <Route Url="/claims/:id/reject"    Method="POST" Call="RejectClaim"/>
+    <Route Url="/claims/:id/reject"    Method="POST"       Call="RejectClaim"/>
+    <Route Url="/claims/:id/reaudit"  Method="POST"       Call="ReauditClaim"/>
     <Route Url="/stats"                 Method="GET"  Call="GetStats"/>
     <Route Url="/stats/model-performance" Method="GET"  Call="GetModelPerformance"/>
     <Route Url="/metrics"               Method="GET"  Call="GetMetrics"/>
@@ -280,7 +281,17 @@ ClassMethod GetHeldClaims() As %Status
                                 If tExt.url = "https://claimauditai.com/fhir/extension/icd-code" {
                                     Set tIcdCode = tExt.valueString
                                 }
+                                If tExt.url = "https://claimauditai.com/fhir/extension/tier-results" {
+                                    Set tTierResultsStr = tExt.valueString
+                                }
                             }
+                        }
+
+                        Set tTierResults = []
+                        If $Get(tTierResultsStr) '= "" {
+                            Try {
+                                Set tTierResults = ##class(%DynamicArray).%FromJSON(tTierResultsStr)
+                            } Catch {}
                         }
                     }
                 } Catch {}
@@ -293,6 +304,8 @@ ClassMethod GetHeldClaims() As %Status
             } ElseIf tRiskScore >= 0.50 {
                 Set tRiskLevel = "high"
             }
+
+            Set tTierResultsStr = ""
 
             Set tObj = {
                 "id": (tClaimResponseId),
@@ -307,7 +320,9 @@ ClassMethod GetHeldClaims() As %Status
                 "riskScore": (tRiskScore),
                 "riskLevel": (tRiskLevel),
                 "escalated": (tEscalated),
-                "outcome": (tOutcome)
+                "outcome": (tOutcome),
+                "disposition": (tDisposition),
+                "tierResults": (tTierResults)
             }
             Do tArr.%Push(tObj)
         }
@@ -1117,6 +1132,129 @@ ClassMethod RejectClaim(id As %String) As %Status
             }
         }
         Write {"status": "success", "authorizedBy": (tAuthorizedBy)}.%ToJSON()
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+        Write {"error": (ex.DisplayString())}.%ToJSON()
+    }
+    Quit tSC
+}
+
+/// Re-run the AI audit engine for a specific claim.
+/// Re-populates tier-results extension, risk-score, and disposition on the ClaimResponse.
+ClassMethod ReauditClaim(id As %String) As %Status
+{
+    If '##class(ClaimAudit.REST.Auth).RequireAuth("Admin") Quit $$$OK
+    Set tSC = $$$OK
+    Try {
+        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
+
+        // Read ClaimResponse
+        Set tReq = ##class(HS.FHIRServer.API.Data.Request).%New()
+        Set tReq.RequestMethod = "GET"
+        Set tReq.RequestPath = "/ClaimResponse/" _ id
+        Set tReq.Interaction = "read"
+        Set tResp = ##class(HS.FHIRServer.API.Data.Response).%New()
+        Do tService.DispatchRequest(tReq, .tResp)
+        If '$IsObject(tResp.Json) {
+            Write {"error": "Claim not found"}.%ToJSON()
+            Quit
+        }
+        Set tCRJson = tResp.Json
+
+        // Extract claim details for Engine
+        Set tPatientId = $Piece(tCRJson.patient.reference, "/", 2)
+        Set tRequestRef = tCRJson.request.reference
+        Set tClaimId = $Piece(tRequestRef, "/", 2)
+        Set tBilledAmount = 0.0
+        Set tCptCode = ""
+        Set tIcdCode = ""
+        If $IsObject(tCRJson.total) {
+            For tI = 0:1:tCRJson.total.%Size()-1 {
+                Set tEntry = tCRJson.total.%Get(tI)
+                If $IsObject(tEntry.amount) {
+                    Set tBilledAmount = +tEntry.amount.value
+                    Quit
+                }
+            }
+        }
+        If $IsObject(tCRJson.extension) {
+            Set tExtIter = tCRJson.extension.%GetIterator()
+            While tExtIter.%GetNext(.tK, .tExt) {
+                If tExt.url = "https://claimauditai.com/fhir/extension/cpt-code" {
+                    Set tCptCode = tExt.valueString
+                }
+                If tExt.url = "https://claimauditai.com/fhir/extension/icd-code" {
+                    Set tIcdCode = tExt.valueString
+                }
+            }
+        }
+
+        // Build ClaimJson object for the engine
+        Set tClaimJson = {
+            "patient": {"reference": ("Patient/" _ tPatientId)},
+            "provider": {"reference": "Provider/claimaudit-prov"},
+            "total": {"value": (tBilledAmount)},
+            "item": [{"productOrService": {"coding": [{"display": (tCptCode)}]}}],
+            "created": ($ZTIMESTAMP)
+        }
+
+        // Call Engine
+        Set pResult = {
+            "score": 0.0,
+            "flagged": 0,
+            "reasons": [],
+            "tierResults": []
+        }
+        Set sc = ##class(ClaimAudit.AI.Engine).AuditClaim(tClaimJson, .pResult)
+
+        // Remove existing tier-results and risk-score extensions, add new ones
+        Set tNewExtensions = ##class(%DynamicArray).%New()
+        If $IsObject(tCRJson.extension) {
+            Set tExtIter = tCRJson.extension.%GetIterator()
+            While tExtIter.%GetNext(.tK, .tExt) {
+                If (tExt.url = "https://claimauditai.com/fhir/extension/tier-results") ||
+                   (tExt.url = "https://claimauditai.com/fhir/extension/risk-score") {
+                    Continue
+                }
+                Do tNewExtensions.%Push(tExt)
+            }
+        }
+        Do tNewExtensions.%Push({
+            "url": "https://claimauditai.com/fhir/extension/tier-results",
+            "valueString": (pResult.tierResults.%ToJSON())
+        })
+        Do tNewExtensions.%Push({
+            "url": "https://claimauditai.com/fhir/extension/risk-score",
+            "valueDecimal": (pResult.score)
+        })
+        Set tCRJson.extension = tNewExtensions
+
+        // Generate new disposition
+        Set tDisposition = ""
+        Try {
+            Set tDisposition = ##class(ClaimAudit.AI.Agent).GenerateHoldSummary(
+                tPatientId, "claimaudit-prov", tBilledAmount, "1",
+                $ZDate($PIECE($ZTIMESTAMP, ",", 1), 3), tCptCode, pResult.reasons
+            )
+        } Catch {}
+        If tDisposition '= "" Set tCRJson.disposition = tDisposition
+
+        // PUT updated ClaimResponse
+        Set tPutReq = ##class(HS.FHIRServer.API.Data.Request).%New()
+        Set tPutReq.RequestMethod = "PUT"
+        Set tPutReq.RequestPath = "/ClaimResponse/" _ id
+        Set tPutReq.Interaction = "update"
+        Set tPutReq.Json = tCRJson
+        Set tPutResp = ##class(HS.FHIRServer.API.Data.Response).%New()
+        Do tService.DispatchRequest(tPutReq, .tPutResp)
+
+        Write {
+            "reaudited": true,
+            "claimId": (id),
+            "tierResults": (pResult.tierResults),
+            "riskScore": (pResult.score),
+            "dispositionGenerated": (tDisposition '= "")
+        }.%ToJSON()
     } Catch ex {
         Set tSC = ex.AsStatus()
         Write {"error": (ex.DisplayString())}.%ToJSON()

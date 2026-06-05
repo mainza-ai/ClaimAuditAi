@@ -12,6 +12,8 @@ export interface HeldClaim {
   riskLevel: 'critical' | 'high' | 'medium';
   escalated?: 0 | 1;
   outcome?: string;
+  disposition?: string;
+  tierResults?: AuditTierResult[];
 }
 
 export interface AuditTierResult {

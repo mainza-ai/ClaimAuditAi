@@ -46,6 +46,33 @@ export function ClaimRow({ claim }: { claim: HeldClaim }) {
             {claim.totalAmount?.toLocaleString()}
           </p>
         </div>
+        {claim.tierResults && claim.tierResults.length > 0 && (
+          <div className="flex items-center gap-1 shrink-0">
+            {claim.tierResults.map((t) => {
+              const hasHit = t.score > 0 || t.flags.length > 0;
+              const colors: Record<number, { bg: string; border: string }> = {
+                1: { bg: 'var(--accent-primary)', border: 'var(--accent-primary)' },
+                2: { bg: 'var(--color-warning)', border: 'var(--color-warning)' },
+                3: { bg: 'var(--color-danger)', border: 'var(--color-danger)' },
+              };
+              const c = colors[t.tier];
+              return (
+                <span
+                  key={t.tier}
+                  title={`Tier ${t.tier}: ${t.label} — ${hasHit ? t.summary.slice(0, 80) : 'clean'}`}
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: '50%',
+                    backgroundColor: hasHit ? c.bg : 'transparent',
+                    border: `1.5px solid ${c.border}`,
+                    opacity: hasHit ? 1 : 0.35,
+                  }}
+                />
+              );
+            })}
+          </div>
+        )}
       </div>
       <div className="flex items-center gap-3 shrink-0 ml-4">
         {claim.escalated ? (

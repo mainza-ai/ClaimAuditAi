@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { getClaimDetail } from '../api/claims';
+import { getClaimDetail, reauditClaim } from '../api/claims';
 import { TierPanel } from '../components/claims/TierPanel';
 import { DispositionReader } from '../components/claims/DispositionReader';
 import { RiskBadge } from '../components/claims/RiskBadge';
@@ -15,6 +15,7 @@ import {
   CheckCircle,
   AlertTriangle,
   XCircle,
+  RefreshCw,
   ChevronLeft,
   MessageSquare,
   HeartPulse,
@@ -94,6 +95,17 @@ export function ClaimDetail() {
     queryClient.invalidateQueries({ queryKey: ['ledger'] });
     setModal(null);
     navigate('/queue');
+  };
+
+  const handleReaudit = async () => {
+    if (!id) return;
+    try {
+      await reauditClaim(id);
+      queryClient.invalidateQueries({ queryKey: ['claim', id] });
+      queryClient.invalidateQueries({ queryKey: ['claims', 'held'] });
+    } catch (e) {
+      console.error('Reaudit failed', e);
+    }
   };
 
   const isDecided = claim?.outcome === 'complete' || claim?.outcome === 'error';
@@ -393,8 +405,33 @@ export function ClaimDetail() {
           >
             <p style={{ margin: 0 }}>No tier data available</p>
             <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--text-tertiary)' }}>
-              LLM adjudication summary was not generated. Check API key configuration.
+              {claim.disposition
+                ? claim.disposition.includes('PYTHON EXCEPTION')
+                  ? 'Python audit engine crashed — check AI agent logs and NVIDIA_API_KEY.'
+                  : claim.disposition.includes('HOLD Notification')
+                    ? 'Only basic HOLD notification found — full LLM adjudication was not generated.'
+                    : 'Disposition exists but tier data could not be parsed. May need IRIS recompile.'
+                : 'No disposition or tier data. The claim may have been ingested without AI auditing.'}
             </p>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (id) queryClient.invalidateQueries({ queryKey: ['claim', id] });
+              }}
+              style={{
+                marginTop: 12,
+                padding: '6px 16px',
+                borderRadius: 6,
+                border: '1px solid var(--border-default)',
+                backgroundColor: 'transparent',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                fontSize: 12,
+                fontFamily: 'var(--font-mono)',
+              }}
+            >
+              Retry Load
+            </button>
           </div>
         )}
       </div>
@@ -536,6 +573,30 @@ export function ClaimDetail() {
             </button>
           )}
         </div>
+      )}
+
+      {PERMISSIONS.canReaudit(activeRole) && (
+        <button
+          onClick={handleReaudit}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '8px 16px',
+            borderRadius: 8,
+            fontSize: 13,
+            fontWeight: 500,
+            fontFamily: 'var(--font-mono)',
+            cursor: 'pointer',
+            backgroundColor: 'transparent',
+            color: 'var(--text-secondary)',
+            border: '1px solid var(--border-default)',
+            marginTop: 12,
+            width: 'fit-content',
+          }}
+        >
+          <RefreshCw size={14} /> Re-run AI Audit
+        </button>
       )}
 
       {modal && (

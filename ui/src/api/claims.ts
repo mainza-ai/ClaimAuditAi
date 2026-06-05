@@ -22,6 +22,9 @@ export const escalateClaim = (id: string, body: { authorizedBy: string; rational
 export const rejectClaim = (id: string, body: { authorizedBy: string; rationaleSummary: string }) =>
   apiClient.post(`/claims/${id}/reject`, body).then((r) => r.data);
 
+export const reauditClaim = (id: string) =>
+  apiClient.post(`/claims/${id}/reaudit`).then((r) => r.data);
+
 export const loadSampleData = () => apiClient.post('/samples/load', {}, { timeout: 120000 }).then((r) => r.data);
 
 export const getLedger = (limit = 50, offset = 0) =>
