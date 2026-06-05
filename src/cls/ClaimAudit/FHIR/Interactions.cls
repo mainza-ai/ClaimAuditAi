@@ -46,12 +46,14 @@ Method AuditSingleClaim(pClaimJson As %DynamicObject, pIndex As %String = "singl
         Set summary = "Payment Integrity Adjudication HOLD Notification. " _ tReasonStr
         
         // Invoke AI Hub Agent to author explainable hold disposition (optional)
-        Try {
-            Set llmSummary = ##class(ClaimAudit.AI.Agent).GenerateHoldSummary(tAuditResult.patientId, tAuditResult.providerNpi, tAuditResult.billedAmount, tAuditResult.codeCount, tAuditResult.serviceDate, tAuditResult.firstCodeDesc, tAuditResult.reasons)
-            If llmSummary '= "" {
-                Set summary = llmSummary
-            }
-        } Catch {}
+        If '$Get(^ClaimAuditAI("Seeding")) {
+            Try {
+                Set llmSummary = ##class(ClaimAudit.AI.Agent).GenerateHoldSummary(tAuditResult.patientId, tAuditResult.providerNpi, tAuditResult.billedAmount, tAuditResult.codeCount, tAuditResult.serviceDate, tAuditResult.firstCodeDesc, tAuditResult.reasons)
+                If llmSummary '= "" {
+                    Set summary = llmSummary
+                }
+            } Catch {}
+        }
         
         // Record audit flags and summaries in thread-safe process memory
         Set ^||ClaimAuditFlag(pIndex, "flagged") = 1
@@ -277,6 +279,10 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
             If tIcdCode '= "" {
                 Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/icd-code", "valueString": (tIcdCode)})
             }
+            Set tProviderNpi = $Get(^||ClaimAuditFlag("single", "providerNpi"))
+            If tProviderNpi '= "" {
+                Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/provider-npi", "valueString": (tProviderNpi)})
+            }
             Set claimResponse.extension = tExtensions
 
             Set crEntry = {
@@ -433,6 +439,7 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
                         Set score = ^||ClaimAuditFlag(tKey, "score")
                         Set tCptCode = $Get(^||ClaimAuditFlag(tKey, "cptCode"))
                         Set tIcdCode = $Get(^||ClaimAuditFlag(tKey, "icdCode"))
+                        Set tProviderNpi = $Get(^||ClaimAuditFlag(tKey, "providerNpi"))
                         
                         Set patientStr = $Get(^||ClaimAuditFlag(tKey, "patient"))
                         Set patientRef = ""
@@ -491,6 +498,9 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
                         }
                         If tIcdCode '= "" {
                             Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/icd-code", "valueString": (tIcdCode)})
+                        }
+                        If tProviderNpi '= "" {
+                            Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/provider-npi", "valueString": (tProviderNpi)})
                         }
                         Set claimResponse.extension = tExtensions
                         

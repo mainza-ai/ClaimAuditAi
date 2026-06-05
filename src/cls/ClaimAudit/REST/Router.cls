@@ -545,7 +545,18 @@ ClassMethod GetClaimDetail(id As %String) As %Status
             } Catch {}
         }
 
-        // Parse extensions: risk-score + action history (authorized-by, rationale, decision-timestamp)
+
+
+
+        // Fallback billed amount extraction from ClaimResponse total
+        If (tBilledAmount = 0.0) && $IsObject(tCRJson.total) && (tCRJson.total.%Size() > 0) {
+            Set tTotalItem = tCRJson.total.%Get(0)
+            If $IsObject(tTotalItem.amount) {
+                Set tBilledAmount = +tTotalItem.amount.value
+            }
+        }
+
+        // Parse extensions: risk-score + action history (authorized-by, rationale, decision-timestamp) + fallback claim details
         Set tRiskScore = 0.0
         Set tRiskLevel = "medium"
         Set tActionHistory = []
@@ -564,6 +575,54 @@ ClassMethod GetClaimDetail(id As %String) As %Status
                 If tExt.url = "https://claimauditai.com/fhir/extension/decision-timestamp" {
                     Do tActionHistory.%Push({"type": "decision-timestamp", "value": (tExt.valueDateTime)})
                 }
+                If (tCptCode = "Unknown") && (tExt.url = "https://claimauditai.com/fhir/extension/cpt-code") {
+                    Set tCptCode = tExt.valueString
+                }
+                If (tIcdCode = "Unknown") && (tExt.url = "https://claimauditai.com/fhir/extension/icd-code") {
+                    Set tIcdCode = tExt.valueString
+                }
+                If (tProviderId = "claimaudit-prov") && (tExt.url = "https://claimauditai.com/fhir/extension/provider-npi") {
+                    Set tProviderId = tExt.valueString
+                }
+            }
+        }
+
+        // If the disposition is the basic HOLD message and doesn't contain the full LLM report, generate it on-demand!
+        If (tDisposition [ "Payment Integrity Adjudication HOLD Notification.") && '(tDisposition [ "Adjudication Report") {
+            Set tReasons = ##class(%DynamicArray).%New()
+            Set tReasonPart = $Piece(tDisposition, "Payment Integrity Adjudication HOLD Notification. ", 2)
+            If tReasonPart = "" Set tReasonPart = tDisposition
+            For tJ = 1:1:$Length(tReasonPart, " | ") {
+                Set tReason = $Piece(tReasonPart, " | ", tJ)
+                If tReason '= "" Do tReasons.%Push(tReason)
+            }
+            If tReasons.%Size() = 0 Do tReasons.%Push("High anomaly threat index")
+
+            Set tCodeCount = 1
+            Set tLLMSummary = ##class(ClaimAudit.AI.Agent).GenerateHoldSummary(tPatientId, tProviderId, tBilledAmount, tCodeCount, tSubmittedAt, tCptCode, tReasons)
+            If tLLMSummary '= "" {
+                Set tDisposition = tLLMSummary
+                
+                // Update the ClaimResponse in the FHIR server so it is persisted
+                Do tCRJson.%Set("disposition", tDisposition)
+                If $IsObject(tCRJson.extension) {
+                    Set tExtIter = tCRJson.extension.%GetIterator()
+                    While tExtIter.%GetNext(.tK, .tExt) {
+                        If tExt.url = "https://claimauditai.com/fhir/extension/explanation" {
+                            Do tExt.%Set("valueString", tDisposition)
+                        }
+                    }
+                }
+                
+                Try {
+                    Set tUpdateReq = ##class(HS.FHIRServer.API.Data.Request).%New()
+                    Set tUpdateReq.RequestMethod = "PUT"
+                    Set tUpdateReq.RequestPath = "/ClaimResponse/" _ id
+                    Set tUpdateReq.Interaction = "update"
+                    Set tUpdateReq.Json = tCRJson
+                    Set tUpdateResp = ##class(HS.FHIRServer.API.Data.Response).%New()
+                    Do tService.DispatchRequest(tUpdateReq, .tUpdateResp)
+                } Catch {}
             }
         }
         If tRiskScore >= 0.86 {
@@ -645,7 +704,7 @@ ClassMethod GetClaimDetail(id As %String) As %Status
             "taskPriority": (tTaskPriority),
             "communicationRequestId": (tCommId),
             "escalated": (tEscalated),
-            "outcome": ($Get(tCRJson.outcome)),
+            "outcome": (tCRJson.outcome),
             "actionHistory": (tActionHistory),
             "linkedClinicalNotes": []
         }
@@ -1292,6 +1351,7 @@ ClassMethod LoadSampleData() As %Status
     }
     Set tSC = $$$OK
     Try {
+        Set ^ClaimAuditAI("Seeding") = 1
         // 1. Wipe existing tables for a clean state
         Do ##class(%SQL.Statement).%ExecDirect(, "DELETE FROM HSFHIR_X0001_S.ClaimResponse")
         Do ##class(%SQL.Statement).%ExecDirect(, "DELETE FROM HSFHIR_X0001_S.Claim")
@@ -1419,9 +1479,11 @@ ClassMethod LoadSampleData() As %Status
 
         Do ..AdminLog("seed", "Seeded 8 sample claims with diversified risk distribution.")
 
+        Kill ^ClaimAuditAI("Seeding")
         Set tMsg = "Successfully ingested " _ tCount _ " FHIR Claims and parsed 8 Patient profiles."
         Write {"status": "success", "message": (tMsg)}.%ToJSON()
     } Catch ex {
+        Kill ^ClaimAuditAI("Seeding")
         Set tSC = ex.AsStatus()
         Write {"error": (ex.DisplayString())}.%ToJSON()
     }
