@@ -59,9 +59,11 @@ export function parseDisposition(disposition: string): {
 
   const tierResults: AuditTierResult[] = [];
 
+  const SECTIONS_LOOKAHEAD = '(?=###|##|\\*\\*Tier|\\*\\*Findings|Tier\\s*\\d|Adjudication|Collusion|Next\\s*Steps|Pend|Risk\\s*Score|Justification|\\*\\*Justification|$|#)';
+
   const t1Match =
-    disposition.match(/###\s*(?:Tier\s*1|\[NLP\])[^\n]*\n([\s\S]*?)(?=###|$|##)/i) ||
-    disposition.match(/-\s*(?:Tier\s*1|NLP)[^\n]*\n([\s\S]*?)(?=-|$|#)/i) ||
+    disposition.match(new RegExp(`(?:###|##|\\*\\*)\\s*(?:Tier\\s*1|\\[NLP\\]|Findings\\s*\\(NLP\\))[^\\n]*\\n([\\s\\S]*?)${SECTIONS_LOOKAHEAD}`, 'i')) ||
+    disposition.match(new RegExp(`-\\s*(?:Tier\\s*1|NLP)[^\\n]*\\n([\\s\\S]*?)${SECTIONS_LOOKAHEAD}`, 'i')) ||
     disposition.match(/Tier\s*1\s*\((?:NLP)\):\s*([^|\n]+)/i);
   if (t1Match) {
     const body = t1Match[1] || t1Match[0];
@@ -78,8 +80,8 @@ export function parseDisposition(disposition: string): {
   }
 
   const t2Match =
-    disposition.match(/###\s*(?:Tier\s*2|\[Adjudication\]|\[ML\])[^\n]*\n([\s\S]*?)(?=###|$|##)/i) ||
-    disposition.match(/-\s*(?:Tier\s*2|Adjudication|ML)[^\n]*\n([\s\S]*?)(?=-|$|#)/i) ||
+    disposition.match(new RegExp(`(?:###|##|\\*\\*)\\s*(?:Tier\\s*2|\\[Adjudication\\]|\\[ML\\]|Findings\\s*\\(ML\\))[^\\n]*\\n([\\s\\S]*?)${SECTIONS_LOOKAHEAD}`, 'i')) ||
+    disposition.match(new RegExp(`-\\s*(?:Tier\\s*2|Adjudication|ML)[^\\n]*\\n([\\s\\S]*?)${SECTIONS_LOOKAHEAD}`, 'i')) ||
     disposition.match(/Tier\s*2\s*\((?:ML)\):\s*([^|\n]+)/i);
   if (t2Match) {
     const body = t2Match[1] || t2Match[0];
@@ -98,8 +100,8 @@ export function parseDisposition(disposition: string): {
   }
 
   const t3Match =
-    disposition.match(/###\s*(?:Tier\s*3|\[Graph\]|\[Collusion\])[^\n]*\n([\s\S]*?)(?=###|$|##)/i) ||
-    disposition.match(/-\s*(?:Tier\s*3|Graph|Collusion)[^\n]*\n([\s\S]*?)(?=-|$|#)/i) ||
+    disposition.match(new RegExp(`(?:###|##|\\*\\*)\\s*(?:Tier\\s*3|\\[Graph\\]|\\[Collusion\\]|Findings\\s*\\(Graph\\))[^\\n]*\\n([\\s\\S]*?)${SECTIONS_LOOKAHEAD}`, 'i')) ||
+    disposition.match(new RegExp(`-\\s*(?:Tier\\s*3|Graph|Collusion)[^\\n]*\\n([\\s\\S]*?)${SECTIONS_LOOKAHEAD}`, 'i')) ||
     disposition.match(/Tier\s*3\s*\((?:Graph)\):\s*([^|\n]+)/i);
   if (t3Match) {
     const body = t3Match[1] || t3Match[0];

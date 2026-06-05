@@ -235,6 +235,23 @@
     color: var(--accent-primary) !important;
     background-color: var(--bg-hover) !important;
   }
+
+  .tier-panel-markdown p {
+    margin: 0 !important;
+    display: inline;
+    color: inherit !important;
+  }
+  .tier-panel-markdown strong {
+    color: var(--text-primary) !important;
+    font-weight: 600;
+  }
+  .tier-panel-markdown code {
+    color: var(--accent-primary) !important;
+    background-color: var(--bg-hover) !important;
+    padding: 2px 4px;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+  }
 }
 
 @layer utilities {

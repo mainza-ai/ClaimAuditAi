@@ -1,6 +1,7 @@
 import type { AuditTierResult } from '../../types/claim';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 
 const TIER_STYLES: Record<number, { borderColor: string; backgroundColor: string }> = {
   1: { borderColor: 'var(--border-focus)', backgroundColor: 'var(--accent-subtle)' },
@@ -19,6 +20,11 @@ export function TierPanel({ result }: { result: AuditTierResult }) {
 
   const tierStyle = TIER_STYLES[result.tier];
 
+  // Filter out flags that are duplicate or match the summary text
+  const uniqueFlags = (result.flags || []).filter(
+    (flag) => flag && flag.trim() !== '' && flag.trim().toLowerCase() !== (result.summary || '').trim().toLowerCase()
+  );
+
   return (
     <div
       className="border rounded-lg overflow-hidden transition-all"
@@ -33,8 +39,8 @@ export function TierPanel({ result }: { result: AuditTierResult }) {
       >
         <div className="flex items-center gap-3">
           <span
-            className="text-xs font-bold font-mono tracking-wider"
-            style={{ color: TIER_LABEL_COLORS[result.tier] }}
+              className="text-xs font-bold font-mono tracking-wider"
+              style={{ color: TIER_LABEL_COLORS[result.tier] }}
           >
             TIER {result.tier}
           </span>
@@ -59,17 +65,19 @@ export function TierPanel({ result }: { result: AuditTierResult }) {
 
       {expanded && (
         <div className="px-4 pb-4 space-y-2 border-t pt-3" style={{ borderColor: 'var(--border-default)' }}>
-          <p className="text-sm leading-relaxed" style={{ color: 'var(--text-primary)' }}>
-            {result.summary}
-          </p>
-          {result.flags.length > 0 && (
+          <div className="text-sm leading-relaxed tier-panel-markdown" style={{ color: 'var(--text-primary)' }}>
+            <ReactMarkdown>{result.summary || ''}</ReactMarkdown>
+          </div>
+          {uniqueFlags.length > 0 && (
             <ul className="space-y-1 mt-2">
-              {result.flags.map((flag, i) => (
+              {uniqueFlags.map((flag, i) => (
                 <li key={i} className="flex items-start gap-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
                   <span className="mt-1 shrink-0" style={{ color: 'var(--color-danger)' }}>
                     •
                   </span>
-                  <span>{flag}</span>
+                  <div className="tier-panel-markdown flex-1" style={{ color: 'var(--text-secondary)' }}>
+                    <ReactMarkdown>{flag}</ReactMarkdown>
+                  </div>
                 </li>
               ))}
             </ul>

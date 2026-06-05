@@ -25,6 +25,9 @@ export const rejectClaim = (id: string, body: { authorizedBy: string; rationaleS
 export const reauditClaim = (id: string) =>
   apiClient.post(`/claims/${id}/reaudit`).then((r) => r.data);
 
+export const generateReport = (id: string) =>
+  apiClient.post<{ status: string; disposition: string }>(`/claims/${id}/generate-report`).then((r) => r.data);
+
 export const loadSampleData = () => apiClient.post('/samples/load', {}, { timeout: 120000 }).then((r) => r.data);
 
 export const getLedger = (limit = 50, offset = 0) =>

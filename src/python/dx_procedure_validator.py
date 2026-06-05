@@ -79,6 +79,11 @@ def validate_diagnosis_procedure(icd_code: str, cpt_code_str: str) -> dict:
         "reason": str,
     }
     """
+    if icd_code is not None:
+        icd_code = str(icd_code)
+    if cpt_code_str is not None:
+        cpt_code_str = str(cpt_code_str)
+
     if not icd_code or not cpt_code_str:
         return {
             "valid": True,

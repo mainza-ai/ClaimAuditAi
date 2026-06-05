@@ -14,17 +14,26 @@ do $SYSTEM.OBJ.Load("/home/irisowner/dev/src/cls/ClaimAudit/FHIR/InteractionsStr
 do $SYSTEM.OBJ.Load("/home/irisowner/dev/src/cls/ClaimAudit/FHIR/Interactions.cls", "ck")
 do $SYSTEM.OBJ.Load("/home/irisowner/dev/src/cls/ClaimAudit/FHIR/RepoManager.cls", "ck")
 
-// Check if FHIR server already exists using bind params (avoid ObjectScript single-quote stripping)
-set tRS = ##class(%SQL.Statement).%ExecDirect(,"SELECT COUNT(*) AS cnt FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?", "HSFHIR_X0001_S", "ClaimResponse")
-do tRS.%Next()
-if tRS.%Get("cnt") = 0 {
-  // Initialize FHIR metadata and create FHIR server endpoint
-  do ##class(HS.FHIRServer.Installer).InstallNamespace()
-  set tSC = ##class(HS.FHIRServer.Installer).InstallInstance("/interop/fhir/r4", "ClaimAudit.FHIR.InteractionsStrategy", "hl7.fhir.r4.core@4.0.1")
-  if tSC { write "FHIR server created", ! } else { write "FHIR server: ", $SYSTEM.Status.GetOneErrorText(tSC), ! }
-} else {
-  write "FHIR server already exists, skipping", !
+// Wrap FHIR server creation/check in a try-catch to avoid dropping to debug shell on error
+try {
+  // Check if FHIR server already exists using bind params (avoid ObjectScript single-quote stripping)
+  set tRS = ##class(%SQL.Statement).%ExecDirect(,"SELECT COUNT(*) AS cnt FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?", "HSFHIR_X0001_S", "ClaimResponse")
+  do tRS.%Next()
+  if tRS.%Get("cnt") = 0 {
+    // Initialize FHIR metadata and create FHIR server endpoint
+    do ##class(HS.FHIRServer.Installer).InstallNamespace()
+    set tSC = ##class(HS.FHIRServer.Installer).InstallInstance("/interop/fhir/r4", "ClaimAudit.FHIR.InteractionsStrategy", "hl7.fhir.r4.core@4.0.1")
+    if tSC { write "FHIR server created", ! } else { write "FHIR server: ", $SYSTEM.Status.GetOneErrorText(tSC), ! }
+  } else {
+    write "FHIR server already exists, skipping", !
+  }
+} catch ex {
+  write "FHIR server installation skipped or already configured: ", ex.DisplayString(), !
 }
+
+// Compile AI Engine classes
+do $SYSTEM.OBJ.Load("/home/irisowner/dev/src/cls/ClaimAudit/AI/Engine.cls", "ck")
+do $SYSTEM.OBJ.Load("/home/irisowner/dev/src/cls/ClaimAudit/AI/Agent.cls", "ck")
 
 // Run Engine.Setup() to create audit tables and train models (idempotent)
 do ##class(ClaimAudit.AI.Engine).Setup()

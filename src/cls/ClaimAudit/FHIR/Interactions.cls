@@ -33,8 +33,8 @@ Method AuditSingleClaim(pClaimJson As %DynamicObject, pIndex As %String = "singl
 {
     Set tSC = ##class(ClaimAudit.AI.Engine).AuditClaim(pClaimJson, .tAuditResult)
     If tAuditResult.flagged = 1 {
-        // Use tier reasons directly if LLM generation should be skipped (fast-seed mode)
-        // LLM takes 5-10s per claim — use reasons array for bulk seeding
+        // Use tier reasons directly - LLM generation is deferred to JIT on-demand
+        // to prevent synchronous timeouts during ingestion
         Set tReasons = tAuditResult.reasons
         Set tReasonStr = ""
         Set tReasonIter = tReasons.%GetIterator()
@@ -44,16 +44,6 @@ Method AuditSingleClaim(pClaimJson As %DynamicObject, pIndex As %String = "singl
         }
         
         Set summary = "Payment Integrity Adjudication HOLD Notification. " _ tReasonStr
-        
-        // Invoke AI Hub Agent to author explainable hold disposition (optional)
-        If '$Get(^ClaimAuditAI("Seeding")) {
-            Try {
-                Set llmSummary = ##class(ClaimAudit.AI.Agent).GenerateHoldSummary(tAuditResult.patientId, tAuditResult.providerNpi, tAuditResult.billedAmount, tAuditResult.codeCount, tAuditResult.serviceDate, tAuditResult.firstCodeDesc, tAuditResult.reasons)
-                If llmSummary '= "" {
-                    Set summary = llmSummary
-                }
-            } Catch {}
-        }
         
         // Record audit flags and summaries in thread-safe process memory
         Set ^||ClaimAuditFlag(pIndex, "flagged") = 1
@@ -76,26 +66,37 @@ Method AuditSingleClaim(pClaimJson As %DynamicObject, pIndex As %String = "singl
             Set ^||ClaimAuditFlag(pIndex, "total") = pClaimJson.total.%ToJSON()
         }
 
-        // Store CPT/ICD from claim JSON so they can be embedded as ClaimResponse extensions
-        // (Claims are not persisted by the interceptor, so we carry codes forward here)
-        If $IsObject(pClaimJson.item) && (pClaimJson.item.%Size() > 0) {
-            Set tItem = pClaimJson.item.%Get(0)
-            If $IsObject(tItem.productOrService) && $IsObject(tItem.productOrService.coding) {
-                Set tCoding = tItem.productOrService.coding.%Get(0)
-                If tCoding '= "" {
-                    Set tCode = tCoding.display
-                    If tCode = "" Set tCode = tCoding.code
-                    Set ^||ClaimAuditFlag(pIndex, "cptCode") = tCode
+        // Store CPT codes list
+        Set tCptArr = ##class(%DynamicArray).%New()
+        If $IsObject(pClaimJson.item) {
+            Set tItemIter = pClaimJson.item.%GetIterator()
+            While tItemIter.%GetNext(.tItemK, .tItem) {
+                If $IsObject(tItem.productOrService) && $IsObject(tItem.productOrService.coding) {
+                    Set tCodingIter = tItem.productOrService.coding.%GetIterator()
+                    While tCodingIter.%GetNext(.tCodingK, .tCoding) {
+                        Set tCPT = tCoding.code
+                        If tCPT '= "" Do tCptArr.%Push(tCPT)
+                    }
                 }
             }
         }
-        If $IsObject(pClaimJson.diagnosis) && (pClaimJson.diagnosis.%Size() > 0) {
-            Set tDiag = pClaimJson.diagnosis.%Get(0)
-            If $IsObject(tDiag.diagnosisCodeableConcept) && $IsObject(tDiag.diagnosisCodeableConcept.coding) {
-                Set tDCoding = tDiag.diagnosisCodeableConcept.coding.%Get(0)
-                If tDCoding '= "" Set ^||ClaimAuditFlag(pIndex, "icdCode") = tDCoding.code
+        Set ^||ClaimAuditFlag(pIndex, "cptCodes") = tCptArr.%ToJSON()
+
+        // Store ICD codes list
+        Set tIcdArr = ##class(%DynamicArray).%New()
+        If $IsObject(pClaimJson.diagnosis) {
+            Set tDiagIter = pClaimJson.diagnosis.%GetIterator()
+            While tDiagIter.%GetNext(.tDiagK, .tDiag) {
+                If $IsObject(tDiag.diagnosisCodeableConcept) && $IsObject(tDiag.diagnosisCodeableConcept.coding) {
+                    Set tCodingIter = tDiag.diagnosisCodeableConcept.coding.%GetIterator()
+                    While tCodingIter.%GetNext(.tCodingK, .tCoding) {
+                        Set tICD = tCoding.code
+                        If tICD '= "" Do tIcdArr.%Push(tICD)
+                    }
+                }
             }
         }
+        Set ^||ClaimAuditFlag(pIndex, "icdCodes") = tIcdArr.%ToJSON()
         
         Set ^||ClaimAuditFlag("any_flagged") = 1
     }
@@ -124,6 +125,14 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
             }
             Set patientId = $Piece(patientRef, "/", *)
             
+            // Extract note date
+            Set docDate = ""
+            If docJson.date '= "" {
+                Set docDate = $Extract(docJson.date, 1, 10)
+            } ElseIf docJson.created '= "" {
+                Set docDate = $Extract(docJson.created, 1, 10)
+            }
+            
             // Extract the base64 clinical note data
             Set base64Data = ""
             If $IsObject(docJson.content) && (docJson.content.%Size() > 0) {
@@ -137,8 +146,8 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
                 // Decode base64 note text
                 Set decodedNote = $system.Encryption.Base64Decode(base64Data)
                 
-                // Index the note in the vector database
-                Set tSC = ##class(ClaimAudit.AI.Engine).IndexNote(patientId, docId, decodedNote)
+                // Index the note in the vector database with date
+                Set tSC = ##class(ClaimAudit.AI.Engine).IndexNote(patientId, docId, decodedNote, docDate)
                 If $$$ISERR(tSC) {
                     Set ^ClaimAuditIndexError($ZTS) = $System.Status.GetErrorText(tSC)
                 }
@@ -170,6 +179,13 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
                         }
                         Set patientId = $Piece(patientRef, "/", *)
                         
+                        Set docDate = ""
+                        If docJson.date '= "" {
+                            Set docDate = $Extract(docJson.date, 1, 10)
+                        } ElseIf docJson.created '= "" {
+                            Set docDate = $Extract(docJson.created, 1, 10)
+                        }
+                        
                         Set base64Data = ""
                         If $IsObject(docJson.content) && (docJson.content.%Size() > 0) {
                             Set contentItem = docJson.content.%Get(0)
@@ -180,7 +196,7 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
                         
                         If (patientId '= "") && (docId '= "") && (base64Data '= "") {
                             Set decodedNote = $system.Encryption.Base64Decode(base64Data)
-                            Do ##class(ClaimAudit.AI.Engine).IndexNote(patientId, docId, decodedNote)
+                            Do ##class(ClaimAudit.AI.Engine).IndexNote(patientId, docId, decodedNote, docDate)
                         }
                     }
                 }
@@ -193,11 +209,14 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
     // If single claim request was flagged as an anomaly, mutate response and save audit records
     If (pFHIRRequest.Type = "Claim") && ($Get(^||ClaimAuditFlag("single", "flagged")) = 1) {
         Try {
-            // Retrieve summary and score from flags first, then clear flags to prevent infinite recursion
+            // Retrieve all data from process-private global first to ensure it's not lost
             Set summary = $Get(^||ClaimAuditFlag("single", "summary"))
             Set score = $Get(^||ClaimAuditFlag("single", "score"))
-            Set tCptCode = $Get(^||ClaimAuditFlag("single", "cptCode"))
-            Set tIcdCode = $Get(^||ClaimAuditFlag("single", "icdCode"))
+            Set tCptCodesJSON = $Get(^||ClaimAuditFlag("single", "cptCodes"))
+            Set tIcdCodesJSON = $Get(^||ClaimAuditFlag("single", "icdCodes"))
+            Set totalStr = $Get(^||ClaimAuditFlag("single", "total"))
+            Set tProviderNpi = $Get(^||ClaimAuditFlag("single", "providerNpi"))
+            Set tTierResultsJSON = $Get(^||ClaimAuditFlag("single", "tierResults"))
             
             Set patientStr = $Get(^||ClaimAuditFlag("single", "patient"))
             Set patientRef = ""
@@ -222,6 +241,7 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
                 }
             }
             
+            // Clear flags now that all variables are retrieved to prevent infinite recursion
             Kill ^||ClaimAuditFlag
 
             Set claimId = pFHIRResponse.Id
@@ -252,7 +272,6 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
                 "request": { "reference": ("Claim/" _ claimId) }
             }
             
-            Set totalStr = $Get(^||ClaimAuditFlag("single", "total"))
             If totalStr '= "" {
                 Set totalAmount = ##class(%DynamicObject).%FromJSON(totalStr)
                 Set tTotalObj = {
@@ -276,17 +295,23 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
             Set tExtensions = []
             Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/risk-score", "valueDecimal": (score)})
             Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/explanation", "valueString": (summary)})
-            If tCptCode '= "" {
-                Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/cpt-code", "valueString": (tCptCode)})
+            If tCptCodesJSON '= "" {
+                Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/cpt-codes", "valueString": (tCptCodesJSON)})
+                Set tCptArr = ##class(%DynamicArray).%FromJSON(tCptCodesJSON)
+                If tCptArr.%Size() > 0 {
+                    Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/cpt-code", "valueString": (tCptArr.%Get(0))})
+                }
             }
-            If tIcdCode '= "" {
-                Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/icd-code", "valueString": (tIcdCode)})
+            If tIcdCodesJSON '= "" {
+                Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/icd-codes", "valueString": (tIcdCodesJSON)})
+                Set tIcdArr = ##class(%DynamicArray).%FromJSON(tIcdCodesJSON)
+                If tIcdArr.%Size() > 0 {
+                    Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/icd-code", "valueString": (tIcdArr.%Get(0))})
+                }
             }
-            Set tProviderNpi = $Get(^||ClaimAuditFlag("single", "providerNpi"))
             If tProviderNpi '= "" {
                 Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/provider-npi", "valueString": (tProviderNpi)})
             }
-            Set tTierResultsJSON = $Get(^||ClaimAuditFlag("single", "tierResults"))
             If tTierResultsJSON '= "" {
                 Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/tier-results", "valueString": (tTierResultsJSON)})
             }
@@ -444,8 +469,8 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
                         
                         Set summary = ^||ClaimAuditFlag(tKey, "summary")
                         Set score = ^||ClaimAuditFlag(tKey, "score")
-                        Set tCptCode = $Get(^||ClaimAuditFlag(tKey, "cptCode"))
-                        Set tIcdCode = $Get(^||ClaimAuditFlag(tKey, "icdCode"))
+                        Set tCptCodesJSON = $Get(^||ClaimAuditFlag(tKey, "cptCodes"))
+                        Set tIcdCodesJSON = $Get(^||ClaimAuditFlag(tKey, "icdCodes"))
                         Set tProviderNpi = $Get(^||ClaimAuditFlag(tKey, "providerNpi"))
                         
                         Set patientStr = $Get(^||ClaimAuditFlag(tKey, "patient"))
@@ -500,11 +525,19 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
                         Set tExtensions = []
                         Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/risk-score", "valueDecimal": (score)})
                         Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/explanation", "valueString": (summary)})
-                        If tCptCode '= "" {
-                            Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/cpt-code", "valueString": (tCptCode)})
+                        If tCptCodesJSON '= "" {
+                            Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/cpt-codes", "valueString": (tCptCodesJSON)})
+                            Set tCptArr = ##class(%DynamicArray).%FromJSON(tCptCodesJSON)
+                            If tCptArr.%Size() > 0 {
+                                Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/cpt-code", "valueString": (tCptArr.%Get(0))})
+                            }
                         }
-                        If tIcdCode '= "" {
-                            Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/icd-code", "valueString": (tIcdCode)})
+                        If tIcdCodesJSON '= "" {
+                            Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/icd-codes", "valueString": (tIcdCodesJSON)})
+                            Set tIcdArr = ##class(%DynamicArray).%FromJSON(tIcdCodesJSON)
+                            If tIcdArr.%Size() > 0 {
+                                Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/icd-code", "valueString": (tIcdArr.%Get(0))})
+                            }
                         }
                         If tProviderNpi '= "" {
                             Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/provider-npi", "valueString": (tProviderNpi)})

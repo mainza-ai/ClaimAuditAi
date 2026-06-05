@@ -23,8 +23,8 @@ Apply merge.cpf & Mount /home/irisowner/dev Codebase Volume
 ## Key Details
 - **Base Image**: `intersystemsdc/irishealth-community:latest`
 - **Volume Mount Path**: `/home/irisowner/dev` (mapped to host project root).
-- **SuperServer Port**: Mapped from container `1972` to host `1972`.
-- **Management Web Port**: Mapped from container `52773` to host `52773`.
+- **Management Web Port / REST API**: Mapped from container `52773` to host `52773`.
+- **UI Web Port**: Mapped from container `80` to host `3000`.
 
 ## See Also
 [[Prerequisites]] · [[Installation Guide]] · [[Initialization Script]]

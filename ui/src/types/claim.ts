@@ -39,6 +39,9 @@ export interface ClaimDetail extends HeldClaim {
   communicationRequestId: string;
   actionHistory: ActionHistoryEntry[];
   linkedClinicalNotes: string[];
+  cptCodes?: string[];
+  icdCodes?: string[];
+  reportStatus?: 'pending' | 'complete';
 }
 
 export interface SystemStats {

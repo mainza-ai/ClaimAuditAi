@@ -119,8 +119,8 @@ All protected endpoints require an `Authorization: Bearer <token>` header:
 | `GET` | `/api/stats` | Protected | Aggregated hold, complete, and value metrics |
 | `GET` | `/api/claims/held` | Protected | Paginated active hold queue |
 | `GET` | `/api/claims/:id` | Protected | Detailed claim JSON with AI reason summaries |
-| `POST` | `/api/claims/:id/approve` | Auditor+ | Approve override (writes to ledger, completes task) |
-| `POST` | `/api/claims/:id/reject` | Auditor+ | Reject claim (sets outcome to error, cancels task) |
+| `POST` | `/api/claims/:id/approve` | Director+ | Approve override (writes to ledger, completes task) |
+| `POST` | `/api/claims/:id/reject` | Director+ | Reject claim (sets outcome to error, cancels task) |
 | `POST` | `/api/claims/:id/escalate` | Auditor+ | Progresses task status (Specialist -> Director) |
 | `GET` | `/api/ledger` | Protected | Paginated override audit ledger log |
 | `GET` | `/api/graph` | Protected | Cytoscape network graph data |

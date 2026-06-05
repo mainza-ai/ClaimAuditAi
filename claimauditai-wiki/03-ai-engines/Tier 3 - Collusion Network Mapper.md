@@ -16,7 +16,7 @@ By traversing the active subgraph of the involved entities, the engine checks fo
 ## Key Details
 - **Library**: `networkx` running natively inside Embedded Python.
 - **Node Categories**: Provider (NPI with address), Patient (ID with name), edges represent claims.
-- **Detection Patterns**: Address collision (different providers at same physical address), geo-temporal leap (patient billed in different states same day), referral ring cycles (alternating patient-provider paths).
+- **Detection Patterns**: Address collision (different providers at same physical address), geo-temporal leap (patient billed in different states same day), referral ring cycles (alternating patient-provider paths). For cycle basis detection, the directed claim network graph is converted to an undirected graph to properly identify closed loops across alternating patient-provider edges.
 - **Relational Database Sync**: Dynamically populated from `ClaimProjections` and `ProviderProjections` tables. Graph is cached and invalidated after each claim audit so the next claim sees newly added edges.
 - **Error Handling**: Fail-open — if graph analysis raises an exception, the claim is flagged for review rather than silently passed. Infrastructure failures should never hide potential fraud.
 

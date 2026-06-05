@@ -1,6 +1,7 @@
 import sys
 import os
 import pytest
+import json
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -65,7 +66,7 @@ class TestGetClientAndModel:
 
 class TestChat:
     def test_chat_requires_valid_json(self, monkeypatch):
-        monkeypatch.setattr(llm_router, "_get_client_and_model", lambda: (None, "test-model"))
+        monkeypatch.setattr(llm_router, "_create_client", lambda provider, settings: (None, "test-model"))
         try:
             llm_router.chat("system prompt", "not valid json")
         except Exception:
@@ -159,7 +160,7 @@ class TestRateLimiterAndCache:
             def __init__(self):
                 self.chat = type('MockChat', (object,), {'completions': MockCompletions()})()
                 
-        monkeypatch.setattr(llm_router, "_get_client_and_model", lambda: (MockClient(), "test-model"))
+        monkeypatch.setattr(llm_router, "_create_client", lambda provider, settings: (MockClient(), "test-model"))
         
         llm_router.invalidate_llm_cache()
         llm_router._request_timestamps.clear()
@@ -179,3 +180,58 @@ class TestRateLimiterAndCache:
         res3 = llm_router.chat("sys", "[]")
         assert res3 == "response_2"
         assert call_count == 2
+
+
+class TestParseDisposition:
+    def test_empty_disposition(self):
+        result = json.loads(llm_router.parse_disposition(""))
+        assert isinstance(result, list)
+        assert len(result) == 0
+
+    def test_full_disposition(self):
+        text = """
+# Adjudication Report
+
+**Tier 1 (NLP) Findings**
+* CPT code display '99291' lacks semantic alignment with progress notes. Similarity: 0.2313
+* Reason Code: NLP-001 - Inconsistent CPT Code Display
+* Metric: Semantic Alignment Score (0.2313) < Threshold (0.3000)
+
+**Tier 2 (ML) Findings**
+* The automated ML engine identified a statistical anomaly in the claim features, indicating an unusual billing structure outlier.
+* Reason Code: ML-002 - Unusual Billing Structure
+* Metric: Reconstruction Loss (0.42023) > Threshold (0.03453)
+
+**Tier 3 (Graph) Findings**
+* The graph analysis detected an Address Collision Warning, revealing that the provider's physical office address is shared.
+* Reason Code: GR-003 - Address Collision
+* Metric: Address Sharing Ratio (1.2345) > Threshold (0.5000)
+
+**Pend (HOLD) Justification**
+This claim has been pended.
+        """
+        result = json.loads(llm_router.parse_disposition(text))
+        assert isinstance(result, list)
+        assert len(result) == 3
+        
+        # Tier 1 assertions
+        t1 = result[0]
+        assert t1["tier"] == 1
+        assert t1["score"] == 0.2313
+        assert len(t1["flags"]) == 3
+        assert "lacks semantic alignment" in t1["summary"]
+
+        # Tier 2 assertions
+        t2 = result[1]
+        assert t2["tier"] == 2
+        assert t2["score"] == 0.42023
+        assert t2["threshold"] == 0.03453
+        assert len(t2["flags"]) == 3
+        assert "unusual billing structure" in t2["summary"]
+
+        # Tier 3 assertions
+        t3 = result[2]
+        assert t3["tier"] == 3
+        assert len(t3["flags"]) == 3
+        assert "Address Collision" in t3["summary"]
+

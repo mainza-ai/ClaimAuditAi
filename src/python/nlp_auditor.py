@@ -37,7 +37,7 @@ def vectorize_text(text: str) -> list:
     # Ensure it's a standard Python float list
     return [float(x) for x in embeddings]
 
-def index_clinical_note(patient_id: str, doc_id: str, note_text: str) -> str:
+def index_clinical_note(patient_id: str, doc_id: str, note_text: str, note_date: str = None) -> str:
     """Natively index unstructured clinical progress notes in the IRIS database."""
     if not iris:
         return "Not running inside InterSystems IRIS"
@@ -49,16 +49,19 @@ def index_clinical_note(patient_id: str, doc_id: str, note_text: str) -> str:
         
         # Prepare dynamic SQL to insert embedding
         stmt = iris.sql.prepare(
-            "INSERT OR UPDATE INTO ClaimAudit.ClinicalNotes (PatientId, DocumentReferenceId, DocumentText, Embedding) "
-            "VALUES (?, ?, ?, TO_VECTOR(?, DOUBLE, 384))"
+            "INSERT OR UPDATE INTO ClaimAudit.ClinicalNotes (PatientId, DocumentReferenceId, DocumentText, Embedding, NoteDate) "
+            "VALUES (?, ?, ?, TO_VECTOR(?, DOUBLE, 384), ?)"
         )
-        stmt.execute(patient_id, doc_id, note_text, embedding_str)
+        if not note_date:
+            import time
+            note_date = time.strftime("%Y-%m-%d")
+        stmt.execute(patient_id, doc_id, note_text, embedding_str, note_date)
         return "OK"
     except Exception as e:
         sys.stderr.write(f"Error indexing clinical note: {str(e)}\n")
         return f"Error: {str(e)}"
 
-def verify_clinical_validity(patient_id: str, code_description: str) -> dict:
+def verify_clinical_validity(patient_id: str, code_descriptions, service_date: str = None) -> dict:
     """Query high-dimensional embeddings using native VECTOR_COSINE search.
     
     Returns the maximum similarity score and the supporting textual evidence.
@@ -67,50 +70,77 @@ def verify_clinical_validity(patient_id: str, code_description: str) -> dict:
         return {"similarity": 1.0, "evidence": "Not running in IRIS context (mocked success)", "flagged": False}
         
     try:
-        # Vectorize billed CPT / ICD-10 description
-        query_vec = vectorize_text(code_description)
-        query_str = ",".join(map(str, query_vec))
+        if isinstance(code_descriptions, str):
+            code_descriptions = [code_descriptions]
+            
+        # Determine temporal search bounds (default +/- 7 days)
+        start_date, end_date = "1970-01-01", "2099-12-31"
+        if service_date:
+            try:
+                from datetime import datetime, timedelta
+                svc_dt = datetime.strptime(service_date[:10], "%Y-%m-%d")
+                start_date = (svc_dt - timedelta(days=7)).strftime("%Y-%m-%d")
+                end_date = (svc_dt + timedelta(days=7)).strftime("%Y-%m-%d")
+            except Exception:
+                pass
         
-        # Prepare dynamic SQL query utilizing VECTOR_COSINE
-        # Cosine similarity in IRIS is evaluated on high-dimensional float vectors
-        # VECTOR_COSINE returns a double representing cosine similarity [-1 to 1]
         sql_query = (
             "SELECT TOP 3 DocumentText, VECTOR_COSINE(Embedding, TO_VECTOR(?, DOUBLE, 384)) AS Similarity "
             "FROM ClaimAudit.ClinicalNotes "
-            "WHERE PatientId = ? "
+            "WHERE PatientId = ? AND (NoteDate IS NULL OR NoteDate = '' OR NoteDate BETWEEN ? AND ?) "
             "ORDER BY Similarity DESC"
         )
         
         stmt = iris.sql.prepare(sql_query)
-        rs = stmt.execute(query_str, patient_id)
         
-        best_similarity = -1.0
+        worst_similarity = 1.0
         best_evidence = ""
+        flagged = False
+        findings = []
         
-        for row in rs:
-            text = row[0]
-            similarity = float(row[1])
-            if similarity > best_similarity:
-                best_similarity = similarity
-                best_evidence = text
-                
-        # If no notes exist for this patient
-        if best_similarity == -1.0:
-            return {
-                "similarity": 0.0,
-                "evidence": "No clinical notes found for this patient in DocumentReference.",
-                "flagged": True,
-                "reason": "Missing supporting clinical documentation (phantom billing suspicion)."
-            }
+        # Check all code descriptions
+        for desc in code_descriptions:
+            if not desc:
+                continue
+            query_vec = vectorize_text(desc)
+            query_str = ",".join(map(str, query_vec))
+            rs = stmt.execute(query_str, patient_id, start_date, end_date)
             
-        # Evaluation threshold (standard semantic audit threshold is 0.38)
-        flagged = best_similarity < 0.38
+            best_similarity_for_code = -1.0
+            best_evidence_for_code = ""
+            
+            for row in rs:
+                text = row[0]
+                similarity = float(row[1])
+                if similarity > best_similarity_for_code:
+                    best_similarity_for_code = similarity
+                    best_evidence_for_code = text
+            
+            # If no notes exist for this patient
+            if best_similarity_for_code == -1.0:
+                return {
+                    "similarity": 0.0,
+                    "evidence": "No clinical notes found for this patient in DocumentReference.",
+                    "flagged": True,
+                    "reason": "Missing supporting clinical documentation (phantom billing suspicion)."
+                }
+            
+            # Track worst similarity score (lowest) among the matched codes
+            if best_similarity_for_code < worst_similarity:
+                worst_similarity = best_similarity_for_code
+                best_evidence = best_evidence_for_code
+                
+            code_flagged = best_similarity_for_code < 0.38
+            if code_flagged:
+                flagged = True
+                findings.append(f"CPT code display '{desc}' lacks semantic alignment with progress notes. Similarity: {best_similarity_for_code:.4f}")
+        
         reason = ""
         if flagged:
-            reason = f"Procedural description lacks semantic alignment with progress notes (upcoding suspicion). Similarity: {best_similarity:.4f}"
+            reason = " | ".join(findings)
             
         return {
-            "similarity": best_similarity,
+            "similarity": worst_similarity,
             "evidence": best_evidence,
             "flagged": flagged,
             "reason": reason

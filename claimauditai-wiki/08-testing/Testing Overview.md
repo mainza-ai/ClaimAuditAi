@@ -25,5 +25,25 @@ Testing asserts that:
 - **Base Verification URL**: `http://localhost:52773`
 - **Output Assertions**: Verification of the `outcome` (`"complete"`), task completion, cytoscape graph nodes, and system health status.
 
+## Automated Unit Tests
+
+In addition to E2E integration tests, ClaimAuditAI maintains comprehensive unit test coverage for both backend and frontend layers.
+
+### Backend Python Unit Tests (pytest)
+- **Framework**: `pytest` running inside the local `.venv`.
+- **Command**:
+  ```bash
+  .venv/bin/pytest
+  ```
+- **Coverage**: Covers `llm_router` settings cache, parser, rate limiting, `nlp_auditor` sentence embeddings, `graph_analyzer` cycle detection, and `autoencoder_train` specialty code scaling.
+
+### Frontend Unit Tests (vitest)
+- **Framework**: `vitest` with `@vitest/coverage-v8` coverage checking.
+- **Command**:
+  ```bash
+  cd ui && npm test
+  ```
+- **Coverage**: Verifies component rendering, state changes, role checking permissions, and claim layout formatting.
+
 ## See Also
 [[Simulating Tier 1 - Upcoding]] · [[Simulating Tier 2 - Unbundling]] · [[Simulating Tier 3 - Collusion]]

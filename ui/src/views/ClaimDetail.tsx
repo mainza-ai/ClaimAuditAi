@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { getClaimDetail, reauditClaim } from '../api/claims';
+import { getClaimDetail, reauditClaim, generateReport } from '../api/claims';
 import { TierPanel } from '../components/claims/TierPanel';
 import { DispositionReader } from '../components/claims/DispositionReader';
 import { RiskBadge } from '../components/claims/RiskBadge';
@@ -35,6 +35,10 @@ export function ClaimDetail() {
   const activeRole = useRoleStore((s) => s.activeRole);
   const [copied, setCopied] = useState(false);
   const [modal, setModal] = useState<'approve' | 'escalate' | 'reject' | null>(null);
+  const [generatingReport, setGeneratingReport] = useState(false);
+  const [generatedReportText, setGeneratedReportText] = useState<string | null>(null);
+  const [reauditing, setReauditing] = useState(false);
+  const [expandedNote, setExpandedNote] = useState<number | null>(0);
 
   const fromLedger = location.state?.from === 'ledger';
 
@@ -59,6 +63,23 @@ export function ClaimDetail() {
       }
     : null;
 
+  useEffect(() => {
+    if (claim && claim.reportStatus === 'pending' && !generatingReport && !generatedReportText) {
+      setGeneratingReport(true);
+      generateReport(id!)
+        .then((res) => {
+          setGeneratedReportText(res.disposition);
+          queryClient.invalidateQueries({ queryKey: ['claim', id] });
+        })
+        .catch((err) => {
+          console.error("Failed to generate report", err);
+        })
+        .finally(() => {
+          setGeneratingReport(false);
+        });
+    }
+  }, [claim?.reportStatus, id, generatingReport, generatedReportText, queryClient]);
+
   const handleCopyDisputeNotice = () => {
     if (!claim) return;
     const letter = [
@@ -74,7 +95,7 @@ export function ClaimDetail() {
       'REASON FOR TRANSACTION HOLD:',
       'This claim has been intercepted and placed on a pre-payment administrative integrity hold.',
       'AUDIT SUMMARY & JUSTIFICATION:',
-      claim.disposition || 'Clinical documentation does not support the level of service billed.',
+      (generatedReportText || claim.disposition) || 'Clinical documentation does not support the level of service billed.',
       '-'.repeat(80),
       'DETERMINATION DETAILS:',
       '- Tier 1: Semantic Clinical Auditing Mismatch',
@@ -82,7 +103,7 @@ export function ClaimDetail() {
       '- Tier 3: Collusion Network Mapping Analysis',
       'ACTION REQUIRED:',
       'To appeal, submit comprehensive clinical SOAP notes to Claims Adjudication Portal.',
-      'Authorized Integrity Audit Division \u2014 ClaimAuditAI',
+      'Authorized Integrity Audit Division — ClaimAuditAI',
     ].join('\n');
     navigator.clipboard.writeText(letter);
     setCopied(true);
@@ -99,14 +120,50 @@ export function ClaimDetail() {
 
   const handleReaudit = async () => {
     if (!id) return;
+    setReauditing(true);
     try {
+      setGeneratedReportText(null);
       await reauditClaim(id);
       queryClient.invalidateQueries({ queryKey: ['claim', id] });
       queryClient.invalidateQueries({ queryKey: ['claims', 'held'] });
     } catch (e) {
       console.error('Reaudit failed', e);
+    } finally {
+      setReauditing(false);
     }
   };
+
+  const getCptStatus = (code: string) => {
+    if (!claim || !claim.disposition) return { label: 'Validated', color: 'var(--color-success)' };
+    const lowerDisp = claim.disposition.toLowerCase();
+    if (
+      lowerDisp.includes(code.toLowerCase()) &&
+      (lowerDisp.includes('mismatch') ||
+        lowerDisp.includes('invalid') ||
+        lowerDisp.includes('conflict') ||
+        lowerDisp.includes('not match'))
+    ) {
+      return { label: 'Mismatch Flagged', color: 'var(--color-danger)' };
+    }
+    return { label: 'Validated', color: 'var(--color-success)' };
+  };
+
+  const getIcdStatus = (code: string) => {
+    if (!claim || !claim.disposition) return { label: 'Validated', color: 'var(--color-success)' };
+    const lowerDisp = claim.disposition.toLowerCase();
+    if (
+      lowerDisp.includes(code.toLowerCase()) &&
+      (lowerDisp.includes('mismatch') ||
+        lowerDisp.includes('invalid') ||
+        lowerDisp.includes('conflict') ||
+        lowerDisp.includes('not match'))
+    ) {
+      return { label: 'Mismatch Flagged', color: 'var(--color-danger)' };
+    }
+    return { label: 'Validated', color: 'var(--color-success)' };
+  };
+
+  const canReaudit = activeRole === 'Auditor' || activeRole === 'Admin' || activeRole === 'Director' || activeRole === 'Specialist';
 
   const isDecided = claim?.outcome === 'complete' || claim?.outcome === 'error';
   const userCanApprove = PERMISSIONS.canApprove(activeRole) && !isDecided;
@@ -208,6 +265,28 @@ export function ClaimDetail() {
             {copied ? <Check size={14} /> : <Copy size={14} />}
             {copied ? 'Copied Notice' : 'Copy Dispute Packet'}
           </button>
+          {canReaudit && (
+            <button
+              onClick={handleReaudit}
+              disabled={reauditing}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '6px 12px',
+                borderRadius: 6,
+                fontSize: 12,
+                fontFamily: 'var(--font-mono)',
+                border: '1px solid var(--border-default)',
+                backgroundColor: 'var(--bg-card)',
+                color: 'var(--text-secondary)',
+                cursor: reauditing ? 'not-allowed' : 'pointer',
+              }}
+            >
+              <RefreshCw size={14} className={reauditing ? 'animate-spin' : ''} />
+              Re-run AI Adjudication
+            </button>
+          )}
           <button
             onClick={() => !isOpen && togglePanel()}
             style={{
@@ -341,16 +420,184 @@ export function ClaimDetail() {
         </div>
       </div>
 
-      {/* Clinical Notes Summary */}
-      {claim.linkedClinicalNotes?.length > 0 && (
+      {/* Billed Coding Details (CPT & ICD Table) */}
+      <div className="card" style={{ padding: 20 }}>
         <div
           style={{
-            padding: 16,
-            borderRadius: 8,
-            backgroundColor: 'var(--accent-subtle)',
-            border: '1px solid var(--border-focus)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            fontSize: 12,
+            fontWeight: 700,
+            fontFamily: 'var(--font-mono)',
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em',
+            color: 'var(--accent-primary)',
+            marginBottom: 16,
           }}
         >
+          <Shield size={14} /> Billed Procedure & Diagnosis Codes
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
+          {/* CPT Codes */}
+          <div>
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                color: 'var(--text-tertiary)',
+                textTransform: 'uppercase',
+                fontFamily: 'var(--font-mono)',
+                marginBottom: 8,
+              }}
+            >
+              Procedure Codes (CPT)
+            </div>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--border-default)', textAlign: 'left' }}>
+                  <th style={{ padding: '6px 8px', fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
+                    Code
+                  </th>
+                  <th style={{ padding: '6px 8px', fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
+                    Description
+                  </th>
+                  <th
+                    style={{
+                      padding: '6px 8px',
+                      fontSize: 11,
+                      color: 'var(--text-tertiary)',
+                      fontFamily: 'var(--font-mono)',
+                      textAlign: 'right',
+                    }}
+                  >
+                    Status
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {(claim.cptCodes || [claim.cptCode]).map((code, idx) => {
+                  const status = getCptStatus(code);
+                  return (
+                    <tr key={code} style={{ borderBottom: '1px solid var(--border-default)', fontSize: 13 }}>
+                      <td
+                        style={{
+                          padding: '8px',
+                          fontWeight: 600,
+                          fontFamily: 'var(--font-mono)',
+                          color: 'var(--text-primary)',
+                        }}
+                      >
+                        {code}
+                      </td>
+                      <td style={{ padding: '8px', color: 'var(--text-secondary)' }}>
+                        {idx === 0 ? claim.cptCode : 'Billed Procedure'}
+                      </td>
+                      <td style={{ padding: '8px', textAlign: 'right' }}>
+                        <span
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 700,
+                            textTransform: 'uppercase',
+                            fontFamily: 'var(--font-mono)',
+                            padding: '2px 6px',
+                            borderRadius: 4,
+                            backgroundColor: `${status.color}15`,
+                            color: status.color,
+                            border: `1px solid ${status.color}30`,
+                          }}
+                        >
+                          {status.label}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* ICD Codes */}
+          <div>
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                color: 'var(--text-tertiary)',
+                textTransform: 'uppercase',
+                fontFamily: 'var(--font-mono)',
+                marginBottom: 8,
+              }}
+            >
+              Diagnosis Codes (ICD-10)
+            </div>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--border-default)', textAlign: 'left' }}>
+                  <th style={{ padding: '6px 8px', fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
+                    Code
+                  </th>
+                  <th style={{ padding: '6px 8px', fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
+                    Description
+                  </th>
+                  <th
+                    style={{
+                      padding: '6px 8px',
+                      fontSize: 11,
+                      color: 'var(--text-tertiary)',
+                      fontFamily: 'var(--font-mono)',
+                      textAlign: 'right',
+                    }}
+                  >
+                    Status
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {(claim.icdCodes || [claim.icdCode]).map((code) => {
+                  const status = getIcdStatus(code);
+                  return (
+                    <tr key={code} style={{ borderBottom: '1px solid var(--border-default)', fontSize: 13 }}>
+                      <td
+                        style={{
+                          padding: '8px',
+                          fontWeight: 600,
+                          fontFamily: 'var(--font-mono)',
+                          color: 'var(--text-primary)',
+                        }}
+                      >
+                        {code}
+                      </td>
+                      <td style={{ padding: '8px', color: 'var(--text-secondary)' }}>ICD-10 Diagnostic Code</td>
+                      <td style={{ padding: '8px', textAlign: 'right' }}>
+                        <span
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 700,
+                            textTransform: 'uppercase',
+                            fontFamily: 'var(--font-mono)',
+                            padding: '2px 6px',
+                            borderRadius: 4,
+                            backgroundColor: `${status.color}15`,
+                            color: status.color,
+                            border: `1px solid ${status.color}30`,
+                          }}
+                        >
+                          {status.label}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      {/* Source Clinical Notes Accordion */}
+      {claim.linkedClinicalNotes?.length > 0 && (
+        <div className="card" style={{ padding: 20 }}>
           <div
             style={{
               display: 'flex',
@@ -360,17 +607,80 @@ export function ClaimDetail() {
               fontWeight: 700,
               fontFamily: 'var(--font-mono)',
               textTransform: 'uppercase',
-              marginBottom: 8,
+              letterSpacing: '0.05em',
               color: 'var(--accent-primary)',
+              marginBottom: 16,
             }}
           >
-            <HeartPulse size={14} /> Source Clinical Notes (DocumentReference)
+            <HeartPulse size={14} /> Source Clinical Notes ({claim.linkedClinicalNotes.length})
           </div>
-          {claim.linkedClinicalNotes.map((note: string, i: number) => (
-            <p key={i} style={{ margin: '4px 0', fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-              {note}
-            </p>
-          ))}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {claim.linkedClinicalNotes.map((note: string, i: number) => {
+              let noteHeader = `Clinical Progress Note #${i + 1}`;
+              let noteText = note;
+              if (note.startsWith('[Date: ')) {
+                const closingBracket = note.indexOf(']');
+                if (closingBracket !== -1) {
+                  const dateStr = note.substring(7, closingBracket);
+                  noteHeader = `Clinical Progress Note — ${dateStr}`;
+                  noteText = note.substring(closingBracket + 1).trim();
+                }
+              }
+              const isExpanded = expandedNote === i;
+              return (
+                <div
+                  key={i}
+                  style={{
+                    borderRadius: 6,
+                    border: '1px solid var(--border-default)',
+                    backgroundColor: 'var(--bg-body)',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <button
+                    onClick={() => setExpandedNote(isExpanded ? null : i)}
+                    style={{
+                      width: '100%',
+                      padding: '12px 16px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      background: 'var(--bg-card)',
+                      border: 'none',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      color: 'var(--text-primary)',
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 12,
+                      fontWeight: 600,
+                    }}
+                  >
+                    <span>{noteHeader}</span>
+                    <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
+                      {isExpanded ? 'Collapse' : 'Expand'}
+                    </span>
+                  </button>
+                  {isExpanded && (
+                    <div
+                      style={{
+                        padding: 16,
+                        fontSize: 13,
+                        color: 'var(--text-secondary)',
+                        lineHeight: 1.6,
+                        borderTop: '1px solid var(--border-default)',
+                        maxHeight: 250,
+                        overflowY: 'auto',
+                        whiteSpace: 'pre-wrap',
+                        fontFamily: 'var(--font-sans)',
+                      }}
+                    >
+                      {noteText}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -451,14 +761,41 @@ export function ClaimDetail() {
         >
           Explainable Adjudication justification
         </h2>
-        {claim.disposition && !claim.disposition.includes('PYTHON EXCEPTION') ? (
-          <DispositionReader markdown={claim.disposition} />
+        {generatingReport || (claim.reportStatus === 'pending' && !generatedReportText) ? (
+          <div
+            className="card"
+            style={{
+              padding: 24,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 16,
+              background: 'var(--accent-subtle)',
+              border: '1px solid var(--border-focus)',
+              borderRadius: 8,
+              minHeight: 180,
+              fontFamily: 'var(--font-mono)',
+            }}
+          >
+            <RefreshCw size={28} className="animate-spin" style={{ color: 'var(--accent-primary)' }} />
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
+                Generating explainable AI adjudication report...
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+                This may take a few seconds as the model synthesizes patient note embeddings.
+              </div>
+            </div>
+          </div>
+        ) : (generatedReportText || claim.disposition) && !(generatedReportText || claim.disposition).includes('PYTHON EXCEPTION') ? (
+          <DispositionReader markdown={generatedReportText || claim.disposition} />
         ) : (
           <div
             className="card"
             style={{ padding: 20, fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--text-tertiary)' }}
           >
-            Full LLM adjudication report not available. The Python agent could not connect to the LLM provider \u2014
+            Full LLM adjudication report not available. The Python agent could not connect to the LLM provider —
             verify your API key (<code style={{ color: 'var(--accent-text)' }}>NVIDIA_API_KEY</code>) in the{' '}
             <code style={{ color: 'var(--accent-text)' }}>.env</code> file and restart the container.
           </div>

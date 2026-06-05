@@ -46,11 +46,8 @@ export function AuditAssistant() {
         patientId: claim.patientId,
         cptCode: claim.cptCode,
         riskScore: claim.riskScore,
-        dispositionSummary: claim.disposition?.slice(0, 500) ?? '',
-        tier1Summary: claim.tierResults?.find((t) => t.tier === 1)?.summary ?? '',
-        tier2Loss: claim.tierResults?.find((t) => t.tier === 2)?.score ?? 0,
-        tier2Threshold: claim.tierResults?.find((t) => t.tier === 2)?.threshold ?? 0,
-        tier3Flags: claim.tierResults?.find((t) => t.tier === 3)?.flags ?? [],
+        dispositionSummary: claim.disposition ?? '',
+        tierResults: claim.tierResults,
       }
     : null;
 

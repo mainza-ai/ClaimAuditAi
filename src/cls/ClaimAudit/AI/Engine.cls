@@ -16,13 +16,23 @@ ClassMethod Setup() As %Status
                    "DocumentReferenceId VARCHAR(50) NOT NULL, "_
                    "DocumentText VARCHAR(32000), "_
                    "Embedding VECTOR(DOUBLE, 384), "_
+                   "NoteDate VARCHAR(10), "_
                    "PRIMARY KEY (PatientId, DocumentReferenceId))"
         Set tSC = tStatement.%Prepare(tSQL)
         If $$$ISOK(tSC) {
             Do tStatement.%Execute()
             Write "Created table ClaimAudit.ClinicalNotes.", !
         } Else {
-            Write "Table ClaimAudit.ClinicalNotes already exists or skipped: ", $System.Status.GetErrorText(tSC), !
+            // Table already exists, make sure NoteDate column exists
+            Try {
+                Set tAlterStatement = ##class(%SQL.Statement).%New()
+                Set tAlterSQL = "ALTER TABLE ClaimAudit.ClinicalNotes ADD COLUMN NoteDate VARCHAR(10)"
+                Set tSCAlter = tAlterStatement.%Prepare(tAlterSQL)
+                If $$$ISOK(tSCAlter) {
+                    Do tAlterStatement.%Execute()
+                    Write "Added NoteDate column to existing table ClaimAudit.ClinicalNotes.", !
+                }
+            } Catch {}
         }
 
         // 2. Create the HNSW index on the vector field
@@ -102,13 +112,13 @@ ClassMethod ConfigurePythonPath()
 }
 
 /// Index a clinical progress note in the native vector table
-ClassMethod IndexNote(pPatientId As %String, pDocId As %String, pNoteText As %String) As %Status
+ClassMethod IndexNote(pPatientId As %String, pDocId As %String, pNoteText As %String, pNoteDate As %String = "") As %Status
 {
     Set sc = $$$OK
     Try {
         Do ..ConfigurePythonPath()
         Set nlp = ##class(%SYS.Python).Import("nlp_auditor")
-        Set res = nlp."index_clinical_note"(pPatientId, pDocId, pNoteText)
+        Set res = nlp."index_clinical_note"(pPatientId, pDocId, pNoteText, pNoteDate)
         If $Extract(res, 1, 5) = "Error" {
             Set sc = $$$ERROR($$$GeneralError, res)
         }
@@ -163,17 +173,42 @@ ClassMethod AuditClaim(pClaimJson As %DynamicObject, Output pResult As %DynamicO
             Set billedAmount = +pClaimJson.total.value
         }
         
+        Set tCptCodes = ##class(%DynamicArray).%New()
+        Set tCptDisplays = ##class(%DynamicArray).%New()
         Set codeCount = 0
-        Set firstCodeDesc = ""
         If $IsObject(pClaimJson.item) {
             Set iter = pClaimJson.item.%GetIterator()
             While iter.%GetNext(.key, .item) {
                 Set codeCount = codeCount + 1
-                If (firstCodeDesc = "") && $IsObject(item.productOrService) {
+                If $IsObject(item.productOrService) && $IsObject(item.productOrService.coding) {
                     Set codingIter = item.productOrService.coding.%GetIterator()
-                    If codingIter.%GetNext(.cKey, .coding) {
-                        Set firstCodeDesc = coding.display
-                        If firstCodeDesc = "" Set firstCodeDesc = coding.code
+                    While codingIter.%GetNext(.cKey, .coding) {
+                        Set cptVal = coding.code
+                        Set displayVal = coding.display
+                        If displayVal = "" Set displayVal = cptVal
+                        If cptVal '= "" {
+                            Do tCptCodes.%Push(cptVal)
+                            Do tCptDisplays.%Push(displayVal)
+                        }
+                    }
+                }
+            }
+        }
+
+        Set firstCodeDesc = ""
+        If tCptDisplays.%Size() > 0 Set firstCodeDesc = tCptDisplays.%Get(0)
+
+        Set tIcdCodes = ##class(%DynamicArray).%New()
+        If $IsObject(pClaimJson.diagnosis) {
+            Set diagIter = pClaimJson.diagnosis.%GetIterator()
+            While diagIter.%GetNext(.dKey, .diag) {
+                If $IsObject(diag.diagnosisCodeableConcept) && $IsObject(diag.diagnosisCodeableConcept.coding) {
+                    Set dCodingIter = diag.diagnosisCodeableConcept.coding.%GetIterator()
+                    While dCodingIter.%GetNext(.dcKey, .dCoding) {
+                        Set icdVal = dCoding.code
+                        If icdVal '= "" {
+                            Do tIcdCodes.%Push(icdVal)
+                        }
                     }
                 }
             }
@@ -185,28 +220,70 @@ ClassMethod AuditClaim(pClaimJson As %DynamicObject, Output pResult As %DynamicO
             Set serviceDate = $EXTRACT(pClaimJson.created, 1, 10)
         }
         
-        // Enrich autoencoder features from ClaimProjections table when available.
-        // Falls back to sensible defaults for claims without projection data.
+        // Enrich autoencoder features dynamically, falling back to projections or defaults
         Set specialtyCode = 1
         Set patientAge = 45
         Set durationDays = 1
+        
+        // 1. Calculate patient age dynamically from Patient.birthDate
+        If patientId '= "" {
+            Try {
+                Set tReqPat = ##class(HS.FHIRServer.API.Data.Request).%New()
+                Set tReqPat.RequestMethod = "GET"
+                Set tReqPat.RequestPath = "/Patient/" _ patientId
+                Set tReqPat.Interaction = "read"
+                Set tRespPat = ##class(HS.FHIRServer.API.Data.Response).%New()
+                Set tFHIRService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
+                Do tFHIRService.DispatchRequest(tReqPat, .tRespPat)
+                If $IsObject(tRespPat.Json) {
+                    Set tBirthDate = tRespPat.Json.birthDate
+                    If tBirthDate '= "" {
+                        Set birthYear = +$Piece(tBirthDate, "-", 1)
+                        Set claimYear = +$Piece(serviceDate, "-", 1)
+                        If (claimYear > 0) && (birthYear > 0) {
+                            Set patientAge = claimYear - birthYear
+                        }
+                    }
+                }
+            } Catch {}
+        }
+        
+        // 2. Calculate durationDays dynamically from billablePeriod
+        If $IsObject(pClaimJson.billablePeriod) {
+            Try {
+                Set tStart = pClaimJson.billablePeriod.start
+                Set tEnd = pClaimJson.billablePeriod.end
+                If (tStart '= "") && (tEnd '= "") {
+                    Set dStart = $ZDateH($Extract(tStart, 1, 10), 3)
+                    Set dEnd = $ZDateH($Extract(tEnd, 1, 10), 3)
+                    Set durationDays = dEnd - dStart
+                    If durationDays < 1 Set durationDays = 1
+                }
+            } Catch {}
+        }
+        
+        // 3. Fallback to ClaimProjections table
         If patientId '= "" {
             Try {
                 Set tCPRS = ##class(%SQL.Statement).%ExecDirect(,
                 "SELECT SpecialtyCode, PatientAge, DurationDays "_
                 "FROM ClaimAudit.ClaimProjections WHERE PatientKey = ?", patientId)
                 If tCPRS.%Next() {
-                    Set specialtyCode = +tCPRS.%Get("SpecialtyCode")
-                    Set patientAge = +tCPRS.%Get("PatientAge")
-                    Set durationDays = +tCPRS.%Get("DurationDays")
+                    If specialtyCode = 1 Set specialtyCode = +tCPRS.%Get("SpecialtyCode")
+                    If patientAge = 45 Set patientAge = +tCPRS.%Get("PatientAge")
+                    If durationDays = 1 Set durationDays = +tCPRS.%Get("DurationDays")
                 }
             } Catch {}
         }
         
-        // Run all three AI tiers in parallel with timeouts and circuit breaker
+        // Run all three AI tiers in sequence
         Set orchestrator = ##class(%SYS.Python).Import("tier_orchestrator")
+        Set jsonLib = ##class(%SYS.Python).Import("json")
+        Set pyCptCodes = jsonLib.loads(tCptCodes.%ToJSON())
+        Set pyCptDisplays = jsonLib.loads(tCptDisplays.%ToJSON())
+        Set pyIcdCodes = jsonLib.loads(tIcdCodes.%ToJSON())
         Set tAllResults = orchestrator."run_all_tiers"(
-            patientId, providerNpi, firstCodeDesc,
+            patientId, providerNpi, pyCptCodes, pyCptDisplays, pyIcdCodes,
             billedAmount, codeCount,
             specialtyCode, patientAge, durationDays,
             serviceDate

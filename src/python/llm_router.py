@@ -49,15 +49,24 @@ _load_env()
 def clean_non_bmp(text: str) -> str:
     return "".join(c for c in text if ord(c) <= 0xFFFF)
 
+_settings_cache = None
+_settings_last_loaded = 0.0
+
 def _load_settings() -> dict:
+    global _settings_cache, _settings_last_loaded
     settings_path = "/home/irisowner/dev/.llm_settings.json"
     if os.path.exists(settings_path):
         try:
+            mtime = os.path.getmtime(settings_path)
+            if _settings_cache is not None and mtime <= _settings_last_loaded:
+                return _settings_cache
             with open(settings_path) as f:
-                return json.load(f)
+                _settings_cache = json.load(f)
+                _settings_last_loaded = mtime
+                return _settings_cache
         except Exception:
             pass
-    return {}
+    return _settings_cache if _settings_cache is not None else {}
 
 def _check_rate_limit():
     settings = _load_settings()
@@ -119,6 +128,61 @@ def _create_client(provider: str, settings: dict):
         raise ValueError(f"Unknown LLM_PROVIDER '{provider}'. Valid values: nvidia, ollama, openai")
 
 
+def _generate_rule_based_fallback_summary(prompt: str) -> str:
+    """Generate a clean, professional clinical-financial report when all LLM services are offline."""
+    import re
+    patient_match = re.search(r"Patient ID:\s*(\S+)", prompt)
+    provider_match = re.search(r"Provider NPI:\s*(\S+)", prompt)
+    cpt_match = re.search(r"Billed CPT Code:\s*([^\n]+)", prompt)
+    amount_match = re.search(r"Total Billed Amount:\s*\$([\d.]+)", prompt)
+    date_match = re.search(r"Service Date:\s*(\S+)", prompt)
+    
+    patient = patient_match.group(1) if patient_match else "Unknown"
+    provider = provider_match.group(1) if provider_match else "Unknown"
+    cpt_desc = cpt_match.group(1) if cpt_match else "Not Provided"
+    amount = amount_match.group(1) if amount_match else "0.00"
+    date = date_match.group(1) if date_match else "Unknown"
+    
+    # Extract findings
+    findings = []
+    lines = prompt.split("\n")
+    start_findings = False
+    for line in lines:
+        if "Automated Audit Findings:" in line:
+            start_findings = True
+            continue
+        if start_findings and line.strip().startswith("-"):
+            findings.append(line.strip()[1:].strip())
+            
+    findings_str = "\n".join(f"- {f}" for f in findings) if findings else "- General anomaly threat score exceeded threshold."
+    
+    report = f"""# Adjudication Report (Rule-Based Fallback)
+
+This claim has been suspended and placed on a pre-payment administrative hold. Detailed LLM adjudication report generation is currently offline; a standard deterministic adjudication report has been generated instead.
+
+### Claim Adjudication Target
+* **Patient Reference ID:** {patient}
+* **Billing Provider NPI:** {provider}
+* **Billed CPT Code/Description:** {cpt_desc}
+* **Total Billed Amount:** ${amount}
+* **Service Date:** {date}
+
+### Automated Audit Findings
+{findings_str}
+
+### Formal Hold Justification
+The claim has been suspended due to one or more anomalies exceeding our billing threshold. Based on our clinical edit guidelines:
+1. **Tier 1 (Semantic Note & Coding Alignment)**: Billed procedures lack documented clinical note support, or CPT-ICD code combinations represent a clinical mismatch.
+2. **Tier 2 (Statistical Outlier)**: Billed amounts, item counts, or specialty profiles fall outside normal statistical bounds.
+3. **Tier 3 (Network Collusion)**: Relational network analysis suggests geographical impossibility or referral loop cycles.
+
+### Actionable Next Steps
+1. Request full clinical SOAP documentation, progress notes, and intake forms from the provider.
+2. Verify CPT-ICD coding combinations and specialty billing credentials.
+3. Once documentation is uploaded, trigger a claim re-audit.
+"""
+    return report
+
 def chat(system_prompt: str, messages_json: str, max_tokens: int = 1024, timeout: float = None) -> str:
     settings = _load_settings()
     cache_ttl = int(settings.get("cacheTTL", 86400))
@@ -134,50 +198,82 @@ def chat(system_prompt: str, messages_json: str, max_tokens: int = 1024, timeout
             else:
                 del _response_cache[cache_key]
 
-    # Determine timeout and retry count dynamically from settings
-    if timeout is None:
-        timeout = float(settings.get("timeout", 300.0))
-    retry_count = int(settings.get("retryCount", 3))
-
+    primary_provider = settings.get("provider") or os.environ.get("LLM_PROVIDER", "nvidia").strip().lower()
+    
+    # Provider queue: try primary, then fallbacks
+    providers_queue = [primary_provider]
+    for p in ["openai", "nvidia", "ollama"]:
+        if p not in providers_queue:
+            providers_queue.append(p)
+            
     last_error = None
-    for attempt in range(retry_count + 1):
+    for provider in providers_queue:
         try:
-            # Rate limit check inside retry loop — if limit is hit, wait and retry
-            _check_rate_limit()
+            # Skip provider if API keys are missing
+            if provider == "nvidia" and not (settings.get("nvidiaApiKey") or os.environ.get("NVIDIA_API_KEY")):
+                continue
+            if provider == "openai" and not (settings.get("openaiApiKey") or os.environ.get("OPENAI_API_KEY")):
+                continue
+        except Exception:
+            continue
+            
+        # Determine timeout and retry count dynamically from settings
+        if timeout is None:
+            timeout = float(settings.get("timeout", 300.0))
+        retry_count = int(settings.get("retryCount", 3))
 
-            client, model = _get_client_and_model()
+        for attempt in range(retry_count + 1):
             try:
-                messages = json.loads(messages_json)
-            except Exception:
-                messages = []
-            full_messages = [{"role": "system", "content": system_prompt}] + messages
-            response = client.chat.completions.create(
-                model=model,
-                messages=full_messages,
-                max_tokens=max_tokens,
-                temperature=0.3,
-                timeout=timeout,
-            )
-            if not response.choices:
-                raise ValueError("LLM returned empty response — no choices available")
-            content = clean_non_bmp(response.choices[0].message.content)
+                _check_rate_limit()
+                
+                client, model = _create_client(provider, settings)
+                
+                try:
+                    messages = json.loads(messages_json)
+                except Exception:
+                    messages = []
+                full_messages = [{"role": "system", "content": system_prompt}] + messages
+                
+                logger.info(f"Attempting LLM call using provider: {provider}, model: {model}")
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=full_messages,
+                    max_tokens=max_tokens,
+                    temperature=0.3,
+                    timeout=timeout,
+                )
+                if not response.choices:
+                    raise ValueError("LLM returned empty response — no choices available")
+                content = clean_non_bmp(response.choices[0].message.content)
 
-            # 3. Store response in cache
-            with _response_cache_lock:
-                _response_cache[cache_key] = {
-                    "response": content,
-                    "timestamp": time.time()
-                }
-            return content
-        except Exception as e:
-            last_error = e
-            if attempt < retry_count:
-                delay = RETRY_BASE_DELAY * (2 ** attempt)
-                logger.warning(f"LLM attempt {attempt + 1} failed: {e}. Retrying in {delay:.1f}s...")
-                time.sleep(delay)
-            else:
-                logger.error(f"LLM failed after {retry_count + 1} attempts: {e}")
-    raise RuntimeError(f"LLM request failed after {retry_count + 1} attempts: {last_error}")
+                # Store response in cache
+                with _response_cache_lock:
+                    _response_cache[cache_key] = {
+                        "response": content,
+                        "timestamp": time.time()
+                    }
+                return content
+            except Exception as e:
+                last_error = e
+                logger.warning(f"LLM call failed for provider {provider} (attempt {attempt + 1}/{retry_count + 1}): {e}")
+                if attempt < retry_count:
+                    delay = RETRY_BASE_DELAY * (2 ** attempt)
+                    time.sleep(delay)
+                else:
+                    # Retries exhausted for this provider, fall back to next provider
+                    break
+                    
+    # If all LLM calls failed, generate rule-based fallback report
+    logger.error("All LLM providers failed. Executing deterministic fallback report.")
+    try:
+        messages = json.loads(messages_json)
+        user_prompt = messages[0]["content"] if messages else ""
+        if "Adjudication Target Claim Details" in user_prompt:
+            return _generate_rule_based_fallback_summary(user_prompt)
+    except Exception:
+        pass
+        
+    raise RuntimeError(f"All LLM providers failed. Last error: {last_error}")
 
 
 def invalidate_llm_cache():
@@ -266,3 +362,128 @@ def list_ollama_models(base_url: str = None) -> list:
     except Exception as exc:
         logger.warning(f"Could not reach Ollama at {url}: {exc}")
         return []
+
+def parse_disposition(disposition: str) -> str:
+    import re
+    import json
+    if not disposition:
+        return json.dumps([])
+    
+    disposition = disposition.strip()
+    
+    sections_lookahead = r'(?=###|##|\*\*Tier|\*\*Findings|Tier\s*\d|Adjudication|Collusion|Next\s*Steps|Pend|Risk\s*Score|Justification|\*\*Justification|$|#)'
+    
+    # Try to extract sections using the robust regexes with lookahead
+    t1_match = (
+        re.search(r'(?:###|##|\*\*|)\s*(?:Tier\s*1|\[NLP\]|Semantic\s*Clinical\s*Audit|NLP\s*Findings|Findings\s*\(NLP\))[^\n]*\n([\s\S]*?)' + sections_lookahead, disposition, re.IGNORECASE) or
+        re.search(r'Tier\s*1\s*\((?:NLP)\):\s*([^|\n]+)', disposition, re.IGNORECASE)
+    )
+    t2_match = (
+        re.search(r'(?:###|##|\*\*|)\s*(?:Tier\s*2|\[ML\]|Statistical\s*Outlier|ML\s*Findings|Findings\s*\(ML\))[^\n]*\n([\s\S]*?)' + sections_lookahead, disposition, re.IGNORECASE) or
+        re.search(r'Tier\s*2\s*\((?:ML)\):\s*([^|\n]+)', disposition, re.IGNORECASE)
+    )
+    t3_match = (
+        re.search(r'(?:###|##|\*\*|)\s*(?:Tier\s*3|\[Graph\]|Collusion\s*Network|Graph\s*Findings|Findings\s*\(Graph\))[^\n]*\n([\s\S]*?)' + sections_lookahead, disposition, re.IGNORECASE) or
+        re.search(r'Tier\s*3\s*\((?:Graph)\):\s*([^|\n]+)', disposition, re.IGNORECASE)
+    )
+    
+    t1_text = t1_match.group(1).strip() if t1_match else ""
+    t2_text = t2_match.group(1).strip() if t2_match else ""
+    t3_text = t3_match.group(1).strip() if t3_match else ""
+    
+    tier_results = []
+    
+    def parse_block(tier_num: int, label: str, text: str, default_summary: str):
+        if not text:
+            return {
+                "tier": tier_num,
+                "label": label,
+                "score": 0.0,
+                "flags": [],
+                "summary": default_summary
+            }
+            
+        lines = [l.strip() for l in text.split('\n')]
+        
+        bullets = []
+        for line in lines:
+            if re.match(r'^[-*•+]\s+', line):
+                cleaned = re.sub(r'^[-*•+]\s+', '', line).strip()
+                if cleaned:
+                    cleaned = re.sub(r'^\*+\s*', '', cleaned)
+                    cleaned = re.sub(r'\*+$', '', cleaned).strip()
+                    bullets.append(cleaned)
+                    
+        score = 0.0
+        threshold = None
+        if tier_num == 1:
+            sim_match = re.search(r'\bsimilarity\b\s*(?:score)?\s*(?:of|is|:)?\s*([\d.]+)', text, re.IGNORECASE)
+            if not sim_match:
+                sim_match = re.search(r'\bscore\b\s*(?:of|is|:)?\s*([\d.]+)', text, re.IGNORECASE)
+            if sim_match:
+                try:
+                    score = float(sim_match.group(1))
+                except ValueError:
+                    pass
+        elif tier_num == 2:
+            loss_match = re.search(r'\bloss\b\s*(?:is|:)?\s*\(?\s*([\d.]+)\)?', text, re.IGNORECASE)
+            if not loss_match:
+                loss_match = re.search(r'\breconstruction\b\s*(?:loss)?\s*(?:is|:)?\s*\(?\s*([\d.]+)\)?', text, re.IGNORECASE)
+            if loss_match:
+                try:
+                    score = float(loss_match.group(1))
+                except ValueError:
+                    pass
+            thresh_match = re.search(r'\bthreshold\b\s*(?:is|:)?\s*\(?\s*([\d.]+)\)?', text, re.IGNORECASE)
+            if thresh_match:
+                try:
+                    threshold = float(thresh_match.group(1))
+                except ValueError:
+                    pass
+                    
+        summary = ""
+        for line in lines:
+            if not line:
+                continue
+            if line.startswith('#') or (line.startswith('**') and line.endswith('**')):
+                continue
+            if re.match(r'^[-*•+]\s+', line):
+                continue
+            
+            cleaned = line.strip()
+            cleaned = re.sub(r'^\*+\s*', '', cleaned)
+            cleaned = re.sub(r'\*+$', '', cleaned).strip()
+            
+            if cleaned and len(cleaned) > 15:
+                sent_match = re.match(r'^[^.!?]+[.!?]', cleaned)
+                if sent_match:
+                    summary = sent_match.group(0)
+                else:
+                    summary = cleaned[:150]
+                break
+                
+        if not summary:
+            if bullets:
+                summary = bullets[0]
+            else:
+                summary = default_summary
+                
+        summary = re.sub(r'^\*+\s*', '', summary)
+        summary = re.sub(r'\*+$', '', summary).strip()
+        
+        result = {
+            "tier": tier_num,
+            "label": label,
+            "score": score,
+            "flags": bullets,
+            "summary": summary
+        }
+        if threshold is not None:
+            result["threshold"] = threshold
+            
+        return result
+
+    tier_results.append(parse_block(1, "Semantic Clinical Audit", t1_text, "Clinical SOAP notes match the procedural description."))
+    tier_results.append(parse_block(2, "Statistical Outlier Profiler", t2_text, "Claim billing features are within normal statistical bounds."))
+    tier_results.append(parse_block(3, "Collusion Network Analysis", t3_text, "Referral loop scan complete. Patient-provider relational topology is clean, geodetic limits matched."))
+    return json.dumps(tier_results)

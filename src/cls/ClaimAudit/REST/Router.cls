@@ -25,6 +25,7 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
     <Route Url="/claims/:id/escalate"  Method="POST" Call="EscalateClaim"/>
     <Route Url="/claims/:id/reject"    Method="POST"       Call="RejectClaim"/>
     <Route Url="/claims/:id/reaudit"  Method="POST"       Call="ReauditClaim"/>
+    <Route Url="/claims/:id/generate-report" Method="POST" Call="GenerateDetailedReport"/>
     <Route Url="/stats"                 Method="GET"  Call="GetStats"/>
     <Route Url="/stats/model-performance" Method="GET"  Call="GetModelPerformance"/>
     <Route Url="/metrics"               Method="GET"  Call="GetMetrics"/>
@@ -585,6 +586,8 @@ ClassMethod GetClaimDetail(id As %String) As %Status
         Set tRiskLevel = "medium"
         Set tActionHistory = []
         Set tTierResults = ""
+        Set tCptCodesJSON = ""
+        Set tIcdCodesJSON = ""
         If $IsObject(tCRJson.extension) {
             Set tExtIter = tCRJson.extension.%GetIterator()
             While tExtIter.%GetNext(.tK, .tExt) {
@@ -612,113 +615,133 @@ ClassMethod GetClaimDetail(id As %String) As %Status
                 If tExt.url = "https://claimauditai.com/fhir/extension/tier-results" {
                     Set tTierResults = ##class(%DynamicArray).%FromJSON(tExt.valueString)
                 }
+                If tExt.url = "https://claimauditai.com/fhir/extension/cpt-codes" {
+                    Set tCptCodesJSON = tExt.valueString
+                }
+                If tExt.url = "https://claimauditai.com/fhir/extension/icd-codes" {
+                    Set tIcdCodesJSON = tExt.valueString
+                }
             }
         }
 
         // Fallback: reconstruct tierResults from risk-score and disposition when extension is missing
         If ('$IsObject(tTierResults)) || (tTierResults.%Size() = 0) {
-            Set tTierResults = ##class(%DynamicArray).%New()
-            // Tier 1 reconstruction
-            Set tT1Flags = ##class(%DynamicArray).%New()
-            Set tT1Summary = "Clinical SOAP notes match the procedural description."
-            Set tT1Score = 0.0
-            If tDisposition [ "Tier 1" {
-                Set tT1Match = $Piece($Piece(tDisposition, "Tier 1", 2), "|", 1)
-                If tT1Match '= "" {
-                    Set tT1Match = $ZSTRIP(tT1Match, "<>W")
-                    Do tT1Flags.%Push(tT1Match)
-                    Set tT1Summary = tT1Match
-                    Set tT1Score = 0.35
+            Set tTierResults = ""
+            Try {
+                Do ##class(ClaimAudit.AI.Engine).ConfigurePythonPath()
+                Set tLLM = ##class(%SYS.Python).Import("llm_router")
+                Set tParsedJSON = tLLM.parse_disposition(tDisposition)
+                Set tTierResults = ##class(%DynamicArray).%FromJSON(tParsedJSON)
+            } Catch {}
+            
+            // Safe fallback if Python call fails or returns empty
+            If ('$IsObject(tTierResults)) || (tTierResults.%Size() = 0) {
+                Set tTierResults = ##class(%DynamicArray).%New()
+                // Tier 1 reconstruction
+                Set tT1Flags = ##class(%DynamicArray).%New()
+                Set tT1Summary = "Clinical SOAP notes match the procedural description."
+                Set tT1Score = 0.0
+                If tDisposition [ "Tier 1" {
+                    Set tT1Match = $Piece(tDisposition, "Tier 1", 2)
+                    If tT1Match [ "Tier 2" { Set tT1Match = $Piece(tT1Match, "Tier 2", 1) }
+                    ElseIf tT1Match [ "Tier 3" { Set tT1Match = $Piece(tT1Match, "Tier 3", 1) }
+                    ElseIf tT1Match [ "Pend" { Set tT1Match = $Piece(tT1Match, "Pend", 1) }
+                    ElseIf tT1Match [ "Justification" { Set tT1Match = $Piece(tT1Match, "Justification", 1) }
+                    Else { Set tT1Match = $Piece(tT1Match, "|", 1) }
+                    
+                    If tT1Match '= "" {
+                        Set tT1Match = $ZSTRIP(tT1Match, "<>W")
+                        Set tT1Match = $ZSTRIP(tT1Match, "<", "*()#:-[]")
+                        Set tT1Match = $ZSTRIP(tT1Match, "<>W")
+                        If tT1Match '= "" {
+                            Do tT1Flags.%Push(tT1Match)
+                            Set tT1Summary = tT1Match
+                            Set tT1Score = 0.35
+                        }
+                    }
                 }
-            }
-            Do tTierResults.%Push({
-                "tier": 1, "label": "Semantic Clinical Audit", "score": (tT1Score), "flags": (tT1Flags), "summary": (tT1Summary)
-            })
-            // Tier 2 reconstruction
-            Set tT2Flags = ##class(%DynamicArray).%New()
-            Set tT2Summary = "Claim billing features are within normal statistical bounds."
-            Set tT2Score = 0.0
-            If tDisposition [ "Tier 2" {
-                Set tT2Match = $Piece($Piece(tDisposition, "Tier 2", 2), "|", 1)
-                If tT2Match '= "" {
-                    Set tT2Match = $ZSTRIP(tT2Match, "<>W")
-                    Do tT2Flags.%Push(tT2Match)
-                    Set tT2Summary = tT2Match
-                    Set tT2Score = 0.35
+                Do tTierResults.%Push({
+                    "tier": 1, "label": "Semantic Clinical Audit", "score": (tT1Score), "flags": (tT1Flags), "summary": (tT1Summary)
+                })
+                // Tier 2 reconstruction
+                Set tT2Flags = ##class(%DynamicArray).%New()
+                Set tT2Summary = "Claim billing features are within normal statistical bounds."
+                Set tT2Score = 0.0
+                If tDisposition [ "Tier 2" {
+                    Set tT2Match = $Piece(tDisposition, "Tier 2", 2)
+                    If tT2Match [ "Tier 3" { Set tT2Match = $Piece(tT2Match, "Tier 3", 1) }
+                    ElseIf tT2Match [ "Pend" { Set tT2Match = $Piece(tT2Match, "Pend", 1) }
+                    ElseIf tT2Match [ "Justification" { Set tT2Match = $Piece(tT2Match, "Justification", 1) }
+                    Else { Set tT2Match = $Piece(tT2Match, "|", 1) }
+                    
+                    If tT2Match '= "" {
+                        Set tT2Match = $ZSTRIP(tT2Match, "<>W")
+                        Set tT2Match = $ZSTRIP(tT2Match, "<", "*()#:-[]")
+                        Set tT2Match = $ZSTRIP(tT2Match, "<>W")
+                        If tT2Match '= "" {
+                            Do tT2Flags.%Push(tT2Match)
+                            Set tT2Summary = tT2Match
+                            Set tT2Score = 0.35
+                        }
+                    }
                 }
-            }
-            Do tTierResults.%Push({
-                "tier": 2, "label": "Statistical Outlier Profiler", "score": (tT2Score), "threshold": 0, "flags": (tT2Flags), "summary": (tT2Summary)
-            })
-            // Tier 3 reconstruction
-            Set tT3Flags = ##class(%DynamicArray).%New()
-            Set tT3Summary = "Referral loop scan complete. Patient-provider relational topology is clean, geodetic limits matched."
-            If tDisposition [ "Tier 3" {
-                Set tT3Match = $Piece($Piece(tDisposition, "Tier 3", 2), "|", 1)
-                If tT3Match '= "" {
-                    Set tT3Match = $ZSTRIP(tT3Match, "<>W")
-                    Do tT3Flags.%Push(tT3Match)
-                    Set tT3Summary = tT3Match
+                Do tTierResults.%Push({
+                    "tier": 2, "label": "Statistical Outlier Profiler", "score": (tT2Score), "threshold": 0, "flags": (tT2Flags), "summary": (tT2Summary)
+                })
+                // Tier 3 reconstruction
+                Set tT3Flags = ##class(%DynamicArray).%New()
+                Set tT3Summary = "Referral loop scan complete. Patient-provider relational topology is clean, geodetic limits matched."
+                If tDisposition [ "Tier 3" {
+                    Set tT3Match = $Piece(tDisposition, "Tier 3", 2)
+                    If tT3Match [ "Pend" { Set tT3Match = $Piece(tT3Match, "Pend", 1) }
+                    ElseIf tT3Match [ "Justification" { Set tT3Match = $Piece(tT3Match, "Justification", 1) }
+                    Else { Set tT3Match = $Piece(tT3Match, "|", 1) }
+                    
+                    If tT3Match '= "" {
+                        Set tT3Match = $ZSTRIP(tT3Match, "<>W")
+                        Set tT3Match = $ZSTRIP(tT3Match, "<", "*()#:-[]")
+                        Set tT3Match = $ZSTRIP(tT3Match, "<>W")
+                        If tT3Match '= "" {
+                            Do tT3Flags.%Push(tT3Match)
+                            Set tT3Summary = tT3Match
+                        }
+                    }
                 }
+                Do tTierResults.%Push({
+                    "tier": 3, "label": "Collusion Network Analysis", "score": 0.0, "flags": (tT3Flags), "summary": (tT3Summary)
+                })
             }
-            Do tTierResults.%Push({
-                "tier": 3, "label": "Collusion Network Analysis", "score": 0.0, "flags": (tT3Flags), "summary": (tT3Summary)
-            })
         }
 
-        // If the disposition is the basic HOLD message and doesn't contain the full LLM report, generate it on-demand!
+        // Determine reportStatus and do NOT run blocking LLM report generation synchronously here
+        Set tReportStatus = "complete"
         If (tDisposition [ "Payment Integrity Adjudication HOLD Notification.") && '(tDisposition [ "Adjudication Report") {
-            Set tReasons = ##class(%DynamicArray).%New()
-            Set tReasonPart = $Piece(tDisposition, "Payment Integrity Adjudication HOLD Notification. ", 2)
-            If tReasonPart = "" Set tReasonPart = tDisposition
-            For tJ = 1:1:$Length(tReasonPart, " | ") {
-                Set tReason = $Piece(tReasonPart, " | ", tJ)
-                If tReason '= "" Do tReasons.%Push(tReason)
-            }
-            If tReasons.%Size() = 0 Do tReasons.%Push("High anomaly threat index")
-
-            Set tCodeCount = 1
-            Set tLLMSummary = ##class(ClaimAudit.AI.Agent).GenerateHoldSummary(tPatientId, tProviderId, tBilledAmount, tCodeCount, tSubmittedAt, tCptCode, tReasons)
-            If tLLMSummary '= "" {
-                Set tDisposition = tLLMSummary
-                
-                // Update the ClaimResponse in the FHIR server so it is persisted
-                Do tCRJson.%Set("disposition", tDisposition)
-                If $IsObject(tCRJson.extension) {
-                    Set tTierExtUpdated = 0
-                    Set tExtIter = tCRJson.extension.%GetIterator()
-                    While tExtIter.%GetNext(.tK, .tExt) {
-                        If tExt.url = "https://claimauditai.com/fhir/extension/explanation" {
-                            Do tExt.%Set("valueString", tDisposition)
-                        }
-                        // Update existing tier-results extension with reconstructed data
-                        If tExt.url = "https://claimauditai.com/fhir/extension/tier-results" {
-                            If $IsObject(tTierResults) {
-                                Do tExt.%Set("valueString", tTierResults.%ToJSON())
-                            }
-                            Set tTierExtUpdated = 1
-                        }
-                    }
-                    // Add tier-results extension if it doesn't exist
-                    If 'tTierExtUpdated && $IsObject(tTierResults) {
-                        Do tCRJson.extension.%Push({
-                            "url": "https://claimauditai.com/fhir/extension/tier-results",
-                            "valueString": (tTierResults.%ToJSON())
-                        })
-                    }
-                }
-                
-                Try {
-                    Set tUpdateReq = ##class(HS.FHIRServer.API.Data.Request).%New()
-                    Set tUpdateReq.RequestMethod = "PUT"
-                    Set tUpdateReq.RequestPath = "/ClaimResponse/" _ id
-                    Set tUpdateReq.Interaction = "update"
-                    Set tUpdateReq.Json = tCRJson
-                    Set tUpdateResp = ##class(HS.FHIRServer.API.Data.Response).%New()
-                    Do tService.DispatchRequest(tUpdateReq, .tUpdateResp)
-                } Catch {}
-            }
+            Set tReportStatus = "pending"
         }
+
+        // Build array lists for CPT and ICD codes
+        Set tCptCodesArr = ""
+        If tCptCodesJSON '= "" {
+            Try {
+                Set tCptCodesArr = ##class(%DynamicArray).%FromJSON(tCptCodesJSON)
+            } Catch {}
+        }
+        If '$IsObject(tCptCodesArr) {
+            Set tCptCodesArr = ##class(%DynamicArray).%New()
+            If tCptCode '= "" Do tCptCodesArr.%Push(tCptCode)
+        }
+
+        Set tIcdCodesArr = ""
+        If tIcdCodesJSON '= "" {
+            Try {
+                Set tIcdCodesArr = ##class(%DynamicArray).%FromJSON(tIcdCodesJSON)
+            } Catch {}
+        }
+        If '$IsObject(tIcdCodesArr) {
+            Set tIcdCodesArr = ##class(%DynamicArray).%New()
+            If tIcdCode '= "" Do tIcdCodesArr.%Push(tIcdCode)
+        }
+
         If tRiskScore >= 0.86 {
             Set tRiskLevel = "critical"
         } ElseIf tRiskScore >= 0.50 {
@@ -736,7 +759,7 @@ ClassMethod GetClaimDetail(id As %String) As %Status
                 Set tReqPat.RequestPath = "/Patient/" _ tPatientId
                 Set tReqPat.Interaction = "read"
                 Set tRespPat = ##class(HS.FHIRServer.API.Data.Response).%New()
-                Do tService.DispatchRequest(tReqPat, .tRespPat)
+                Do tFHIRService.DispatchRequest(tReqPat, .tRespPat)
                 If $IsObject(tRespPat.Json) {
                     Set tPatJson = tRespPat.Json
                     If $IsObject(tPatJson.name) && (tPatJson.name.%Size() > 0) {
@@ -787,12 +810,15 @@ ClassMethod GetClaimDetail(id As %String) As %Status
             "providerId": (tProviderId),
             "cptCode": (tCptCode),
             "icdCode": (tIcdCode),
+            "cptCodes": (tCptCodesArr),
+            "icdCodes": (tIcdCodesArr),
             "totalAmount": (tBilledAmount),
             "submittedAt": (tSubmittedAt),
             "lastModified": (tLastModified),
             "riskScore": (tRiskScore),
             "riskLevel": (tRiskLevel),
             "disposition": (tDisposition),
+            "reportStatus": (tReportStatus),
             "taskId": (tTaskId),
             "taskStatus": (tTaskStatus),
             "taskPriority": (tTaskPriority),
@@ -809,7 +835,12 @@ ClassMethod GetClaimDetail(id As %String) As %Status
             Set tNRS = ##class(%SQL.Statement).%ExecDirect(,
             "SELECT DocumentText FROM ClaimAudit.ClinicalNotes WHERE PatientId = ?", tPatientId)
             While tNRS.%Next() {
-                Do tDetail.linkedClinicalNotes.%Push(tNRS.%Get("DocumentText"))
+                Set tNoteText = tNRS.%Get("DocumentText")
+                Set tNoteDate = tNRS.%Get("NoteDate")
+                If tNoteDate '= "" {
+                    Set tNoteText = "[Date: " _ tNoteDate _ "]" _ $Char(13, 10) _ $Char(13, 10) _ tNoteText
+                }
+                Do tDetail.linkedClinicalNotes.%Push(tNoteText)
             }
         } Catch {}
 
@@ -1143,7 +1174,7 @@ ClassMethod RejectClaim(id As %String) As %Status
 /// Re-populates tier-results extension, risk-score, and disposition on the ClaimResponse.
 ClassMethod ReauditClaim(id As %String) As %Status
 {
-    If '##class(ClaimAudit.REST.Auth).RequireAuth("Admin") Quit $$$OK
+    If '##class(ClaimAudit.REST.Auth).RequireAuth("Auditor") Quit $$$OK
     Set tSC = $$$OK
     Try {
         Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
@@ -1168,6 +1199,9 @@ ClassMethod ReauditClaim(id As %String) As %Status
         Set tBilledAmount = 0.0
         Set tCptCode = ""
         Set tIcdCode = ""
+        Set tCptCodesJSON = ""
+        Set tIcdCodesJSON = ""
+        Set tProviderNpi = "claimaudit-prov"
         If $IsObject(tCRJson.total) {
             For tI = 0:1:tCRJson.total.%Size()-1 {
                 Set tEntry = tCRJson.total.%Get(tI)
@@ -1186,15 +1220,93 @@ ClassMethod ReauditClaim(id As %String) As %Status
                 If tExt.url = "https://claimauditai.com/fhir/extension/icd-code" {
                     Set tIcdCode = tExt.valueString
                 }
+                If tExt.url = "https://claimauditai.com/fhir/extension/cpt-codes" {
+                    Set tCptCodesJSON = tExt.valueString
+                }
+                If tExt.url = "https://claimauditai.com/fhir/extension/icd-codes" {
+                    Set tIcdCodesJSON = tExt.valueString
+                }
+                If tExt.url = "https://claimauditai.com/fhir/extension/provider-npi" {
+                    Set tProviderNpi = tExt.valueString
+                }
             }
+        }
+
+        // Build items array
+        Set tItemArray = ##class(%DynamicArray).%New()
+        If tCptCodesJSON '= "" {
+            Try {
+                Set tCptArr = ##class(%DynamicArray).%FromJSON(tCptCodesJSON)
+                For tI = 0:1:tCptArr.%Size()-1 {
+                    Set tCode = tCptArr.%Get(tI)
+                    Set tItem = {
+                        "productOrService": {
+                            "coding": [
+                                {
+                                    "code": (tCode),
+                                    "display": (tCode)
+                                }
+                            ]
+                        }
+                    }
+                    Do tItemArray.%Push(tItem)
+                }
+            } Catch {}
+        }
+        If (tItemArray.%Size() = 0) && (tCptCode '= "") {
+            Set tItem = {
+                "productOrService": {
+                    "coding": [
+                        {
+                            "code": (tCptCode),
+                            "display": (tCptCode)
+                        }
+                    ]
+                }
+            }
+            Do tItemArray.%Push(tItem)
+        }
+
+        // Build diagnosis array
+        Set tDiagArray = ##class(%DynamicArray).%New()
+        If tIcdCodesJSON '= "" {
+            Try {
+                Set tIcdArr = ##class(%DynamicArray).%FromJSON(tIcdCodesJSON)
+                For tI = 0:1:tIcdArr.%Size()-1 {
+                    Set tCode = tIcdArr.%Get(tI)
+                    Set tDiag = {
+                        "diagnosisCodeableConcept": {
+                            "coding": [
+                                {
+                                    "code": (tCode)
+                                }
+                            ]
+                        }
+                    }
+                    Do tDiagArray.%Push(tDiag)
+                }
+            } Catch {}
+        }
+        If (tDiagArray.%Size() = 0) && (tIcdCode '= "") {
+            Set tDiag = {
+                "diagnosisCodeableConcept": {
+                    "coding": [
+                        {
+                            "code": (tIcdCode)
+                        }
+                    ]
+                }
+            }
+            Do tDiagArray.%Push(tDiag)
         }
 
         // Build ClaimJson object for the engine
         Set tClaimJson = {
             "patient": {"reference": ("Patient/" _ tPatientId)},
-            "provider": {"reference": "Provider/claimaudit-prov"},
+            "provider": {"reference": ("Provider/" _ tProviderNpi)},
             "total": {"value": (tBilledAmount)},
-            "item": [{"productOrService": {"coding": [{"display": (tCptCode)}]}}],
+            "item": (tItemArray),
+            "diagnosis": (tDiagArray),
             "created": ($ZTIMESTAMP)
         }
 
@@ -1232,9 +1344,16 @@ ClassMethod ReauditClaim(id As %String) As %Status
         // Generate new disposition
         Set tDisposition = ""
         Try {
+            Set tCptDisplay = tCptCode
+            If tItemArray.%Size() > 0 {
+                Set tFirstItem = tItemArray.%Get(0)
+                If $IsObject(tFirstItem) && $IsObject(tFirstItem.productOrService) && $IsObject(tFirstItem.productOrService.coding) && (tFirstItem.productOrService.coding.%Size() > 0) {
+                    Set tCptDisplay = tFirstItem.productOrService.coding.%Get(0).display
+                }
+            }
             Set tDisposition = ##class(ClaimAudit.AI.Agent).GenerateHoldSummary(
-                tPatientId, "claimaudit-prov", tBilledAmount, "1",
-                $ZDate($PIECE($ZTIMESTAMP, ",", 1), 3), tCptCode, pResult.reasons
+                tPatientId, tProviderNpi, tBilledAmount, tItemArray.%Size(),
+                $ZDate($PIECE($ZTIMESTAMP, ",", 1), 3), tCptDisplay, pResult.reasons
             )
         } Catch {}
         If tDisposition '= "" Set tCRJson.disposition = tDisposition
@@ -1255,6 +1374,179 @@ ClassMethod ReauditClaim(id As %String) As %Status
             "riskScore": (pResult.score),
             "dispositionGenerated": (tDisposition '= "")
         }.%ToJSON()
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+        Write {"error": (ex.DisplayString())}.%ToJSON()
+    }
+    Quit tSC
+}
+
+ClassMethod GenerateDetailedReport(id As %String) As %Status
+{
+    If '##class(ClaimAudit.REST.Auth).RequireAuth() Quit $$$OK
+    Set tSC = $$$OK
+    Try {
+        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
+        Set tRequest = ##class(HS.FHIRServer.API.Data.Request).%New()
+        Set tRequest.RequestMethod = "GET"
+        Set tRequest.RequestPath = "/ClaimResponse/" _ id
+        Set tRequest.Interaction = "read"
+        Set tResponse = ##class(HS.FHIRServer.API.Data.Response).%New()
+        Do tService.DispatchRequest(tRequest, .tResponse)
+
+        If '$IsObject(tResponse.Json) {
+            Set %response.Status = 404
+            Write {"error": "ClaimResponse not found"}.%ToJSON()
+            Quit
+        }
+        Set tCRJson = tResponse.Json
+        Set tDisposition = tCRJson.disposition
+
+        // If report is already complete, return it
+        If tDisposition [ "Adjudication Report" {
+            Write {"status": "complete", "disposition": (tDisposition)}.%ToJSON()
+            Quit
+        }
+
+        Set tPatientRef = tCRJson.patient.reference
+        Set tPatientId = $Piece(tPatientRef, "/", 2)
+        Set tRequestRef = tCRJson.request.reference
+        Set tClaimId = $Piece(tRequestRef, "/", 2)
+        Set tLastModified = tCRJson.meta.lastUpdated
+        Set tSubmittedAt = tLastModified
+        Set tProviderId = "claimaudit-prov"
+        Set tBilledAmount = 0.0
+
+        Set tCptCode = "Unknown"
+        Set tCptCodesJSON = ""
+
+        If $IsObject(tCRJson.extension) {
+            Set tExtIter = tCRJson.extension.%GetIterator()
+            While tExtIter.%GetNext(.tK, .tExt) {
+                If tExt.url = "https://claimauditai.com/fhir/extension/cpt-codes" {
+                    Set tCptCodesJSON = tExt.valueString
+                }
+                If tExt.url = "https://claimauditai.com/fhir/extension/cpt-code" {
+                    Set tCptCode = tExt.valueString
+                }
+                If tExt.url = "https://claimauditai.com/fhir/extension/provider-npi" {
+                    Set tProviderId = tExt.valueString
+                }
+            }
+        }
+
+        If tClaimId '= "" {
+            Try {
+                Set tReqClaim = ##class(HS.FHIRServer.API.Data.Request).%New()
+                Set tReqClaim.RequestMethod = "GET"
+                Set tReqClaim.RequestPath = "/Claim/" _ tClaimId
+                Set tReqClaim.Interaction = "read"
+                Set tRespClaim = ##class(HS.FHIRServer.API.Data.Response).%New()
+                Do tService.DispatchRequest(tReqClaim, .tRespClaim)
+                If $IsObject(tRespClaim.Json) {
+                    Set tClaimJson = tRespClaim.Json
+                    If tClaimJson.created '= "" Set tSubmittedAt = tClaimJson.created
+                    If $IsObject(tClaimJson.total) Set tBilledAmount = +tClaimJson.total.value
+                    If (tCptCode = "Unknown") && $IsObject(tClaimJson.item) && (tClaimJson.item.%Size() > 0) {
+                        Set tItem = tClaimJson.item.%Get(0)
+                        If $IsObject(tItem.productOrService) && $IsObject(tItem.productOrService.coding) {
+                            Set tCoding = tItem.productOrService.coding.%Get(0)
+                            If tCoding '= "" {
+                                Set tCptCode = tCoding.display
+                                If tCptCode = "" Set tCptCode = tCoding.code
+                            }
+                        }
+                    }
+                    If (tProviderId = "claimaudit-prov") && $IsObject(tClaimJson.provider) {
+                        Set tProvRef = tClaimJson.provider.reference
+                        Set tProviderId = $Piece(tProvRef, "/", 2)
+                    }
+                }
+            } Catch {}
+        }
+
+        If (tBilledAmount = 0.0) && $IsObject(tCRJson.total) && (tCRJson.total.%Size() > 0) {
+            Set tTotalItem = tCRJson.total.%Get(0)
+            If $IsObject(tTotalItem.amount) {
+                Set tBilledAmount = +tTotalItem.amount.value
+            }
+        }
+
+        Set tReasons = ##class(%DynamicArray).%New()
+        Set tReasonPart = $Piece(tDisposition, "Payment Integrity Adjudication HOLD Notification. ", 2)
+        If tReasonPart = "" Set tReasonPart = tDisposition
+        For tJ = 1:1:$Length(tReasonPart, " | ") {
+            Set tReason = $Piece(tReasonPart, " | ", tJ)
+            If tReason '= "" Do tReasons.%Push(tReason)
+        }
+        If tReasons.%Size() = 0 Do tReasons.%Push("High anomaly threat index")
+
+        Set tCodeCount = 1
+        If tCptCodesJSON '= "" {
+            Try {
+                Set tCptArr = ##class(%DynamicArray).%FromJSON(tCptCodesJSON)
+                Set tCodeCount = tCptArr.%Size()
+            } Catch {}
+        }
+
+        Set tLLMSummary = ##class(ClaimAudit.AI.Agent).GenerateHoldSummary(tPatientId, tProviderId, tBilledAmount, tCodeCount, tSubmittedAt, tCptCode, tReasons)
+        If tLLMSummary '= "" {
+            Set tDisposition = tLLMSummary
+            Do tCRJson.%Set("disposition", tDisposition)
+            
+            // Parse and write back tier-results extension
+            Set tTierResultsJSON = ""
+            Try {
+                Do ##class(ClaimAudit.AI.Engine).ConfigurePythonPath()
+                Set tLLM = ##class(%SYS.Python).Import("llm_router")
+                Set tTierResultsJSON = tLLM.parse_disposition(tDisposition)
+            } Catch {}
+
+            Set tHasExplanation = 0
+            Set tHasTierResults = 0
+            Set tNewExtensions = ##class(%DynamicArray).%New()
+            If $IsObject(tCRJson.extension) {
+                Set tExtIter = tCRJson.extension.%GetIterator()
+                While tExtIter.%GetNext(.tK, .tExt) {
+                    If tExt.url = "https://claimauditai.com/fhir/extension/explanation" {
+                        Do tExt.%Set("valueString", tDisposition)
+                        Set tHasExplanation = 1
+                    }
+                    If tExt.url = "https://claimauditai.com/fhir/extension/tier-results" {
+                        If tTierResultsJSON '= "" {
+                            Do tExt.%Set("valueString", tTierResultsJSON)
+                            Set tHasTierResults = 1
+                        } Else {
+                            Continue
+                        }
+                    }
+                    Do tNewExtensions.%Push(tExt)
+                }
+            }
+            If 'tHasExplanation {
+                Do tNewExtensions.%Push({
+                    "url": "https://claimauditai.com/fhir/extension/explanation",
+                    "valueString": (tDisposition)
+                })
+            }
+            If 'tHasTierResults && (tTierResultsJSON '= "") {
+                Do tNewExtensions.%Push({
+                    "url": "https://claimauditai.com/fhir/extension/tier-results",
+                    "valueString": (tTierResultsJSON)
+                })
+            }
+            Set tCRJson.extension = tNewExtensions
+
+            Set tUpdateReq = ##class(HS.FHIRServer.API.Data.Request).%New()
+            Set tUpdateReq.RequestMethod = "PUT"
+            Set tUpdateReq.RequestPath = "/ClaimResponse/" _ id
+            Set tUpdateReq.Interaction = "update"
+            Set tUpdateReq.Json = tCRJson
+            Set tUpdateResp = ##class(HS.FHIRServer.API.Data.Response).%New()
+            Do tService.DispatchRequest(tUpdateReq, .tUpdateResp)
+        }
+
+        Write {"status": "complete", "disposition": (tDisposition)}.%ToJSON()
     } Catch ex {
         Set tSC = ex.AsStatus()
         Write {"error": (ex.DisplayString())}.%ToJSON()
@@ -2490,46 +2782,56 @@ ClassMethod BackfillTierResults() As %Status
                 }
                 
                 // Build tierResults from score and disposition
-                Set tTierArr = ##class(%DynamicArray).%New()
-                Set tT1Flags = ##class(%DynamicArray).%New()
-                Set tT1Summary = "Clinical SOAP notes match the procedural description."
-                Set tT1Score = 0.0
-                If tDisposition [ "Tier 1" {
-                    Set tT1M = $Piece($Piece(tDisposition, "Tier 1", 2), "|", 1)
-                    If tT1M '= "" {
-                        Set tT1M = $ZSTRIP(tT1M, "<>W")
-                        Do tT1Flags.%Push(tT1M)
-                        Set tT1Summary = tT1M
-                        Set tT1Score = 0.35
-                    }
-                }
-                Do tTierArr.%Push({"tier": 1, "label": "Semantic Clinical Audit", "score": (tT1Score), "flags": (tT1Flags), "summary": (tT1Summary)})
+                Set tTierArr = ""
+                Try {
+                    Do ##class(ClaimAudit.AI.Engine).ConfigurePythonPath()
+                    Set tLLM = ##class(%SYS.Python).Import("llm_router")
+                    Set tParsedJSON = tLLM.parse_disposition(tDisposition)
+                    Set tTierArr = ##class(%DynamicArray).%FromJSON(tParsedJSON)
+                } Catch {}
                 
-                Set tT2Flags = ##class(%DynamicArray).%New()
-                Set tT2Summary = "Claim billing features are within normal statistical bounds."
-                Set tT2Score = 0.0
-                If tDisposition [ "Tier 2" {
-                    Set tT2M = $Piece($Piece(tDisposition, "Tier 2", 2), "|", 1)
-                    If tT2M '= "" {
-                        Set tT2M = $ZSTRIP(tT2M, "<>W")
-                        Do tT2Flags.%Push(tT2M)
-                        Set tT2Summary = tT2M
-                        Set tT2Score = 0.35
+                If ('$IsObject(tTierArr)) || (tTierArr.%Size() = 0) {
+                    Set tTierArr = ##class(%DynamicArray).%New()
+                    Set tT1Flags = ##class(%DynamicArray).%New()
+                    Set tT1Summary = "Clinical SOAP notes match the procedural description."
+                    Set tT1Score = 0.0
+                    If tDisposition [ "Tier 1" {
+                        Set tT1M = $Piece($Piece(tDisposition, "Tier 1", 2), "|", 1)
+                        If tT1M '= "" {
+                            Set tT1M = $ZSTRIP(tT1M, "<>W")
+                            Do tT1Flags.%Push(tT1M)
+                            Set tT1Summary = tT1M
+                            Set tT1Score = 0.35
+                        }
                     }
-                }
-                Do tTierArr.%Push({"tier": 2, "label": "Statistical Outlier Profiler", "score": (tT2Score), "threshold": 0, "flags": (tT2Flags), "summary": (tT2Summary)})
-                
-                Set tT3Flags = ##class(%DynamicArray).%New()
-                Set tT3Summary = "Referral loop scan complete. Patient-provider relational topology is clean, geodetic limits matched."
-                If tDisposition [ "Tier 3" {
-                    Set tT3M = $Piece($Piece(tDisposition, "Tier 3", 2), "|", 1)
-                    If tT3M '= "" {
-                        Set tT3M = $ZSTRIP(tT3M, "<>W")
-                        Do tT3Flags.%Push(tT3M)
-                        Set tT3Summary = tT3M
+                    Do tTierArr.%Push({"tier": 1, "label": "Semantic Clinical Audit", "score": (tT1Score), "flags": (tT1Flags), "summary": (tT1Summary)})
+                    
+                    Set tT2Flags = ##class(%DynamicArray).%New()
+                    Set tT2Summary = "Claim billing features are within normal statistical bounds."
+                    Set tT2Score = 0.0
+                    If tDisposition [ "Tier 2" {
+                        Set tT2M = $Piece($Piece(tDisposition, "Tier 2", 2), "|", 1)
+                        If tT2M '= "" {
+                            Set tT2M = $ZSTRIP(tT2M, "<>W")
+                            Do tT2Flags.%Push(tT2M)
+                            Set tT2Summary = tT2M
+                            Set tT2Score = 0.35
+                        }
                     }
+                    Do tTierArr.%Push({"tier": 2, "label": "Statistical Outlier Profiler", "score": (tT2Score), "threshold": 0, "flags": (tT2Flags), "summary": (tT2Summary)})
+                    
+                    Set tT3Flags = ##class(%DynamicArray).%New()
+                    Set tT3Summary = "Referral loop scan complete. Patient-provider relational topology is clean, geodetic limits matched."
+                    If tDisposition [ "Tier 3" {
+                        Set tT3M = $Piece($Piece(tDisposition, "Tier 3", 2), "|", 1)
+                        If tT3M '= "" {
+                            Set tT3M = $ZSTRIP(tT3M, "<>W")
+                            Do tT3Flags.%Push(tT3M)
+                            Set tT3Summary = tT3M
+                        }
+                    }
+                    Do tTierArr.%Push({"tier": 3, "label": "Collusion Network Analysis", "score": 0.0, "flags": (tT3Flags), "summary": (tT3Summary)})
                 }
-                Do tTierArr.%Push({"tier": 3, "label": "Collusion Network Analysis", "score": 0.0, "flags": (tT3Flags), "summary": (tT3Summary)})
                 
                 // Add tier-results extension
                 If '$IsObject(tCRJson.extension) Set tCRJson.extension = []

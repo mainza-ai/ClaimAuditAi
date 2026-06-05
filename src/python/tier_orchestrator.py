@@ -66,37 +66,91 @@ def _run_tier(tier_num: int, args: tuple, kwargs: dict) -> dict:
             "findings": [],
         }
 
-def run_all_tiers(patient_id: str, provider_npi: str, first_code_desc: str,
-                  billed_amount: float, code_count: int,
-                  specialty_code: float, patient_age: float, duration_days: float,
-                  service_date: str) -> dict:
+def run_all_tiers(patient_id: str, provider_npi: str, cpt_codes, cpt_displays=None, icd_codes=None,
+                  billed_amount: float = 0.0, code_count: int = 1,
+                  specialty_code: float = 1.0, patient_age: float = 45.0, duration_days: float = 1.0,
+                  service_date: str = None) -> dict:
     """Execute all three audit tiers sequentially to ensure safety in InterSystems IRIS Embedded Python."""
     results = {}
 
-    # Run Tier 1: NLP
-    if first_code_desc:
+    # Handle backward compatibility / old signature
+    if isinstance(cpt_codes, str):
+        first_code_desc = cpt_codes
+        cpt_codes = [first_code_desc]
+        cpt_displays = [first_code_desc]
+    if icd_codes is None:
+        icd_codes = []
+    if cpt_displays is None:
+        cpt_displays = cpt_codes
+
+    # Run Tier 1: NLP Clinical Document Alignment
+    nlp_flagged = False
+    nlp_reason = ""
+    nlp_similarity = 1.0
+    
+    if cpt_displays:
         start_time = time.time()
         try:
-            results["tier1"] = _run_tier(1, (patient_id, first_code_desc), {})
+            nlp_res = _run_tier(1, (patient_id, cpt_displays), {"service_date": service_date})
+            nlp_flagged = nlp_res.get("flagged", False)
+            nlp_reason = nlp_res.get("reason", "")
+            nlp_similarity = nlp_res.get("similarity", 1.0)
+            
             elapsed = time.time() - start_time
             if elapsed > TIER_CONFIG[1]["timeout"]:
-                results["tier1"] = {"flagged": True, "reason": "Tier 1 NLP audit timed out. Manual review required.", "similarity": 0.0}
+                nlp_flagged = True
+                nlp_reason = "Tier 1 NLP clinical audit timed out. Manual review required."
+                nlp_similarity = 0.0
         except Exception as e:
-            results["tier1"] = {"flagged": True, "reason": f"Tier 1 NLP audit failed: {str(e)}. Manual review required.", "similarity": 0.0}
+            nlp_flagged = True
+            nlp_reason = f"Tier 1 NLP clinical audit failed: {str(e)}. Manual review required."
+            nlp_similarity = 0.0
     else:
-        results["tier1"] = {"flagged": False, "reason": "No code description provided", "similarity": 0.0}
+        nlp_reason = "No CPT procedure codes provided."
 
-    # Run Tier 2: Autoencoder
+    # Run Deterministic Diagnosis-to-Procedure (ICD-to-CPT) Clinical Edits
+    dx_cpt_flagged = False
+    dx_cpt_findings = []
+    
+    try:
+        import dx_procedure_validator
+        for cpt in cpt_codes:
+            for icd in icd_codes:
+                res = dx_procedure_validator.validate_diagnosis_procedure(icd, cpt)
+                if res.get("flagged", False):
+                    dx_cpt_flagged = True
+                    dx_cpt_findings.append(res.get("reason", ""))
+    except Exception as e:
+        sys.stderr.write(f"Error in diagnosis-to-procedure validation: {str(e)}\n")
+        dx_cpt_flagged = True
+        dx_cpt_findings.append(f"Diagnostic-procedure validator failed: {str(e)}")
+
+    # Merge diagnostic-procedure mismatch findings with NLP findings under Tier 1
+    if dx_cpt_flagged:
+        nlp_flagged = True
+        dx_reason = " | ".join(dx_cpt_findings)
+        if nlp_reason:
+            nlp_reason = f"{nlp_reason} | {dx_reason}"
+        else:
+            nlp_reason = dx_reason
+
+    results["tier1"] = {
+        "flagged": nlp_flagged,
+        "reason": nlp_reason,
+        "similarity": nlp_similarity
+    }
+
+    # Run Tier 2: Autoencoder Outlier Profiler
     start_time = time.time()
     try:
         results["tier2"] = _run_tier(2, (billed_amount, float(code_count), specialty_code, patient_age, duration_days), {})
         elapsed = time.time() - start_time
         if elapsed > TIER_CONFIG[2]["timeout"]:
-            results["tier2"] = {"flagged": True, "reason": "Tier 2 autoencoder audit timed out. Manual review required.", "loss": 0.0, "threshold": 0.1}
+            results["tier2"] = {"flagged": True, "reason": "Tier 2 autoencoder audit timed out. Manual review required.", "loss": 0.0, "threshold": 0.02}
     except Exception as e:
-        results["tier2"] = {"flagged": True, "reason": f"Tier 2 autoencoder audit failed: {str(e)}. Manual review required.", "loss": 0.0, "threshold": 0.1}
+        results["tier2"] = {"flagged": True, "reason": f"Tier 2 autoencoder audit failed: {str(e)}. Manual review required.", "loss": 0.0, "threshold": 0.02}
 
-    # Run Tier 3: Graph
+    # Run Tier 3: Graph Collusion Analysis
     start_time = time.time()
     try:
         results["tier3"] = _run_tier(3, (patient_id, provider_npi, service_date), {})
