@@ -7,10 +7,11 @@ export function parseDisposition(disposition: string): {
 } {
   const tierResults: AuditTierResult[] = [];
 
-  // Extract Tier 1
+  // Extract Tier 1 — try LLM markdown format first, then basic HOLD format
   const t1Match =
     disposition.match(/###\s*(?:Tier\s*1|\[NLP\])[^\n]*\n([\s\S]*?)(?=###|$|##)/i) ||
-    disposition.match(/-\s*(?:Tier\s*1|NLP)[^\n]*\n([\s\S]*?)(?=-|$|#)/i);
+    disposition.match(/-\s*(?:Tier\s*1|NLP)[^\n]*\n([\s\S]*?)(?=-|$|#)/i) ||
+    disposition.match(/Tier\s*1\s*\((?:NLP)\):\s*([^|\n]+)/i);
   if (t1Match) {
     const body = t1Match[1] || t1Match[0];
     const simMatch = body.match(/Similarity[:\s]+([\d.]+)/i);
@@ -24,10 +25,11 @@ export function parseDisposition(disposition: string): {
     });
   }
 
-  // Extract Tier 2
+  // Extract Tier 2 — try LLM markdown format first, then basic HOLD format
   const t2Match =
     disposition.match(/###\s*(?:Tier\s*2|\[Adjudication\]|\[ML\])[^\n]*\n([\s\S]*?)(?=###|$|##)/i) ||
-    disposition.match(/-\s*(?:Tier\s*2|Adjudication|ML)[^\n]*\n([\s\S]*?)(?=-|$|#)/i);
+    disposition.match(/-\s*(?:Tier\s*2|Adjudication|ML)[^\n]*\n([\s\S]*?)(?=-|$|#)/i) ||
+    disposition.match(/Tier\s*2\s*\((?:ML)\):\s*([^|\n]+)/i);
   if (t2Match) {
     const body = t2Match[1] || t2Match[0];
     const lossMatch = body.match(/Loss[:\s]+([\d.]+)/i) || body.match(/loss[:\s]+([\d.]+)/i);
@@ -44,10 +46,11 @@ export function parseDisposition(disposition: string): {
     });
   }
 
-  // Extract Tier 3
+  // Extract Tier 3 — try LLM markdown format first, then basic HOLD format
   const t3Match =
     disposition.match(/###\s*(?:Tier\s*3|\[Graph\]|\[Collusion\])[^\n]*\n([\s\S]*?)(?=###|$|##)/i) ||
-    disposition.match(/-\s*(?:Tier\s*3|Graph|Collusion)[^\n]*\n([\s\S]*?)(?=-|$|#)/i);
+    disposition.match(/-\s*(?:Tier\s*3|Graph|Collusion)[^\n]*\n([\s\S]*?)(?=-|$|#)/i) ||
+    disposition.match(/Tier\s*3\s*\((?:Graph)\):\s*([^|\n]+)/i);
   if (t3Match) {
     const body = t3Match[1] || t3Match[0];
     tierResults.push({

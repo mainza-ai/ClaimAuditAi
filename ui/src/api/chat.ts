@@ -48,7 +48,18 @@ export async function* streamChatMessage(
       if (line.startsWith('data: ')) {
         const data = line.slice(6).trim();
         if (data === '[DONE]') return;
-        if (data) yield data;
+        if (data) {
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed && typeof parsed === 'object' && 'chunk' in parsed) {
+              yield parsed.chunk;
+            } else {
+              yield data;
+            }
+          } catch {
+            yield data;
+          }
+        }
       }
     }
   }

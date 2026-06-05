@@ -6,9 +6,9 @@ from concurrent import futures
 
 # Engine tier registry — maps tier name to (module, function, timeout_seconds)
 TIER_CONFIG = {
-    1: {"name": "nlp", "module": "nlp_auditor", "function": "verify_clinical_validity", "timeout": 30},
-    2: {"name": "autoencoder", "module": "autoencoder_train", "function": "evaluate_claim_anomaly", "timeout": 15},
-    3: {"name": "graph", "module": "graph_analyzer", "function": "check_collusion_network", "timeout": 20},
+    1: {"name": "nlp", "module": "nlp_auditor", "function": "verify_clinical_validity", "timeout": 180},
+    2: {"name": "autoencoder", "module": "autoencoder_train", "function": "evaluate_claim_anomaly", "timeout": 120},
+    3: {"name": "graph", "module": "graph_analyzer", "function": "check_collusion_network", "timeout": 120},
 }
 
 # Circuit breaker state — tracked per module

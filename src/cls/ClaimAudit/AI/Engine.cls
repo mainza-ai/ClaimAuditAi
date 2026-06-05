@@ -139,7 +139,8 @@ ClassMethod AuditClaim(pClaimJson As %DynamicObject, Output pResult As %DynamicO
     Set pResult = {
         "flagged": 0,
         "score": 0.0,
-        "reasons": []
+        "reasons": [],
+        "tierResults": []
     }
     Try {
         Do ..ConfigurePythonPath()
@@ -246,6 +247,71 @@ ClassMethod AuditClaim(pClaimJson As %DynamicObject, Output pResult As %DynamicO
         Set score = 0.0
         Set flaggedCount = 0
         
+        Set tTierArr = ##class(%DynamicArray).%New()
+        
+        // Tier 1
+        Set tObj1 = {
+            "tier": 1,
+            "label": "Semantic Clinical Audit",
+            "score": (t1Sim),
+            "flags": []
+        }
+        If t1Reason '= "" {
+            Do tObj1.flags.%Push(t1Reason)
+            Set tObj1.summary = t1Reason
+        } Else {
+            Set tObj1.summary = "Clinical SOAP notes match the procedural description."
+        }
+        Do tTierArr.%Push(tObj1)
+
+        // Tier 2
+        Set tThresh = 0.02
+        If $IsObject(tDict2) {
+            Set tThresh = +tDict2."get"("threshold", 0.02)
+        }
+        Set tObj2 = {
+            "tier": 2,
+            "label": "Statistical Outlier Profiler",
+            "score": (t2Loss),
+            "threshold": (tThresh),
+            "flags": []
+        }
+        If t2Reason '= "" {
+            Do tObj2.flags.%Push(t2Reason)
+            Set tObj2.summary = t2Reason
+        } Else {
+            Set tObj2.summary = "Claim billing features are within normal statistical bounds."
+        }
+        Do tTierArr.%Push(tObj2)
+
+        // Tier 3
+        Set tObj3 = {
+            "tier": 3,
+            "label": "Collusion Network Analysis",
+            "score": 0.0,
+            "flags": []
+        }
+        If $IsObject(tDict3) {
+            Set tFindings = tDict3."get"("findings")
+            If $IsObject(tFindings) {
+                Set jsonLib = ##class(%SYS.Python).Import("json")
+                Set tFindingsArr = ##class(%DynamicArray).%FromJSON(jsonLib.dumps(tFindings))
+                Set tFindIter = tFindingsArr.%GetIterator()
+                While tFindIter.%GetNext(.tFK, .tFV) {
+                    Do tObj3.flags.%Push(tFV)
+                }
+            }
+        }
+        If t3Reason '= "" {
+            If tObj3.flags.%Size() = 0 Do tObj3.flags.%Push(t3Reason)
+            Set tObj3.summary = t3Reason
+        } Else {
+            Set tObj3.summary = "Referral loop scan complete. Patient-provider relational topology is clean, geodetic limits matched."
+        }
+        Do tTierArr.%Push(tObj3)
+
+        Set pResult.tierResults = tTierArr
+
         If t1Flagged {
             Set score = score + 0.35
             Set flaggedCount = flaggedCount + 1
@@ -301,6 +367,17 @@ ClassMethod AuditClaim(pClaimJson As %DynamicObject, Output pResult As %DynamicO
         Do pResult.reasons.%Push("Adjudication engine failure: " _ ex.DisplayString() _ ". Claim requires manual review.")
         Set pResult.score = 0.35
         Set pResult.flagged = 1
+        // Populate fallback tierResults so the FHIR extension is always stored
+        Set pResult.tierResults = ##class(%DynamicArray).%New()
+        Do pResult.tierResults.%Push({
+            "tier": 1, "label": "Semantic Clinical Audit", "score": 0.0, "flags": [], "summary": ("Engine error: " _ ex.DisplayString())
+        })
+        Do pResult.tierResults.%Push({
+            "tier": 2, "label": "Statistical Outlier Profiler", "score": 0.0, "threshold": 0, "flags": [], "summary": ("Engine error: " _ ex.DisplayString())
+        })
+        Do pResult.tierResults.%Push({
+            "tier": 3, "label": "Collusion Network Analysis", "score": 0.0, "flags": [], "summary": ("Engine error: " _ ex.DisplayString())
+        })
     }
     Quit sc
 }

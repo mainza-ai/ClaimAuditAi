@@ -136,7 +136,7 @@ def chat(system_prompt: str, messages_json: str, max_tokens: int = 1024, timeout
 
     # Determine timeout and retry count dynamically from settings
     if timeout is None:
-        timeout = float(settings.get("timeout", 60.0))
+        timeout = float(settings.get("timeout", 300.0))
     retry_count = int(settings.get("retryCount", 3))
 
     last_error = None
@@ -194,7 +194,7 @@ def invalidate_client_cache():
 def generate(prompt: str, max_tokens: int = 2048) -> str:
     settings = _load_settings()
     # Default to a lower timeout for inline claims processing to avoid blocking FHIR transaction loops
-    audit_timeout = float(settings.get("auditTimeout", 60.0))
+    audit_timeout = float(settings.get("auditTimeout", 300.0))
     return chat(
         system_prompt="You are a healthcare payment integrity AI. Generate precise, structured, clinically accurate audit reports in markdown format. Always include sections for Tier 1, Tier 2, Tier 3 findings, and a final Risk Score summary.",
         messages_json=json.dumps([{"role": "user", "content": prompt}]),
@@ -214,7 +214,7 @@ def chat_stream(system_prompt: str, messages_json: str, max_tokens: int = 1024, 
 
     settings = _load_settings()
     if timeout is None:
-        timeout = float(settings.get("timeout", 60.0))
+        timeout = float(settings.get("timeout", 300.0))
 
     client, model = _get_client_and_model()
     try:

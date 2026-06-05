@@ -47,7 +47,16 @@ export function ClaimDetail() {
     enabled: !!id,
   });
 
-  const claim = rawClaim ? { ...parseDisposition(rawClaim.disposition), ...rawClaim } : null;
+  const claim = rawClaim
+    ? {
+        ...parseDisposition(rawClaim.disposition),
+        ...rawClaim,
+        tierResults:
+          rawClaim.tierResults && rawClaim.tierResults.length > 0
+            ? rawClaim.tierResults
+            : parseDisposition(rawClaim.disposition).tierResults,
+      }
+    : null;
 
   const handleCopyDisputeNotice = () => {
     if (!claim) return;

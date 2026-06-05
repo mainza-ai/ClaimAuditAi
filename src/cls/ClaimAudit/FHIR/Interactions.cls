@@ -62,6 +62,9 @@ Method AuditSingleClaim(pClaimJson As %DynamicObject, pIndex As %String = "singl
         Set ^||ClaimAuditFlag(pIndex, "patientId") = tAuditResult.patientId
         Set ^||ClaimAuditFlag(pIndex, "providerNpi") = tAuditResult.providerNpi
         Set ^||ClaimAuditFlag(pIndex, "billedAmount") = tAuditResult.billedAmount
+        If $IsObject(tAuditResult.tierResults) {
+            Set ^||ClaimAuditFlag(pIndex, "tierResults") = tAuditResult.tierResults.%ToJSON()
+        }
 
         If $IsObject(pClaimJson.patient) {
             Set ^||ClaimAuditFlag(pIndex, "patient") = pClaimJson.patient.%ToJSON()
@@ -283,6 +286,10 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
             If tProviderNpi '= "" {
                 Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/provider-npi", "valueString": (tProviderNpi)})
             }
+            Set tTierResultsJSON = $Get(^||ClaimAuditFlag("single", "tierResults"))
+            If tTierResultsJSON '= "" {
+                Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/tier-results", "valueString": (tTierResultsJSON)})
+            }
             Set claimResponse.extension = tExtensions
 
             Set crEntry = {
@@ -501,6 +508,10 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
                         }
                         If tProviderNpi '= "" {
                             Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/provider-npi", "valueString": (tProviderNpi)})
+                        }
+                        Set tTierResultsJSON = $Get(^||ClaimAuditFlag(tKey, "tierResults"))
+                        If tTierResultsJSON '= "" {
+                            Do tExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/tier-results", "valueString": (tTierResultsJSON)})
                         }
                         Set claimResponse.extension = tExtensions
                         
