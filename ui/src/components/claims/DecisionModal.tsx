@@ -52,7 +52,9 @@ export function DecisionModal({ claimId, action, onConfirm, onCancel }: Decision
   useEffect(() => {
     textareaRef.current?.focus();
     document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = ''; };
+    return () => {
+      document.body.style.overflow = '';
+    };
   }, []);
 
   useEffect(() => {
@@ -60,7 +62,7 @@ export function DecisionModal({ claimId, action, onConfirm, onCancel }: Decision
       if (e.key === 'Escape') onCancel();
       if (e.key === 'Tab' && modalRef.current) {
         const focusable = modalRef.current.querySelectorAll<HTMLElement>(
-          'button, textarea, input, select, [tabindex]:not([tabindex="-1"])'
+          'button, textarea, input, select, [tabindex]:not([tabindex="-1"])',
         );
         const first = focusable[0];
         const last = focusable[focusable.length - 1];
@@ -85,6 +87,7 @@ export function DecisionModal({ claimId, action, onConfirm, onCancel }: Decision
       return rejectClaim(claimId, body);
     },
     onSuccess: onConfirm,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     onError: (err: any) => {
       setSubmitError(err?.response?.data?.error || err?.message || 'Submission failed');
     },
@@ -123,7 +126,9 @@ export function DecisionModal({ claimId, action, onConfirm, onCancel }: Decision
         justifyContent: 'center',
         zIndex: 100,
       }}
-      onClick={(e) => { if (e.target === e.currentTarget) onCancel(); }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onCancel();
+      }}
     >
       <div
         role="document"
@@ -131,9 +136,7 @@ export function DecisionModal({ claimId, action, onConfirm, onCancel }: Decision
         style={{ width: 540, maxWidth: '90vw', padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: 'var(--text-primary)' }}>
-            {config.title}
-          </h2>
+          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: 'var(--text-primary)' }}>{config.title}</h2>
           <button
             onClick={onCancel}
             style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)' }}
@@ -145,9 +148,7 @@ export function DecisionModal({ claimId, action, onConfirm, onCancel }: Decision
 
         <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
           Action performed by:{' '}
-          <strong style={{ color: 'var(--text-primary)' }}>
-            {authorizedBy || 'Unknown user'}
-          </strong>
+          <strong style={{ color: 'var(--text-primary)' }}>{authorizedBy || 'Unknown user'}</strong>
         </div>
 
         <div>
@@ -161,7 +162,11 @@ export function DecisionModal({ claimId, action, onConfirm, onCancel }: Decision
             id="decision-rationale"
             ref={textareaRef}
             value={rawReason}
-            onChange={e => { setRawReason(e.target.value); setSummaryReady(false); setAiSummary(''); }}
+            onChange={(e) => {
+              setRawReason(e.target.value);
+              setSummaryReady(false);
+              setAiSummary('');
+            }}
             placeholder={config.placeholder}
             rows={4}
             style={{
@@ -215,13 +220,21 @@ export function DecisionModal({ claimId, action, onConfirm, onCancel }: Decision
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
               <CheckCircle size={14} color="var(--color-success)" />
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: 'var(--text-tertiary)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                }}
+              >
                 AI-Generated Rationale (Audit Ledger Entry)
               </span>
             </div>
             <textarea
               value={aiSummary}
-              onChange={e => setAiSummary(e.target.value)}
+              onChange={(e) => setAiSummary(e.target.value)}
               rows={3}
               aria-label="AI-generated rationale"
               style={{
@@ -243,13 +256,23 @@ export function DecisionModal({ claimId, action, onConfirm, onCancel }: Decision
         )}
 
         {submitError && (
-          <div role="alert" style={{ padding: 10, borderRadius: 6, backgroundColor: 'var(--color-danger-bg)', border: '1px solid var(--color-danger-border)' }}>
+          <div
+            role="alert"
+            style={{
+              padding: 10,
+              borderRadius: 6,
+              backgroundColor: 'var(--color-danger-bg)',
+              border: '1px solid var(--color-danger-border)',
+            }}
+          >
             <p style={{ margin: 0, fontSize: 13, color: 'var(--color-danger)' }}>{submitError}</p>
           </div>
         )}
 
         <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
-          <button onClick={onCancel} className="btn-ghost">Cancel</button>
+          <button onClick={onCancel} className="btn-ghost">
+            Cancel
+          </button>
           <button
             onClick={() => submit.mutate()}
             disabled={submit.isPending || !rawReason.trim()}

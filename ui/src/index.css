@@ -3,105 +3,105 @@
 @tailwind utilities;
 
 :root {
-  --bg-page:          #F5F7F9;
-  --bg-card:          #FFFFFF;
-  --bg-sidebar:       #FFFFFF;
-  --bg-topbar:        #FFFFFF;
-  --bg-input:         #FFFFFF;
-  --bg-hover:         #F0F4F8;
-  --bg-active-nav:    #EBF4FF;
+  --bg-page: #f5f7f9;
+  --bg-card: #ffffff;
+  --bg-sidebar: #ffffff;
+  --bg-topbar: #ffffff;
+  --bg-input: #ffffff;
+  --bg-hover: #f0f4f8;
+  --bg-active-nav: #ebf4ff;
 
-  --border-default:   #E3E8EE;
-  --border-strong:    #CBD5E1;
-  --border-focus:     #0067B8;
+  --border-default: #e3e8ee;
+  --border-strong: #cbd5e1;
+  --border-focus: #0067b8;
 
-  --text-primary:     #1A1A1A;
-  --text-secondary:   #5A6472;
-  --text-tertiary:    #64748B;
-  --text-inverse:     #FFFFFF;
-  --text-link:        #0067B8;
+  --text-primary: #1a1a1a;
+  --text-secondary: #5a6472;
+  --text-tertiary: #64748b;
+  --text-inverse: #ffffff;
+  --text-link: #0067b8;
 
-  --accent-primary:   #0067B8;
-  --accent-hover:     #0057A0;
-  --accent-subtle:    #EBF4FF;
-  --accent-text:      #0067B8;
+  --accent-primary: #0067b8;
+  --accent-hover: #0057a0;
+  --accent-subtle: #ebf4ff;
+  --accent-text: #0067b8;
 
-  --color-danger:     #C0392B;
-  --color-danger-bg:  #FEF2F2;
-  --color-danger-border: #FCA5A5;
-  --color-warning:    #D4711B;
-  --color-warning-bg: #FFF7ED;
-  --color-warning-border: #FCD34D;
-  --color-success:    #1B7A3E;
-  --color-success-bg: #F0FDF4;
-  --color-success-border: #86EFAC;
+  --color-danger: #c0392b;
+  --color-danger-bg: #fef2f2;
+  --color-danger-border: #fca5a5;
+  --color-warning: #d4711b;
+  --color-warning-bg: #fff7ed;
+  --color-warning-border: #fcd34d;
+  --color-success: #1b7a3e;
+  --color-success-bg: #f0fdf4;
+  --color-success-border: #86efac;
 
-  --tier1-color:      #0067B8;
-  --tier1-bg:         #EBF4FF;
-  --tier1-border:     #BFDBFE;
-  --tier2-color:      #D4711B;
-  --tier2-bg:         #FFF7ED;
-  --tier2-border:     #FED7AA;
-  --tier3-color:      #C0392B;
-  --tier3-bg:         #FEF2F2;
-  --tier3-border:     #FCA5A5;
+  --tier1-color: #0067b8;
+  --tier1-bg: #ebf4ff;
+  --tier1-border: #bfdbfe;
+  --tier2-color: #d4711b;
+  --tier2-bg: #fff7ed;
+  --tier2-border: #fed7aa;
+  --tier3-color: #c0392b;
+  --tier3-bg: #fef2f2;
+  --tier3-border: #fca5a5;
 
-  --shadow-card:      0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-  --shadow-modal:     0 10px 25px rgba(0,0,0,0.10);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-modal: 0 10px 25px rgba(0, 0, 0, 0.1);
 
-  --font-body:        'DM Sans', system-ui, -apple-system, sans-serif;
-  --font-mono:        'JetBrains Mono', 'IBM Plex Mono', monospace;
+  --font-body: 'DM Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'IBM Plex Mono', monospace;
 }
 
 .dark {
-  --bg-page:          #030712;
-  --bg-card:          #111827;
-  --bg-sidebar:       #111827;
-  --bg-topbar:        #111827;
-  --bg-input:         #1F2937;
-  --bg-hover:         #1F2937;
-  --bg-active-nav:    rgba(220,38,38,0.15);
+  --bg-page: #030712;
+  --bg-card: #111827;
+  --bg-sidebar: #111827;
+  --bg-topbar: #111827;
+  --bg-input: #1f2937;
+  --bg-hover: #1f2937;
+  --bg-active-nav: rgba(220, 38, 38, 0.15);
 
-  --border-default:   #1F2937;
-  --border-strong:    #374151;
-  --border-focus:     #3B82F6;
+  --border-default: #1f2937;
+  --border-strong: #374151;
+  --border-focus: #3b82f6;
 
-  --text-primary:     #F3F4F6;
-  --text-secondary:   #9CA3AF;
-  --text-tertiary:    #9CA3AF;
-  --text-inverse:     #111827;
-  --text-link:        #60A5FA;
+  --text-primary: #f3f4f6;
+  --text-secondary: #9ca3af;
+  --text-tertiary: #9ca3af;
+  --text-inverse: #111827;
+  --text-link: #60a5fa;
 
-  --accent-primary:   #DC2626;
-  --accent-hover:     #B91C1C;
-  --accent-subtle:    rgba(220,38,38,0.15);
-  --accent-text:      #F87171;
+  --accent-primary: #dc2626;
+  --accent-hover: #b91c1c;
+  --accent-subtle: rgba(220, 38, 38, 0.15);
+  --accent-text: #f87171;
 
-  --color-danger:     #F87171;
-  --color-danger-bg:  rgba(220,38,38,0.15);
-  --color-danger-border: rgba(220,38,38,0.4);
-  --color-warning:    #FCD34D;
-  --color-warning-bg: rgba(217,119,6,0.15);
-  --color-warning-border: rgba(217,119,6,0.4);
-  --color-success:    #4ADE80;
-  --color-success-bg: rgba(22,163,74,0.15);
-  --color-success-border: rgba(22,163,74,0.4);
+  --color-danger: #f87171;
+  --color-danger-bg: rgba(220, 38, 38, 0.15);
+  --color-danger-border: rgba(220, 38, 38, 0.4);
+  --color-warning: #fcd34d;
+  --color-warning-bg: rgba(217, 119, 6, 0.15);
+  --color-warning-border: rgba(217, 119, 6, 0.4);
+  --color-success: #4ade80;
+  --color-success-bg: rgba(22, 163, 74, 0.15);
+  --color-success-border: rgba(22, 163, 74, 0.4);
 
-  --tier1-color:      #60A5FA;
-  --tier1-bg:         rgba(59,130,246,0.1);
-  --tier1-border:     rgba(59,130,246,0.3);
-  --tier2-color:      #FCD34D;
-  --tier2-bg:         rgba(217,119,6,0.1);
-  --tier2-border:     rgba(217,119,6,0.3);
-  --tier3-color:      #F87171;
-  --tier3-bg:         rgba(220,38,38,0.1);
-  --tier3-border:     rgba(220,38,38,0.3);
+  --tier1-color: #60a5fa;
+  --tier1-bg: rgba(59, 130, 246, 0.1);
+  --tier1-border: rgba(59, 130, 246, 0.3);
+  --tier2-color: #fcd34d;
+  --tier2-bg: rgba(217, 119, 6, 0.1);
+  --tier2-border: rgba(217, 119, 6, 0.3);
+  --tier3-color: #f87171;
+  --tier3-bg: rgba(220, 38, 38, 0.1);
+  --tier3-border: rgba(220, 38, 38, 0.3);
 
-  --shadow-card:      none;
-  --shadow-modal:     0 10px 25px rgba(0,0,0,0.5);
+  --shadow-card: none;
+  --shadow-modal: 0 10px 25px rgba(0, 0, 0, 0.5);
 
-  --font-body:        'JetBrains Mono', 'IBM Plex Mono', monospace;
-  --font-mono:        'JetBrains Mono', 'IBM Plex Mono', monospace;
+  --font-body: 'JetBrains Mono', 'IBM Plex Mono', monospace;
+  --font-mono: 'JetBrains Mono', 'IBM Plex Mono', monospace;
 }
 
 @layer base {
@@ -113,11 +113,18 @@
     background-color: var(--bg-page);
     color: var(--text-primary);
     font-family: var(--font-body);
-    transition: background-color 0.2s ease, color 0.2s ease;
+    transition:
+      background-color 0.2s ease,
+      color 0.2s ease;
   }
 
-  ::-webkit-scrollbar { width: 6px; height: 6px; }
-  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
   ::-webkit-scrollbar-thumb {
     background: var(--border-strong);
     border-radius: 3px;
@@ -127,7 +134,9 @@
   }
 
   @keyframes spin {
-    to { transform: rotate(360deg); }
+    to {
+      transform: rotate(360deg);
+    }
   }
 }
 

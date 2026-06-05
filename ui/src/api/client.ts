@@ -30,7 +30,7 @@ apiClient.interceptors.request.use(
     }
     return config;
   },
-  (error) => Promise.reject(error)
+  (error) => Promise.reject(error),
 );
 
 apiClient.interceptors.response.use(
@@ -53,7 +53,8 @@ apiClient.interceptors.response.use(
       }
     }
     const d = error.response?.data;
-    const msg = d?.error_description || d?.error || (d?.errors && d?.errors[0]?.error) || error.message || 'Network error';
+    const msg =
+      d?.error_description || d?.error || (d?.errors && d?.errors[0]?.error) || error.message || 'Network error';
     return Promise.reject(new Error(msg));
   },
 );

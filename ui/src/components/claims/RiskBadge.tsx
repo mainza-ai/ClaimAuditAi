@@ -1,19 +1,25 @@
 import type { HeldClaim } from '../../types/claim';
 
 const LEVEL_STYLES: Record<string, { color: string; backgroundColor: string; borderColor: string }> = {
-  critical: { color: 'var(--color-danger)', backgroundColor: 'var(--color-danger-bg)', borderColor: 'var(--color-danger-border)' },
-  high:     { color: 'var(--color-warning)', backgroundColor: 'var(--color-warning-bg)', borderColor: 'var(--color-warning-border)' },
-  medium:   { color: 'var(--color-success)', backgroundColor: 'var(--color-success-bg)', borderColor: 'var(--color-success-border)' },
-  low:      { color: 'var(--text-tertiary)', backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-default)' },
+  critical: {
+    color: 'var(--color-danger)',
+    backgroundColor: 'var(--color-danger-bg)',
+    borderColor: 'var(--color-danger-border)',
+  },
+  high: {
+    color: 'var(--color-warning)',
+    backgroundColor: 'var(--color-warning-bg)',
+    borderColor: 'var(--color-warning-border)',
+  },
+  medium: {
+    color: 'var(--color-success)',
+    backgroundColor: 'var(--color-success-bg)',
+    borderColor: 'var(--color-success-border)',
+  },
+  low: { color: 'var(--text-tertiary)', backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-default)' },
 };
 
-export function RiskBadge({
-  level,
-  score,
-}: {
-  level: HeldClaim['riskLevel'] | 'low';
-  score: number;
-}) {
+export function RiskBadge({ level, score }: { level: HeldClaim['riskLevel'] | 'low'; score: number }) {
   const styles = LEVEL_STYLES[level] || LEVEL_STYLES.low;
 
   return (

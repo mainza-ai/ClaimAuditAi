@@ -35,6 +35,7 @@ export const useChatStore = create<ChatState>()(
             },
           }));
         } catch (err) {
+          // eslint-disable-next-line no-console
           console.error('Failed to load chat history:', err);
         } finally {
           set({ isLoading: false });
@@ -53,6 +54,7 @@ export const useChatStore = create<ChatState>()(
         try {
           await saveChatMessage(claimId, message);
         } catch (err) {
+          // eslint-disable-next-line no-console
           console.error('Failed to sync chat message:', err);
         }
       },

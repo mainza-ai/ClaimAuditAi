@@ -1,5 +1,14 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, ShieldAlert, Network, MessageSquare, History, Settings, HardDrive, Users } from 'lucide-react';
+import {
+  LayoutDashboard,
+  ShieldAlert,
+  Network,
+  MessageSquare,
+  History,
+  Settings,
+  HardDrive,
+  Users,
+} from 'lucide-react';
 import { useState } from 'react';
 import { useChatStore } from '../../store/chatStore';
 import { useRoleStore } from '../../store/roleStore';
@@ -7,10 +16,10 @@ import { PERMISSIONS } from '../../utils/permissions';
 
 const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/queue',     icon: ShieldAlert,    label: 'Hold queue' },
-  { to: '/graph',     icon: Network,        label: 'Network graph' },
-  { to: '/ledger',    icon: History,        label: 'Audit ledger' },
-  { to: '/settings/llm', icon: Settings,    label: 'LLM Settings' },
+  { to: '/queue', icon: ShieldAlert, label: 'Hold queue' },
+  { to: '/graph', icon: Network, label: 'Network graph' },
+  { to: '/ledger', icon: History, label: 'Audit ledger' },
+  { to: '/settings/llm', icon: Settings, label: 'LLM Settings' },
 ];
 
 export function Sidebar() {
@@ -56,34 +65,36 @@ export function Sidebar() {
         </NavLink>
       ))}
 
-      {PERMISSIONS.canManageData(activeRole) && (<>
-        <NavLink
-          to="/admin/data"
-          title="Data Management"
-          aria-label="Data Management"
-          className="w-10 h-10 rounded-lg flex items-center justify-center transition-all"
-          style={({ isActive }) => ({
-            backgroundColor: isActive ? 'var(--bg-active-nav)' : 'transparent',
-            color: isActive ? 'var(--accent-text)' : 'var(--text-tertiary)',
-            border: isActive ? '1px solid var(--accent-primary)' : '1px solid transparent',
-          })}
-        >
-          <HardDrive size={20} />
-        </NavLink>
-        <NavLink
-          to="/admin/users"
-          title="User Management"
-          aria-label="User Management"
-          className="w-10 h-10 rounded-lg flex items-center justify-center transition-all"
-          style={({ isActive }) => ({
-            backgroundColor: isActive ? 'var(--bg-active-nav)' : 'transparent',
-            color: isActive ? 'var(--accent-text)' : 'var(--text-tertiary)',
-            border: isActive ? '1px solid var(--accent-primary)' : '1px solid transparent',
-          })}
-        >
-          <Users size={20} />
-        </NavLink>
-      </>)}
+      {PERMISSIONS.canManageData(activeRole) && (
+        <>
+          <NavLink
+            to="/admin/data"
+            title="Data Management"
+            aria-label="Data Management"
+            className="w-10 h-10 rounded-lg flex items-center justify-center transition-all"
+            style={({ isActive }) => ({
+              backgroundColor: isActive ? 'var(--bg-active-nav)' : 'transparent',
+              color: isActive ? 'var(--accent-text)' : 'var(--text-tertiary)',
+              border: isActive ? '1px solid var(--accent-primary)' : '1px solid transparent',
+            })}
+          >
+            <HardDrive size={20} />
+          </NavLink>
+          <NavLink
+            to="/admin/users"
+            title="User Management"
+            aria-label="User Management"
+            className="w-10 h-10 rounded-lg flex items-center justify-center transition-all"
+            style={({ isActive }) => ({
+              backgroundColor: isActive ? 'var(--bg-active-nav)' : 'transparent',
+              color: isActive ? 'var(--accent-text)' : 'var(--text-tertiary)',
+              border: isActive ? '1px solid var(--accent-primary)' : '1px solid transparent',
+            })}
+          >
+            <Users size={20} />
+          </NavLink>
+        </>
+      )}
 
       <div className="flex-1" />
 

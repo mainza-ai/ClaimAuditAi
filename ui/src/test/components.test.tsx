@@ -9,7 +9,7 @@ describe('RiskBadge', () => {
   });
 
   it('renders high level', () => {
-    render(<RiskBadge level="high" score={0.70} />);
+    render(<RiskBadge level="high" score={0.7} />);
     expect(screen.getByText(/high/)).toBeInTheDocument();
   });
 
@@ -19,7 +19,7 @@ describe('RiskBadge', () => {
   });
 
   it('renders low level with fallback styles', () => {
-    render(<RiskBadge level="low" score={0.10} />);
+    render(<RiskBadge level="low" score={0.1} />);
     expect(screen.getByText(/low/)).toBeInTheDocument();
   });
 });

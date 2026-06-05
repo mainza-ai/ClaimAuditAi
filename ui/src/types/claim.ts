@@ -52,21 +52,21 @@ export interface SystemStats {
 }
 
 export interface TrendDay {
-day: string;
-processed: number;
-held: number;
-approved: number;
-leakagePrevented: number;
+  day: string;
+  processed: number;
+  held: number;
+  approved: number;
+  leakagePrevented: number;
 }
 
 export interface LedgerEntry {
-id: string;
-claimId: string;
-patientId: string;
-providerId: string;
+  id: string;
+  claimId: string;
+  patientId: string;
+  providerId: string;
   action: 'approved' | 'escalated' | 'rejected';
-authorizedBy: string;
-timestamp: string;
-reason: string;
-amount: number;
+  authorizedBy: string;
+  timestamp: string;
+  reason: string;
+  amount: number;
 }

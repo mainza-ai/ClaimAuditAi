@@ -41,7 +41,11 @@ export function AssistantInput({
         className="flex-1 resize-none rounded-lg px-3 py-2 text-sm max-h-32 overflow-y-auto disabled:opacity-40 focus:outline-none"
         style={{
           backgroundColor: 'var(--bg-input)',
-          border: inputFocused ? '1px solid var(--border-focus)' : (inputHovered ? '1px solid var(--border-strong)' : '1px solid var(--border-default)'),
+          border: inputFocused
+            ? '1px solid var(--border-focus)'
+            : inputHovered
+              ? '1px solid var(--border-strong)'
+              : '1px solid var(--border-default)',
           color: 'var(--text-primary)',
           minHeight: '38px',
         }}

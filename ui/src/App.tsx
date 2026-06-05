@@ -7,16 +7,18 @@ import { useChatStore } from './store/chatStore';
 import { getCurrentClaims } from './api/auth';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
-const Dashboard = lazy(() => import('./views/Dashboard').then(m => ({ default: m.Dashboard })));
-const HoldQueue = lazy(() => import('./views/HoldQueue').then(m => ({ default: m.HoldQueue })));
-const ClaimDetail = lazy(() => import('./views/ClaimDetail').then(m => ({ default: m.ClaimDetail })));
-const GraphView = lazy(() => import('./views/GraphView').then(m => ({ default: m.GraphView })));
-const Ledger = lazy(() => import('./views/Ledger').then(m => ({ default: m.Ledger })));
-const LLMSettings = lazy(() => import('./views/LLMSettings').then(m => ({ default: m.LLMSettings })));
-const DataManagement = lazy(() => import('./views/DataManagement').then(m => ({ default: m.DataManagement })));
-const UserManagement = lazy(() => import('./views/UserManagement').then(m => ({ default: m.UserManagement })));
-const LoginPage = lazy(() => import('./views/LoginPage').then(m => ({ default: m.LoginPage })));
-const AuditAssistant = lazy(() => import('./components/assistant/AuditAssistant').then(m => ({ default: m.AuditAssistant })));
+const Dashboard = lazy(() => import('./views/Dashboard').then((m) => ({ default: m.Dashboard })));
+const HoldQueue = lazy(() => import('./views/HoldQueue').then((m) => ({ default: m.HoldQueue })));
+const ClaimDetail = lazy(() => import('./views/ClaimDetail').then((m) => ({ default: m.ClaimDetail })));
+const GraphView = lazy(() => import('./views/GraphView').then((m) => ({ default: m.GraphView })));
+const Ledger = lazy(() => import('./views/Ledger').then((m) => ({ default: m.Ledger })));
+const LLMSettings = lazy(() => import('./views/LLMSettings').then((m) => ({ default: m.LLMSettings })));
+const DataManagement = lazy(() => import('./views/DataManagement').then((m) => ({ default: m.DataManagement })));
+const UserManagement = lazy(() => import('./views/UserManagement').then((m) => ({ default: m.UserManagement })));
+const LoginPage = lazy(() => import('./views/LoginPage').then((m) => ({ default: m.LoginPage })));
+const AuditAssistant = lazy(() =>
+  import('./components/assistant/AuditAssistant').then((m) => ({ default: m.AuditAssistant })),
+);
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -126,7 +128,14 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <Routes>
-          <Route path="/login" element={<Suspense fallback={<PageSkeleton />}><LoginPage /></Suspense>} />
+          <Route
+            path="/login"
+            element={
+              <Suspense fallback={<PageSkeleton />}>
+                <LoginPage />
+              </Suspense>
+            }
+          />
           <Route path="/*" element={<ProtectedLayout />} />
         </Routes>
       </BrowserRouter>

@@ -38,7 +38,9 @@ export function TierPanel({ result }: { result: AuditTierResult }) {
           >
             TIER {result.tier}
           </span>
-          <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{result.label}</span>
+          <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+            {result.label}
+          </span>
         </div>
         <div className="flex items-center gap-3">
           {result.score > 0 && (
@@ -56,16 +58,17 @@ export function TierPanel({ result }: { result: AuditTierResult }) {
       </button>
 
       {expanded && (
-        <div
-          className="px-4 pb-4 space-y-2 border-t pt-3"
-          style={{ borderColor: 'var(--border-default)' }}
-        >
-          <p className="text-sm leading-relaxed" style={{ color: 'var(--text-primary)' }}>{result.summary}</p>
+        <div className="px-4 pb-4 space-y-2 border-t pt-3" style={{ borderColor: 'var(--border-default)' }}>
+          <p className="text-sm leading-relaxed" style={{ color: 'var(--text-primary)' }}>
+            {result.summary}
+          </p>
           {result.flags.length > 0 && (
             <ul className="space-y-1 mt-2">
               {result.flags.map((flag, i) => (
                 <li key={i} className="flex items-start gap-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
-                  <span className="mt-1 shrink-0" style={{ color: 'var(--color-danger)' }}>•</span>
+                  <span className="mt-1 shrink-0" style={{ color: 'var(--color-danger)' }}>
+                    •
+                  </span>
                   <span>{flag}</span>
                 </li>
               ))}

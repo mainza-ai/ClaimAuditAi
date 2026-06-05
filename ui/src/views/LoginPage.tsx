@@ -20,8 +20,8 @@ export function LoginPage() {
       const { claims } = await login(username, password);
       setAuthContext(claims.name || claims.sub, claims.fhirUser, claims.roles || []);
       navigate('/dashboard', { replace: true });
-    } catch (err: any) {
-      setError(err.message || 'Login failed. Please check your credentials.');
+    } catch (err) {
+      setError((err as Error).message || 'Login failed. Please check your credentials.');
     } finally {
       setLoading(false);
     }
@@ -51,12 +51,8 @@ export function LoginPage() {
       >
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
           <img src="/logo.png" alt="ClaimAuditAI" style={{ width: 48, height: 48, marginBottom: 16 }} />
-          <h1 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 4px' }}>
-            ClaimAuditAI
-          </h1>
-          <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0 }}>
-            SMART on FHIR Authentication
-          </p>
+          <h1 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 4px' }}>ClaimAuditAI</h1>
+          <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0 }}>SMART on FHIR Authentication</p>
         </div>
 
         <form onSubmit={handleLogin}>

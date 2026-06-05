@@ -9,7 +9,6 @@ import { AssistantInput } from './AssistantInput';
 import { X, Bot, RotateCcw } from 'lucide-react';
 import type { ChatMessage, ClaimContext } from '../../types/chat';
 
-
 export function AuditAssistant() {
   const location = useLocation();
   const isOpen = useChatStore((s) => s.isOpen);
@@ -112,7 +111,9 @@ export function AuditAssistant() {
       const message = err instanceof Error ? err.message : 'Connection error';
       const histories = useChatStore.getState().histories;
       const current = [...(histories[effectiveClaimId] || [])];
-      const errorMsgContent = message ? `Error: ${message}` : 'Sorry, I encountered an error reaching the LLM provider.';
+      const errorMsgContent = message
+        ? `Error: ${message}`
+        : 'Sorry, I encountered an error reaching the LLM provider.';
       if (current.length > 0) {
         current[current.length - 1] = {
           ...current[current.length - 1],
@@ -136,23 +137,39 @@ export function AuditAssistant() {
   if (!isOpen) return null;
 
   return (
-    <div style={{
-      position: 'fixed', top: 0, right: 0, height: '100vh', width: 384,
-      backgroundColor: 'var(--bg-card)',
-      borderLeft: '1px solid var(--border-default)',
-      display: 'flex', flexDirection: 'column',
-      zIndex: 40, boxShadow: 'var(--shadow-modal)',
-    }}>
+    <div
+      style={{
+        position: 'fixed',
+        top: 0,
+        right: 0,
+        height: '100vh',
+        width: 384,
+        backgroundColor: 'var(--bg-card)',
+        borderLeft: '1px solid var(--border-default)',
+        display: 'flex',
+        flexDirection: 'column',
+        zIndex: 40,
+        boxShadow: 'var(--shadow-modal)',
+      }}
+    >
       {/* Header */}
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '12px 16px', borderBottom: '1px solid var(--border-default)', flexShrink: 0,
-      }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '12px 16px',
+          borderBottom: '1px solid var(--border-default)',
+          flexShrink: 0,
+        }}
+      >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Bot size={18} style={{ color: 'var(--accent-primary)' }} />
           <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>Audit Assistant</span>
           {effectiveClaimId && effectiveClaimId !== 'global' && (
-            <span style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>· {effectiveClaimId}</span>
+            <span style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
+              · {effectiveClaimId}
+            </span>
           )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -161,8 +178,12 @@ export function AuditAssistant() {
               onClick={() => clearHistory(effectiveClaimId)}
               title="Clear conversation"
               style={{
-                padding: '6px', borderRadius: 4, background: 'none', border: 'none',
-                color: 'var(--text-tertiary)', cursor: 'pointer',
+                padding: '6px',
+                borderRadius: 4,
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-tertiary)',
+                cursor: 'pointer',
               }}
             >
               <RotateCcw size={14} />
@@ -171,8 +192,12 @@ export function AuditAssistant() {
           <button
             onClick={togglePanel}
             style={{
-              padding: '6px', borderRadius: 4, background: 'none', border: 'none',
-              color: 'var(--text-tertiary)', cursor: 'pointer',
+              padding: '6px',
+              borderRadius: 4,
+              background: 'none',
+              border: 'none',
+              color: 'var(--text-tertiary)',
+              cursor: 'pointer',
             }}
           >
             <X size={16} />
@@ -182,22 +207,45 @@ export function AuditAssistant() {
 
       {/* Context pill */}
       {claimContext && effectiveClaimId !== 'global' ? (
-        <div style={{
-          padding: '8px 16px', backgroundColor: 'var(--bg-page)',
-          borderBottom: '1px solid var(--border-default)', flexShrink: 0,
-        }}>
+        <div
+          style={{
+            padding: '8px 16px',
+            backgroundColor: 'var(--bg-page)',
+            borderBottom: '1px solid var(--border-default)',
+            flexShrink: 0,
+          }}
+        >
           <p style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
-            Reviewing claim <span style={{ color: 'var(--accent-primary)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{claimContext.claimId}</span>
+            Reviewing claim{' '}
+            <span style={{ color: 'var(--accent-primary)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
+              {claimContext.claimId}
+            </span>
             {' · '}CPT <span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{claimContext.cptCode}</span>
-            {' · '}Risk <span style={{ color: 'var(--color-danger)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{Number(claimContext.riskScore ?? 0).toFixed(2)}</span>
+            {' · '}Risk{' '}
+            <span style={{ color: 'var(--color-danger)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
+              {Number(claimContext.riskScore ?? 0).toFixed(2)}
+            </span>
           </p>
         </div>
       ) : (
-        <div style={{
-          padding: '8px 16px', backgroundColor: 'var(--bg-page)',
-          borderBottom: '1px solid var(--border-default)', flexShrink: 0,
-        }}>
-          <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div
+          style={{
+            padding: '8px 16px',
+            backgroundColor: 'var(--bg-page)',
+            borderBottom: '1px solid var(--border-default)',
+            flexShrink: 0,
+          }}
+        >
+          <p
+            style={{
+              fontSize: 12,
+              color: 'var(--text-tertiary)',
+              fontFamily: 'var(--font-mono)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+            }}
+          >
             <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
             Mode: <span style={{ color: 'var(--accent-primary)', fontWeight: 700 }}>General integrity Advisor</span>
           </p>
@@ -210,36 +258,41 @@ export function AuditAssistant() {
           <div style={{ marginTop: 16 }}>
             <p style={{ fontSize: 12, color: 'var(--text-tertiary)', textAlign: 'center' }}>Suggested questions:</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
-            {(effectiveClaimId !== 'global'
-              ? [
-                  'Why was this claim flagged?',
-                  'Explain the Tier 1 semantic mismatch in plain English.',
-                  'What does CPT 99291 mean and is it appropriate here?',
-                  'Could this be a false positive?',
-                  'What action do you recommend?',
-                ]
-              : [
-                  'What is pre-payment claims integrity?',
-                  'How does the vector clinical auditing tier work?',
-                  'What is the reconstruction loss threshold for the autoencoder?',
-                  'How does Cytoscape collusion network cycles detection work?',
-                  'Explain InterSystems IRIS for Health and Embedded Python.',
-                ]
-            ).map((q) => (
-              <button
-                key={q}
-                onClick={() => handleSend(q)}
-                style={{
-                  width: '100%', textAlign: 'left', fontSize: 12,
-                  color: 'var(--accent-text)', padding: '8px 12px',
-                  backgroundColor: 'var(--accent-subtle)',
-                  borderRadius: 8, border: '1px solid var(--border-focus)',
-                  cursor: 'pointer', fontFamily: 'var(--font-mono)',
-                }}
-              >
-                {q}
-              </button>
-            ))}
+              {(effectiveClaimId !== 'global'
+                ? [
+                    'Why was this claim flagged?',
+                    'Explain the Tier 1 semantic mismatch in plain English.',
+                    'What does CPT 99291 mean and is it appropriate here?',
+                    'Could this be a false positive?',
+                    'What action do you recommend?',
+                  ]
+                : [
+                    'What is pre-payment claims integrity?',
+                    'How does the vector clinical auditing tier work?',
+                    'What is the reconstruction loss threshold for the autoencoder?',
+                    'How does Cytoscape collusion network cycles detection work?',
+                    'Explain InterSystems IRIS for Health and Embedded Python.',
+                  ]
+              ).map((q) => (
+                <button
+                  key={q}
+                  onClick={() => handleSend(q)}
+                  style={{
+                    width: '100%',
+                    textAlign: 'left',
+                    fontSize: 12,
+                    color: 'var(--accent-text)',
+                    padding: '8px 12px',
+                    backgroundColor: 'var(--accent-subtle)',
+                    borderRadius: 8,
+                    border: '1px solid var(--border-focus)',
+                    cursor: 'pointer',
+                    fontFamily: 'var(--font-mono)',
+                  }}
+                >
+                  {q}
+                </button>
+              ))}
             </div>
           </div>
         )}
@@ -262,20 +315,46 @@ export function AuditAssistant() {
 
       {/* Quick Prompt Chips */}
       {effectiveClaimId && (
-        <div style={{
-          borderTop: '1px solid var(--border-default)', padding: '8px 16px',
-          backgroundColor: 'var(--bg-page)', display: 'flex', flexWrap: 'wrap', gap: 6, flexShrink: 0,
-        }}>
+        <div
+          style={{
+            borderTop: '1px solid var(--border-default)',
+            padding: '8px 16px',
+            backgroundColor: 'var(--bg-page)',
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 6,
+            flexShrink: 0,
+          }}
+        >
           {(effectiveClaimId !== 'global'
             ? [
-                { label: 'Summarize Anomaly', prompt: 'Summarize why this claim was flagged by the three-tier system.' },
-                { label: 'Verify CPT Guidelines', prompt: 'Verify if the billed CPT code matches standard clinical guidelines for this patient.' },
-                { label: 'Draft Appeal Rejection', prompt: 'Draft a formal provider appeal rejection letter citing all anomalies found.' },
+                {
+                  label: 'Summarize Anomaly',
+                  prompt: 'Summarize why this claim was flagged by the three-tier system.',
+                },
+                {
+                  label: 'Verify CPT Guidelines',
+                  prompt: 'Verify if the billed CPT code matches standard clinical guidelines for this patient.',
+                },
+                {
+                  label: 'Draft Appeal Rejection',
+                  prompt: 'Draft a formal provider appeal rejection letter citing all anomalies found.',
+                },
               ]
             : [
-                { label: 'Pre-Payment Integrity', prompt: 'Explain the paradigm shift from retroactive pay-and-chase audits to real-time pre-payment integrity.' },
-                { label: 'Embedded Python Tiers', prompt: 'Explain the three AI auditing tiers running inside the InterSystems IRIS database kernel.' },
-                { label: 'Contest Goals', prompt: 'Summarize how ClaimAuditAI maximizes bonus points for the InterSystems AI Agents contest.' },
+                {
+                  label: 'Pre-Payment Integrity',
+                  prompt:
+                    'Explain the paradigm shift from retroactive pay-and-chase audits to real-time pre-payment integrity.',
+                },
+                {
+                  label: 'Embedded Python Tiers',
+                  prompt: 'Explain the three AI auditing tiers running inside the InterSystems IRIS database kernel.',
+                },
+                {
+                  label: 'Contest Goals',
+                  prompt: 'Summarize how ClaimAuditAI maximizes bonus points for the InterSystems AI Agents contest.',
+                },
               ]
           ).map((chip) => (
             <button
@@ -283,9 +362,14 @@ export function AuditAssistant() {
               disabled={isLoading}
               onClick={() => handleSend(chip.prompt)}
               style={{
-                fontSize: 10, fontFamily: 'var(--font-mono)', fontWeight: 700,
-                backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-default)',
-                color: 'var(--text-secondary)', padding: '4px 8px', borderRadius: 4,
+                fontSize: 10,
+                fontFamily: 'var(--font-mono)',
+                fontWeight: 700,
+                backgroundColor: 'var(--bg-card)',
+                border: '1px solid var(--border-default)',
+                color: 'var(--text-secondary)',
+                padding: '4px 8px',
+                borderRadius: 4,
                 cursor: 'pointer',
               }}
             >
@@ -296,17 +380,19 @@ export function AuditAssistant() {
       )}
 
       {/* Input */}
-      <div style={{
-        borderTop: '1px solid var(--border-default)', padding: '12px 16px',
-        backgroundColor: 'var(--bg-card)', flexShrink: 0,
-      }}>
+      <div
+        style={{
+          borderTop: '1px solid var(--border-default)',
+          padding: '12px 16px',
+          backgroundColor: 'var(--bg-card)',
+          flexShrink: 0,
+        }}
+      >
         <AssistantInput
           onSend={handleSend}
           disabled={isLoading}
           placeholder={
-            effectiveClaimId !== 'global'
-              ? 'Ask about this claim...'
-              : 'Ask a general payor-integrity question...'
+            effectiveClaimId !== 'global' ? 'Ask about this claim...' : 'Ask a general payor-integrity question...'
           }
         />
       </div>

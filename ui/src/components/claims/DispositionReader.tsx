@@ -2,7 +2,11 @@ import ReactMarkdown from 'react-markdown';
 
 export function DispositionReader({ markdown }: { markdown: string }) {
   if (!markdown) {
-    return <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>No adjudication report available.</p>;
+    return (
+      <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
+        No adjudication report available.
+      </p>
+    );
   }
 
   return (

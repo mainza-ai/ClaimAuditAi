@@ -1,10 +1,7 @@
 import { apiClient, getAccessToken } from './client';
 import type { ChatMessage, ClaimContext } from '../types/chat';
 
-export const sendChatMessage = (
-  messages: ChatMessage[],
-  claimContext: ClaimContext | null
-) =>
+export const sendChatMessage = (messages: ChatMessage[], claimContext: ClaimContext | null) =>
   apiClient
     .post<{ response: string }>('/chat', {
       messages: messages.map(({ role, content }) => ({ role, content })),
@@ -58,11 +55,7 @@ export async function* streamChatMessage(
 }
 
 export const getChatHistory = (claimId: string) =>
-  apiClient
-    .get<ChatMessage[]>(`/chat/history/${claimId}`)
-    .then((r) => r.data);
+  apiClient.get<ChatMessage[]>(`/chat/history/${claimId}`).then((r) => r.data);
 
 export const saveChatMessage = (claimId: string, message: ChatMessage) =>
-  apiClient
-    .post(`/chat/history/${claimId}`, message)
-    .then((r) => r.data);
+  apiClient.post(`/chat/history/${claimId}`, message).then((r) => r.data);

@@ -45,7 +45,8 @@ export async function login(username: string, password: string): Promise<{ token
     username,
     password,
     client_id: 'claimaudit-ui',
-    scope: 'launch fhirUser user/Claim.read user/Claim.write user/ClaimResponse.read user/Task.read user/Task.write online_access',
+    scope:
+      'launch fhirUser user/Claim.read user/Claim.write user/ClaimResponse.read user/Task.read user/Task.write online_access',
   });
 
   const token = data.access_token;
