@@ -1,1 +1,0 @@
-{"provider":"ollama","ollamaModel":"qwen3.6:latest","ollamaBaseUrl":"http://host.docker.internal:11434/v1","rateLimitPerMin":120,"cacheTTL":86400}

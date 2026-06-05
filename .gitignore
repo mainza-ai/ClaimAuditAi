@@ -47,3 +47,4 @@ assets/
 # Vitest Coverage
 ui/coverage/
 
+.llm_settings.json
