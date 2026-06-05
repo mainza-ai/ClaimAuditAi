@@ -150,7 +150,24 @@ cd ui
 npm run test
 ```
 
-### 3. End-to-End Tests (`Playwright`)
+### 3. Real-World End-to-End Integration Tests (Host to Docker)
+To verify the complete payment integrity workflow against the live, dockerized application services from the host, execute the E2E script:
+```bash
+# From the project root on the host machine
+.venv/bin/python scratch/real_world_e2e_tests.py
+```
+This automated script executes a full transaction verification suite:
+* **Persona Authentication:** Logs in as Admin, Auditor, and Director using SMART on FHIR tokens.
+* **Auto-healing User Registration:** Dynamically seeds missing roles (`director`, `specialist`) via the Admin API.
+* **Fast Database Purge & Seed:** Resets all FHIR tables and seeds the 8 anomalous claims (using the `Seeding` LLM bypass to prevent HTTP connection timeouts).
+* **Autoencoder Training:** Triggers the PyTorch autoencoder model retraining on the fresh projections.
+* **JIT Adjudication Reports:** Queries the detail page of a held claim, which dynamically triggers the LLM on-demand (JIT) to generate a detailed explainable report and persists it to the database.
+* **Auditor Escalation & Director Approval:** Escalates a pended claim to Director review and overrides/approves it.
+* **Collusion Graph Insights:** Verifies the NetworkX-generated collusion graph and address-collision detection.
+* **Health & Logs Diagnostic:** Audits the component health status and checks admin log entries.
+* **FHIR Repository Backup:** Downloads a full backup bundle of the FHIR repository.
+
+### 4. End-to-End Browser Tests (`Playwright`)
 Simulates user behavior covering login, sidebar routing, sample data seeding, and hold queue approval cycles:
 ```bash
 cd ui

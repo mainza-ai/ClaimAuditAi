@@ -16,6 +16,11 @@ Set summary = ##class(ClaimAudit.AI.Agent).GenerateHoldSummary(
 
 If the combined threat score is $\ge 0.35$ (or if any single-tier engine flags an anomaly), the orchestrator triggers a hold. It instructs the `%AI.Agent` to author a detailed, explainable markdown hold justification report for the clinical audit queue.
 
+### Just-In-Time (JIT) Generation & Seeding Bypass
+Because generating detailed LLM summaries synchronously can take 10-25 seconds and lead to HTTP gateway connection timeouts (e.g. 504 Gateway Timeout) during bulk ingestion or database seeding:
+1. **Seeding Bypass:** A process-level `^ClaimAuditAI("Seeding")` flag is enabled during bulk sample loading (`/api/samples/load`). The FHIR interceptor skips the slow LLM generation calls for seeded anomalous claims, storing only the basic reason strings. This cuts database loading down from 100+ seconds to under 2 seconds.
+2. **On-Demand (JIT) Compilation:** When an auditor or E2E script opens the detail page for a pended claim (`GET /api/claims/:id`), the server detects the basic hold summary and invokes `GenerateHoldSummary` on-demand (just-in-time). The fully synthesized LLM report is then updated on the `ClaimResponse` resource (`PUT`) and cached in the database for subsequent instant loads.
+
 ## Key Details
 - **Core Orchestrator**: `%AI.Agent` configured via high-performance cloud or local LLM gateways.
 - **Tool Mapping**: `%AI.Tool` bindings representing vector similarity, outlier analysis, and graph checks.

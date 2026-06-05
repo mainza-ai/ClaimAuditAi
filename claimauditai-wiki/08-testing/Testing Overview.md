@@ -2,22 +2,28 @@
 
 > Testing ClaimAuditAI involves submitting mock patient progress notes and simulating upcoding, unbundling, and referral fraud vectors.
 
-To verify our payment integrity engines, we submit test payloads using Postman, curl, or our automated Python script `test_claim.py`:
+To verify our payment integrity engines and complete end-to-end workflows, we can execute our automated Python E2E script from the host against the dockerized services:
 
 ```
-POST Clinical Notes (sample_patient_bundle.json) ──> POST Anomalous Claim (sample_claim.json) ──> Assert HTTP 202 HOLD
+Reset Database ──> Seed Data (LLM Bypass) ──> Fetch Held Queue ──> View Claim Detail (JIT LLM Report) ──> Auditor Escalation ──> Director Approval ──> Verify Graph/Health/Backup
 ```
 
 Testing asserts that:
 1. **Clinical Narrative Ingestion**: Decodes Base64 progress notes and indexes them in our vector database using SentenceTransformers.
-2. **Real-Time Interception**: The strategy interceptor catches anomalous claim profiles pre-payment.
-3. **Response Mutation**: The outgoing HTTP status is mutated to `202 Accepted` and all three auxiliary resources are persisted successfully.
+2. **Real-Time Interception**: The strategy interceptor catches anomalous claim profiles pre-payment and routes them.
+3. **Response Mutation**: The outgoing HTTP status is mutated to `202 Accepted` and hold resources are persisted.
+4. **JIT LLM Generation**: When retrieving claim details, the system dynamically invokes the LLM (if not already cached) to build a detailed 3-tier adjudication report.
+5. **Privilege Overrides**: Auditor escalates, and Director overrides and approves the pended claim.
 
 ## Key Details
-- **Primary Test Script**: `test_claim.py` (Exposed in your workspace's `/scratch` directory).
-- **Authentication Credentials**: JWT Bearer token or Basic Auth (`_SYSTEM` / `SYS`).
-- **Base Verification URL**: `http://localhost:52773/interop/fhir/r4/Claim`
-- **Output Assertions**: Verification of the `outcome` (`"queued"`), `disposition` (Markdown explanation), and secondary resource database IDs.
+- **Primary Test Script**: `real_world_e2e_tests.py` (located in the `/scratch` directory).
+- **Execution Command**:
+  ```bash
+  .venv/bin/python scratch/real_world_e2e_tests.py
+  ```
+- **Authentication Credentials**: JWT Bearer tokens dynamically retrieved during persona login (`admin`, `auditor`, `director`).
+- **Base Verification URL**: `http://localhost:52773`
+- **Output Assertions**: Verification of the `outcome` (`"complete"`), task completion, cytoscape graph nodes, and system health status.
 
 ## See Also
 [[Simulating Tier 1 - Upcoding]] · [[Simulating Tier 2 - Unbundling]] · [[Simulating Tier 3 - Collusion]]
