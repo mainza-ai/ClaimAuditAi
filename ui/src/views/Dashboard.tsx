@@ -220,9 +220,11 @@ export function Dashboard() {
               ? (modelPerf.f1 * 100).toFixed(1) + '%'
               : (modelPerf?.f1 ?? (loading ? '...' : '\u2014'))
           }
+          tooltip={modelPerf?.note}
           icon={Activity}
           accent={typeof modelPerf?.f1 === 'number' && modelPerf.f1 > 0.7 ? 'green' : 'amber'}
         />
+
       </div>
 
       {/* Charts grid */}

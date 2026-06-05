@@ -14,7 +14,9 @@ export interface ModelPerformance {
   falsePositives: number;
   totalHeld: number;
   totalApproved: number;
+  note?: string;
 }
+
 
 export const getModelPerformance = () =>
   apiClient.get<ModelPerformance>('/stats/model-performance').then((r) => r.data);

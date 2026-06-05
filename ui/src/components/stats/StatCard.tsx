@@ -1,4 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
+import { HelpCircle } from 'lucide-react';
 
 const ACCENT_STYLES: Record<string, { color: string; borderColor: string; backgroundColor: string }> = {
   red: {
@@ -24,11 +25,13 @@ export function StatCard({
   value,
   icon: Icon,
   accent = 'blue',
+  tooltip,
 }: {
   label: string;
   value: string | number;
   icon: LucideIcon;
   accent?: keyof typeof ACCENT_STYLES;
+  tooltip?: string;
 }) {
   const styles = ACCENT_STYLES[accent];
 
@@ -38,12 +41,24 @@ export function StatCard({
       style={{
         borderColor: styles.borderColor,
         backgroundColor: styles.backgroundColor,
+        position: 'relative',
       }}
     >
       <div className="flex items-center justify-between mb-3">
-        <span className="text-xs uppercase font-mono tracking-wider" style={{ color: 'var(--text-secondary)' }}>
-          {label}
-        </span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs uppercase font-mono tracking-wider" style={{ color: 'var(--text-secondary)' }}>
+            {label}
+          </span>
+          {tooltip && (
+            <div className="group relative flex items-center">
+              <HelpCircle size={12} style={{ color: 'var(--text-tertiary)', cursor: 'help' }} />
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-48 p-2 rounded bg-slate-900 text-xs font-sans text-slate-100 border border-slate-700 shadow-lg z-50 text-center leading-normal">
+                {tooltip}
+                <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-slate-900"></div>
+              </div>
+            </div>
+          )}
+        </div>
         <Icon size={16} style={{ color: styles.color }} />
       </div>
       <p className="text-2xl font-bold font-mono" style={{ color: 'var(--text-primary)' }}>
@@ -52,3 +67,4 @@ export function StatCard({
     </div>
   );
 }
+
