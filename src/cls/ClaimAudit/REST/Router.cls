@@ -1682,6 +1682,7 @@ ClassMethod GetLedger() As %Status
             Do tArr.%Push({
                 "id": (tTaskId),
                 "claimId": (tClaimId),
+                "claimResponseId": (tClaimResponseId),
                 "patientId": (tPatientId),
                 "providerId": (tProviderId),
                 "action": (tAction),

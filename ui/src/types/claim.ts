@@ -62,6 +62,7 @@ export interface TrendDay {
 export interface LedgerEntry {
   id: string;
   claimId: string;
+  claimResponseId?: string;
   patientId: string;
   providerId: string;
   action: 'approved' | 'escalated' | 'rejected';

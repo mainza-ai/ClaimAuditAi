@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getLedger } from '../api/ledger';
 import { ShieldCheck, AlertTriangle, UserCheck, Clock } from 'lucide-react';
 import { format } from 'date-fns';
+import { Link } from 'react-router-dom';
 
 export function Ledger() {
   const [page, setPage] = useState(1);
@@ -122,8 +123,19 @@ export function Ledger() {
                   <td className="px-5 py-4 font-semibold" style={{ color: 'var(--text-secondary)' }}>
                     {entry.id}
                   </td>
-                  <td className="px-5 py-4 font-semibold" style={{ color: 'var(--accent-primary)' }}>
-                    #{entry.claimId}
+                  <td className="px-5 py-4 font-semibold">
+                    {entry.claimResponseId ? (
+                      <Link
+                        to={`/claims/${entry.claimResponseId}`}
+                        state={{ from: 'ledger' }}
+                        className="hover:underline"
+                        style={{ color: 'var(--accent-primary)' }}
+                      >
+                        #{entry.claimId}
+                      </Link>
+                    ) : (
+                      <span style={{ color: 'var(--text-secondary)' }}>#{entry.claimId}</span>
+                    )}
                   </td>
                   <td className="px-5 py-4">
                     <span
