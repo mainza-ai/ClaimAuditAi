@@ -133,7 +133,7 @@ The system enforces strict role-based access control (RBAC) across both API and 
 - Docker & Docker Compose
 - A modern browser (Chrome/Firefox/Safari)
 - **An LLM Backend Provider (Local or Cloud):**
-  - **Local:** Ollama running locally (e.g. `llama3` or `qwen2.5` models) accessible from the container.
+  - **Local:** Ollama running locally (recommended: `llama3.2:3b-instruct-fp16` (6.4 GB) or `granite4.1:3b-bf16` (6.8 GB)) accessible from the container.
   - **Cloud:** An API key for cloud LLM providers (OpenAI or NVIDIA NIM), configured in the `.env` file.
 
 ### Setup & Run
