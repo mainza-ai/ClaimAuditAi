@@ -4,9 +4,37 @@ An autonomous, pre-payment payment integrity agent running natively on InterSyst
 
 **Author:** Mainza Kangombe — [LinkedIn](https://www.linkedin.com/in/mainza-kangombe-6214295/)
 
+<p align="center">
+  <img src="assets/images/infograph/ClaimAuditAI_Infographic.png" alt="ClaimAuditAI Infographic" width="100%">
+</p>
+
+---
+
+## 🎥 Product Videos
+
+Learn more about the business motivation and technical architecture of ClaimAuditAI:
+
+<p align="center">
+  <a href="https://youtu.be/0H-5j5jr43A">
+    <img src="https://img.youtube.com/vi/0H-5j5jr43A/0.jpg" alt="ClaimAuditAI Video Explainer" width="45%">
+  </a>
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://youtu.be/5Za-2dKTQzY">
+    <img src="https://img.youtube.com/vi/5Za-2dKTQzY/0.jpg" alt="ClaimAuditAI Video Walkthrough Demo" width="45%">
+  </a>
+</p>
+
+* **[ClaimAuditAI - Video Explainer](https://youtu.be/0H-5j5jr43A):** A high-level overview of healthcare payment integrity challenges and how ClaimAuditAI intercepts anomalous claims.
+* **[ClaimAuditAI - Video Walkthrough Demo](https://youtu.be/5Za-2dKTQzY):** A detailed developer walkthrough covering FHIR endpoints, the 3-Tier AI Engine, Cytoscape network graphs, and role-based access.
+
 ---
 
 ## 🌟 Key Capabilities
+
+<p align="center">
+  <img src="assets/images/screenshots/2.png" alt="ClaimAuditAI Dashboard & AI Auditor Assistant" width="100%">
+</p>
+
 
 - **Real-Time FHIR Interception:** Claims are audited, pended, and held at the database/middleware layer before persistence, fully supporting both single Claims and batch/transaction Bundles.
 - **Three-Tier AI Engine:** Runs HNSW clinical note NLP vector search, PyTorch reconstruction loss anomaly profiling, and NetworkX collusion cycle graph analysis sequentially under strict timeout and circuit-breaker safeguards.
@@ -55,11 +83,25 @@ The [Interactions.cls](src/cls/ClaimAudit/FHIR/Interactions.cls) class intercept
    - A `CommunicationRequest` hold notification.
 3. The response payload is mutated to return HTTP `202 Accepted` alongside the created hold `ClaimResponse` resource.
 
+<p align="center">
+  <img src="assets/images/screenshots/3.png" alt="Claims Hold Queue" width="49%">
+  <img src="assets/images/screenshots/4.png" alt="Claim Detail View" width="49%">
+</p>
+
+<p align="center">
+  <img src="assets/images/screenshots/5.png" alt="Auditor Decision Override and Escalation Modal" width="80%">
+</p>
+
 ### 2. The 3-Tier AI Engine (`tier_orchestrator.py`)
 AI evaluation runs within the database memory space using Embedded Python, running sequentially to ensure thread-safety and database integrity in InterSystems IRIS:
 - **Tier 1 (NLP Similarity):** Cosine similarity between claim descriptions and progress notes via sentence-transformers in [nlp_auditor.py](src/python/nlp_auditor.py). Flags when best_similarity < 0.38 — CPT codes semantically distant from clinical documentation.
 - **Tier 2 (ML Autoencoder Anomaly):** [autoencoder_train.py](src/python/autoencoder_train.py) trains an unsupervised PyTorch Autoencoder (5 input dimensions → 4 bottleneck). Reconstruction loss threshold is `max(95th_percentile, 0.02)` — the 0.02 floor prevents false negatives with homogeneous training data. Requires ≥5 training claims; tier gracefully bypasses (not-flagged) when data is insufficient.
 - **Tier 3 (Collusion Networks):** [graph_analyzer.py](src/python/graph_analyzer.py) builds a MultiDiGraph of patient-provider relationships. Detects address collisions, geo-temporal leaps, and referral ring cycles. Graph cache is invalidated after each claim audit. Exception handler is fail-open — errors flag the claim for review, never silently suppress.
+
+  <p align="center">
+    <img src="assets/images/screenshots/6.png" alt="Collusion Network Graph Visualization" width="100%">
+  </p>
+
 - **Risk Scoring:** Tier 1 (+0.35) + Tier 2 (+0.35) + Tier 3 (+0.30), capped at 1.0. Score stored as FHIR ClaimResponse extension — the single source of truth read by all endpoints. Classification: ≥0.86→critical, ≥0.50→high, else→medium.
 
 ---
@@ -67,6 +109,12 @@ AI evaluation runs within the database memory space using Embedded Python, runni
 ## 🔒 Security & RBAC Model
 
 The system enforces strict role-based access control (RBAC) across both API and database layers:
+
+<p align="center">
+  <img src="assets/images/screenshots/0.png" alt="SMART on FHIR Login Portal" width="45%">
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="assets/images/screenshots/11.png" alt="User and Role Administration" width="50%">
+</p>
 
 - **SMART on FHIR Authentication:** HS256 JWT tokens are issued against HMAC-SHA256 credential hashes stored in INTEROP-namespace globals (`^ClaimAuditAI("Users",...)`) — avoiding `%SYS` namespace access for CSP gateway requests. Tokens validated with `$SYSTEM.Encryption.HMACSHA(256, ...)` signature verification. Supports Keycloak RS256 JWKS for federated OIDC.
 - **Key Caching & Hardening:** JWKS certificates cached locally for 1 hour. `JWT_SECRET` environment variable required in production mode — raises a critical security error if missing.
@@ -105,6 +153,27 @@ The system enforces strict role-based access control (RBAC) across both API and 
 Open `http://localhost:3000` to access the dashboard.
 - **Default Auditor Login:** `auditor` / `AuditReview2026!`
 - **Default Admin Login:** `admin` / `ClaimAuditAdmin2026!`
+
+---
+
+## ⚙️ Operations, LLM Configuration & Diagnostics
+
+For system administrators and operations teams, ClaimAuditAI provides dedicated configuration portals to configure LLM reasoning providers and inspect component health:
+
+- **LLM Settings:** Dynamically select AI reasoning backends (e.g. OpenAI, NVIDIA NIM, Ollama) and configure model weights/temperatures.
+- **Data Seeding & ML Retraining:** Reset the database, re-seed synthetic FHIR bundles, and retrain the PyTorch autoencoder directly from the dashboard.
+- **Health Diagnostics:** Inspect running database and python component services.
+- **Audit Ledger:** Maintain an immutable record of all claim overrides.
+
+<p align="center">
+  <img src="assets/images/screenshots/8.png" alt="LLM Settings Configuration" width="32%">
+  <img src="assets/images/screenshots/9.png" alt="Data Management and ML Retraining" width="32%">
+  <img src="assets/images/screenshots/10.png" alt="System Health Diagnostics" width="32%">
+</p>
+
+<p align="center">
+  <img src="assets/images/screenshots/7.png" alt="Tamper-Proof Audit Ledger" width="80%">
+</p>
 
 ---
 
@@ -185,5 +254,94 @@ A GitHub Actions workflow ([ci.yml](.github/workflows/ci.yml)) automates quality
 ## 📘 Detailed Documentation
 - Visit the [Comprehensive Wiki Pages](claimauditai-wiki/00-index/ClaimAuditAI%20Home.md) for deeper information on ML models, FHIR structures, setup guides, and troubleshooting recipes.
 
+---
+
+## 🖼 Project Presentation & Pitch Slide Deck
+
+The following slideshow walks through the business motivation, technical architecture, and implementation details of ClaimAuditAI. Click to expand and view the slides.
+
+<details>
+<summary>📂 View Slide Presentation (15 Slides)</summary>
+
+### Slide 1: Title
+<p align="center">
+  <img src="assets/images/claimauditai_slidedeck/claimauditai_slidedeck.001.jpeg" alt="Slide 1" width="80%">
+</p>
+
+### Slide 2: The Pre-Payment Payment Integrity Problem
+<p align="center">
+  <img src="assets/images/claimauditai_slidedeck/claimauditai_slidedeck.002.jpeg" alt="Slide 2" width="80%">
+</p>
+
+### Slide 3: The ClaimAuditAI Solution
+<p align="center">
+  <img src="assets/images/claimauditai_slidedeck/claimauditai_slidedeck.003.jpeg" alt="Slide 3" width="80%">
+</p>
+
+### Slide 4: Sequential 3-Tier AI Architecture
+<p align="center">
+  <img src="assets/images/claimauditai_slidedeck/claimauditai_slidedeck.004.jpeg" alt="Slide 4" width="80%">
+</p>
+
+### Slide 5: Tier 1 - Clinical Note NLP Analysis
+<p align="center">
+  <img src="assets/images/claimauditai_slidedeck/claimauditai_slidedeck.005.jpeg" alt="Slide 5" width="80%">
+</p>
+
+### Slide 6: Tier 2 - PyTorch Autoencoder Anomaly Detection
+<p align="center">
+  <img src="assets/images/claimauditai_slidedeck/claimauditai_slidedeck.006.jpeg" alt="Slide 6" width="80%">
+</p>
+
+### Slide 7: Tier 3 - NetworkX Collusion Network Graph
+<p align="center">
+  <img src="assets/images/claimauditai_slidedeck/claimauditai_slidedeck.007.jpeg" alt="Slide 7" width="80%">
+</p>
+
+### Slide 8: Real-Time FHIR Interception Hooks
+<p align="center">
+  <img src="assets/images/claimauditai_slidedeck/claimauditai_slidedeck.008.jpeg" alt="Slide 8" width="80%">
+</p>
+
+### Slide 9: SMART on FHIR Role-Based Access Control
+<p align="center">
+  <img src="assets/images/claimauditai_slidedeck/claimauditai_slidedeck.009.jpeg" alt="Slide 9" width="80%">
+</p>
+
+### Slide 10: Auditor Worklist and AI Copilot
+<p align="center">
+  <img src="assets/images/claimauditai_slidedeck/claimauditai_slidedeck.010.jpeg" alt="Slide 10" width="80%">
+</p>
+
+### Slide 11: Tamper-Proof Decision Override Ledger
+<p align="center">
+  <img src="assets/images/claimauditai_slidedeck/claimauditai_slidedeck.011.jpeg" alt="Slide 11" width="80%">
+</p>
+
+### Slide 12: Production-Grade Reliability & Safeguards
+<p align="center">
+  <img src="assets/images/claimauditai_slidedeck/claimauditai_slidedeck.012.jpeg" alt="Slide 12" width="80%">
+</p>
+
+### Slide 13: Core Technical Stack & Performance
+<p align="center">
+  <img src="assets/images/claimauditai_slidedeck/claimauditai_slidedeck.013.jpeg" alt="Slide 13" width="80%">
+</p>
+
+### Slide 14: Future Roadmap & Integration
+<p align="center">
+  <img src="assets/images/claimauditai_slidedeck/claimauditai_slidedeck.014.jpeg" alt="Slide 14" width="80%">
+</p>
+
+### Slide 15: Conclusion & Contact Info
+<p align="center">
+  <img src="assets/images/claimauditai_slidedeck/claimauditai_slidedeck.015.jpeg" alt="Slide 15" width="80%">
+</p>
+
+</details>
+
+---
+
 ## 📄 License
 MIT License
+
