@@ -13,7 +13,7 @@ The following environment variables configure the system's operational parameter
 | `NVIDIA_BASE_URL` | No | `https://integrate.api.nvidia.com/v1` | Endpoint URL for the Nvidia API. |
 | `NVIDIA_MODEL` | No | `nvidia/nemotron-3-super-120b-a12b` | The LLM model used for authoring hold justifications. |
 | `OLLAMA_BASE_URL` | Conditional | `http://host.docker.internal:11434/v1` | Endpoint URL for the local Ollama instance. |
-| `OLLAMA_MODEL` | No | `llama3` | The model used on the local Ollama gateway. |
+| `OLLAMA_MODEL` | No | `llama3.2:3b-instruct-fp16` | The model used on the local Ollama gateway (recommended: `llama3.2:3b-instruct-fp16` or `granite4.1:3b-bf16`). |
 | `OPENAI_API_KEY` | Conditional | — | API key for OpenAI-compatible providers. |
 | `OPENAI_BASE_URL` | No | `https://api.openai.com/v1` | Endpoint URL for the OpenAI API. |
 | `OPENAI_MODEL` | No | `gpt-4` | The model used on the OpenAI gateway. |

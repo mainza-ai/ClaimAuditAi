@@ -11,7 +11,7 @@ Before installing the platform, ensure your environment meets these hardware and
 
 ### API Gateway Credentials
 - **LLM Adjudication Gateway**: A valid **Nvidia Integrate API Key** to use the default high-performance cloud `nvidia/nemotron-3-super-120b-a12b` model.
-- **Local Fallback Option**: A running local **Ollama** instance serving the `llama3` or `qwen` models.
+- **Local Fallback Option**: A running local **Ollama** instance serving the `llama3.2:3b-instruct-fp16` (6.4 GB) or `granite4.1:3b-bf16` (6.8 GB) models.
 
 ## Key Details
 - **Docker VM RAM Allocation**: Minimum 6 GB (Required for local PyTorch and SentenceTransformer execution).
