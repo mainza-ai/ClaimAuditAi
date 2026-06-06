@@ -132,6 +132,9 @@ The system enforces strict role-based access control (RBAC) across both API and 
 ### Prerequisites
 - Docker & Docker Compose
 - A modern browser (Chrome/Firefox/Safari)
+- **An LLM Backend Provider (Local or Cloud):**
+  - **Local:** Ollama running locally (e.g. `llama3` or `qwen2.5` models) accessible from the container.
+  - **Cloud:** An API key for cloud LLM providers (OpenAI or NVIDIA NIM), configured in the `.env` file.
 
 ### Setup & Run
 1. Clone the repository and configure environments:
@@ -343,5 +346,5 @@ The following slideshow walks through the business motivation, technical archite
 ---
 
 ## 📄 License
-MIT License
+Released under the [MIT License](LICENSE).
 
