@@ -42,7 +42,8 @@ ui/dist/
 claimauditai-wiki/.obsidian/
 
 # Assets (large files)
-assets/
+# assets/ is un-ignored so that visual assets render on GitHub
+
 
 # Vitest Coverage
 ui/coverage/
