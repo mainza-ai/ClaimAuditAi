@@ -22,7 +22,7 @@ try {
   if tRS.%Get("cnt") = 0 {
     // Initialize FHIR metadata and create FHIR server endpoint
     do ##class(HS.FHIRServer.Installer).InstallNamespace()
-    set tSC = ##class(HS.FHIRServer.Installer).InstallInstance("/interop/fhir/r4", "ClaimAudit.FHIR.InteractionsStrategy", "hl7.fhir.r4.core@4.0.1")
+    set tSC = ##class(HS.FHIRServer.Installer).InstallInstance("/fhir/r4", "ClaimAudit.FHIR.InteractionsStrategy", "hl7.fhir.r4.core@4.0.1")
     if tSC { write "FHIR server created", ! } else { write "FHIR server: ", $SYSTEM.Status.GetOneErrorText(tSC), ! }
   } else {
     write "FHIR server already exists, skipping", !

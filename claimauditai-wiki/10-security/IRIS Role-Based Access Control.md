@@ -4,7 +4,7 @@
 
 ## Database Access Hardening
 
-1. **Schema Access Limits**: Access to the projected SQL tables under the `ClaimAudit` schema is restricted to the `/interop/fhir/r4` service account.
+1. **Schema Access Limits**: Access to the projected SQL tables under the `ClaimAudit` schema is restricted to the `/fhir/r4` service account.
 2. **Passwordless CallIn Configuration**: Enabled using `merge.cpf` to allow passwordless connections for local Python processes, while maintaining strict password enforcement for external database clients.
 
 ```
@@ -30,7 +30,7 @@ Higher level roles automatically bypass restrictions for lower levels (e.g., a D
 - **Operational Schema**: `ClaimAudit.*`
 - **SuperServer Port**: 1972 (requires password authentication).
 - **Local CallIn Service**: `%Service_CallIn` (configured via `merge.cpf`).
-- **Access Rule Policy**: Restricts database write permissions to the `/interop/fhir/r4` service account.
+- **Access Rule Policy**: Restricts database write permissions to the `/fhir/r4` service account.
 
 ## See Also
 [[Security Overview]] · [[FHIR Interception Strategy]] · [[Docker Configuration]]

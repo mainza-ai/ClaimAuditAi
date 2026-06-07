@@ -45,7 +45,7 @@ ClaimAuditAI shifts the payment integrity paradigm from retrospective "pay-and-c
 - [[Installation Guide]] — Execution steps for environment building and compilation.
 - [[Environment Variables Reference]] — Master table of `.env` configurations.
 - [[Docker Configuration]] — Python module caching and volume mount settings.
-- [[FHIR Server Provisioning]] — Management Portal setup and `/interop/fhir/r4` routing.
+- [[FHIR Server Provisioning]] — Management Portal setup and `/fhir/r4` routing.
 - [[Initialization Script]] — Build-time (`iris.script`) and runtime (`init_iris.sh`) setup flows.
 
 ### 📂 07 - API Reference

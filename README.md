@@ -123,7 +123,7 @@ The system enforces strict role-based access control (RBAC) across both API and 
   - **Specialist:** Conducts collusion graph analysis, manages second-stage overrides.
   - **Director:** Resolves escalated pended holds (Approve/Reject), authors ledger override summaries.
   - **Tech Owner / Admin:** Full settings administration, model retraining, and system purges.
-- **Least-Privilege IRIS Hardening:** Web applications (`/api` and `/interop/fhir/r4`) run under tightened MatchRoles parameters (`:%DB_INTEROP-CODE:%DB_INTEROP-DATA:%Admin_Secure`) instead of matching `%All` permissions.
+- **Least-Privilege IRIS Hardening:** Web applications (`/api` and `/fhir/r4`) run under tightened MatchRoles parameters (`:%DB_INTEROP-CODE:%DB_INTEROP-DATA:%Admin_Secure`) instead of matching `%All` permissions.
 
 ---
 
@@ -150,7 +150,7 @@ The system enforces strict role-based access control (RBAC) across both API and 
    ```
 3. Load and seed the extended sample FHIR data bundles:
    ```bash
-   docker exec -it claimaudit-iris iris session IRIS "##class(ClaimAudit.REST.Router).LoadSampleData()"
+    docker exec -it claimaudit-iris iris session IRIS -U INTEROP "##class(ClaimAudit.REST.Router).LoadSampleData()"
    ```
 
 Open `http://localhost:3000` to access the dashboard.

@@ -10,7 +10,7 @@ Local Codebase ──> [ZPM Package] ──> module.xml Compilation ──> Clou
 
 1. **ZPM Packaging**: Compiles code into a redistributable package using `module.xml`.
 2. **Cloud Container Staging**: Provisions the system in cloud environments (such as AWS or GCP) using our multi-stage Docker configurations.
-3. **Public Gateway Setup**: Secures the `/interop/fhir/r4` endpoint behind cloud API gateways.
+3. **Public Gateway Setup**: Secures the `/fhir/r4` endpoint behind cloud API gateways.
 
 This architecture ensures that the platform is easy to deploy, scale, and manage across diverse cloud environments.
 

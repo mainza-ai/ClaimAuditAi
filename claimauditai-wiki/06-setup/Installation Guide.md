@@ -31,7 +31,7 @@ The build sequence compiles the custom Interactions strategy classes, initialize
 ## Key Details
 - **Build Command**: `docker-compose up -d --build`
 - **IRIS Verification Command**: `docker exec -it claimaudit-iris iris session IRIS -U INTEROP`
-- **Primary Operational Endpoint**: `http://localhost:52773/interop/fhir/r4`
+- **Primary Operational Endpoint**: `http://localhost:52773/fhir/r4`
 - **ZPM Module Auto-Compilation**: Handled by the initialization scripts during build time.
 
 ## See Also

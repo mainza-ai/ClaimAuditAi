@@ -54,7 +54,7 @@ This ensures components always receive an array even when the API fails, prevent
 #### 3. Verify Backend Endpoints
 Ensure all backend prerequisites are met before testing the UI:
 - `/api` web app is registered in `%SYS` (`Security.Applications.Exists("/api") = 1`)
-- FHIR server is provisioned at `/interop/fhir/r4`
+- FHIR server is provisioned at `/fhir/r4`
 - FHIR schema tables exist (`HSFHIR_X0001_S.ClaimResponse`)
 - REST Router class is compiled (`ClaimAudit.REST.Router`)
 

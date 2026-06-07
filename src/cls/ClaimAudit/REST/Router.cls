@@ -170,7 +170,7 @@ ClassMethod GetHeldClaims() As %Status
         If tLimit < 1 Set tLimit = 50
         If tLimit > 200 Set tLimit = 200
 
-        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
+        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/fhir/r4")
 
         // Single O(1) query with JOIN — matching the proven CSV export pattern
         // Build SQL as single concatenated string (no line continuations)
@@ -495,7 +495,7 @@ ClassMethod GetClaimDetail(id As %String) As %Status
     If '##class(ClaimAudit.REST.Auth).RequireAuth() Quit $$$OK
     Set tSC = $$$OK
     Try {
-        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
+        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/fhir/r4")
 
         // 1. Fetch ClaimResponse resource
         Set tRequest = ##class(HS.FHIRServer.API.Data.Request).%New()
@@ -861,7 +861,7 @@ ClassMethod ApproveClaim(id As %String) As %Status
         Set tBody = ##class(%DynamicObject).%FromJSON(%request.Content)
         Set tAuthorizedBy = tBody.authorizedBy
         Set tRationaleSummary = tBody.rationaleSummary
-        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
+        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/fhir/r4")
 
         // 1. Fetch and update ClaimResponse
         Set tRequest = ##class(HS.FHIRServer.API.Data.Request).%New()
@@ -965,7 +965,7 @@ ClassMethod EscalateClaim(id As %String) As %Status
         Set tBody = ##class(%DynamicObject).%FromJSON(%request.Content)
         Set tAuthorizedBy = tBody.authorizedBy
         Set tRationaleSummary = tBody.rationaleSummary
-        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
+        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/fhir/r4")
 
         // 1. Fetch ClaimResponse
         Set tRequest = ##class(HS.FHIRServer.API.Data.Request).%New()
@@ -1077,7 +1077,7 @@ ClassMethod RejectClaim(id As %String) As %Status
         Set tBody = ##class(%DynamicObject).%FromJSON(%request.Content)
         Set tAuthorizedBy = tBody.authorizedBy
         Set tRationaleSummary = tBody.rationaleSummary
-        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
+        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/fhir/r4")
 
         // 1. Fetch and update ClaimResponse
         Set tRequest = ##class(HS.FHIRServer.API.Data.Request).%New()
@@ -1177,7 +1177,7 @@ ClassMethod ReauditClaim(id As %String) As %Status
     If '##class(ClaimAudit.REST.Auth).RequireAuth("Auditor") Quit $$$OK
     Set tSC = $$$OK
     Try {
-        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
+        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/fhir/r4")
 
         // Read ClaimResponse
         Set tReq = ##class(HS.FHIRServer.API.Data.Request).%New()
@@ -1386,7 +1386,7 @@ ClassMethod GenerateDetailedReport(id As %String) As %Status
     If '##class(ClaimAudit.REST.Auth).RequireAuth() Quit $$$OK
     Set tSC = $$$OK
     Try {
-        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
+        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/fhir/r4")
         Set tRequest = ##class(HS.FHIRServer.API.Data.Request).%New()
         Set tRequest.RequestMethod = "GET"
         Set tRequest.RequestPath = "/ClaimResponse/" _ id
@@ -1607,7 +1607,7 @@ ClassMethod GetStats() As %Status
         Set tTier3Count = 0
         Set tHeldRS = ##class(%SQL.Statement).%ExecDirect(,
         "SELECT Key FROM HSFHIR_X0001_S.ClaimResponse WHERE outcome = ?", "queued")
-        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
+        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/fhir/r4")
         While tHeldRS.%Next() {
             Set tCRKey = tHeldRS.%Get("Key")
             Set tCRId = $Piece(tCRKey, "/", 2)
@@ -1862,6 +1862,9 @@ ClassMethod LoadSampleData() As %Status
         If '##class(ClaimAudit.REST.Auth).RequireAuth("Admin") Quit $$$OK
     }
     Set tSC = $$$OK
+    // Programmatically switch namespace to INTEROP to make this CLI-safe
+    New $Namespace
+    Set $Namespace = "INTEROP"
     Try {
         Set ^ClaimAuditAI("Seeding") = 1
         // 1. Wipe existing tables for a clean state
@@ -1876,7 +1879,7 @@ ClassMethod LoadSampleData() As %Status
         Do ##class(%SQL.Statement).%ExecDirect(, "DELETE FROM ClaimAudit.ProviderProjections")
         Do ##class(%SQL.Statement).%ExecDirect(, "DELETE FROM ClaimAudit.ClaimProjections")
 
-        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
+        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/fhir/r4")
 
         // 2. Read expanded Patient bundle
         Set tPatPath = "/home/irisowner/dev/samples/sample_patient_bundle.json"
@@ -2070,7 +2073,7 @@ ClassMethod GetLedger() As %Status
         If tLimit < 1 Set tLimit = 50
         If tLimit > 200 Set tLimit = 200
 
-        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
+        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/fhir/r4")
 
         // Count query for pagination total — includes escalated tasks (priority=stat) regardless of status
         Set tCountRS = ##class(%SQL.Statement).%ExecDirect(,
@@ -2331,7 +2334,7 @@ ClassMethod UploadClaimData() As %Status
             Quit
         }
 
-        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
+        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/fhir/r4")
         Set tReq = ##class(HS.FHIRServer.API.Data.Request).%New()
         Set tReq.RequestMethod = "POST"
         Set tReq.Json = tJson
@@ -2455,7 +2458,7 @@ ClassMethod GetSystemHealth() As %Status
         // 1. FHIR endpoint status
         Set tFhirStatus = "healthy"
         Try {
-            Set tSvc = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
+            Set tSvc = ##class(HS.FHIRServer.Service).EnsureInstance("/fhir/r4")
             If '$IsObject(tSvc) Set tFhirStatus = "unavailable"
         } Catch { Set tFhirStatus = "error" }
         If tFhirStatus '= "healthy" Set tHealthy = 0
@@ -2734,7 +2737,7 @@ ClassMethod BackfillTierResults() As %Status
     If '##class(ClaimAudit.REST.Auth).RequireAuth("Admin") Quit $$$OK
     Set tSC = $$$OK
     Try {
-        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
+        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/fhir/r4")
         Set tRS = ##class(%SQL.Statement).%ExecDirect(,
         "SELECT Key FROM HSFHIR_X0001_S.ClaimResponse WHERE outcome = ?", "queued")
         Set tUpdated = 0
@@ -2871,7 +2874,7 @@ ClassMethod BackupRepository() As %Status
         Set %response.ContentType = "application/fhir+json"
         Set %response.Headers("Content-Disposition") = "attachment; filename=claimaudit_backup_" _ $ZDate($PIECE($HOROLOG, ",", 1), 3) _ ".json"
 
-        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
+        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/fhir/r4")
         Set tBundle = {
             "resourceType": "Bundle",
             "type": "transaction",
@@ -3126,7 +3129,7 @@ ClassMethod ExportClaims() As %Status
 
         Write "ClaimResponseID,PatientID,PatientName,CPTCode,ICDCode,RiskLevel,RiskScore,BilledAmount,LastModified", !
 
-        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
+        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/fhir/r4")
 
         Set tRS = ##class(%SQL.Statement).%ExecDirect(,
         "SELECT CR.Key, CR.patient, CR._lastUpdated, "_

@@ -58,7 +58,7 @@ On first container start, the Docker entrypoint executes `init_iris.sh` from `/d
  InteractionsStrategy.cls,│
  RepoManager.cls)         │
                           v
-                  InstallInstance("/interop/fhir/r4") ──> FHIR Schema Tables
+                  InstallInstance("/fhir/r4") ──> FHIR Schema Tables
                           │
                           v
                   Engine.Setup() ──> Custom Tables

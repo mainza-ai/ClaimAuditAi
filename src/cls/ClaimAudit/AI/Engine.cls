@@ -233,7 +233,7 @@ ClassMethod AuditClaim(pClaimJson As %DynamicObject, Output pResult As %DynamicO
                 Set tReqPat.RequestPath = "/Patient/" _ patientId
                 Set tReqPat.Interaction = "read"
                 Set tRespPat = ##class(HS.FHIRServer.API.Data.Response).%New()
-                Set tFHIRService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
+                Set tFHIRService = ##class(HS.FHIRServer.Service).EnsureInstance("/fhir/r4")
                 Do tFHIRService.DispatchRequest(tReqPat, .tRespPat)
                 If $IsObject(tRespPat.Json) {
                     Set tBirthDate = tRespPat.Json.birthDate

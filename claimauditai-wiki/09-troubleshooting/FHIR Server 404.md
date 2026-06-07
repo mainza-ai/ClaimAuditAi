@@ -4,7 +4,7 @@
 
 ### Symptom
 - Sending REST requests to `http://localhost:52773/api/*` returns an HTML `404 Not Found` page with IRIS headers (`Expires`, `Cache-Control`, `Pragma`)
-- `http://localhost:52773/interop/fhir/r4` also returns 404
+- `http://localhost:52773/fhir/r4` also returns 404
 - `Security.Applications.Exists("/api")` returns `0`
 
 ### Diagnostic Steps
@@ -43,7 +43,7 @@ The [[Initialization Script]] at `/docker-entrypoint-initdb.d/init_iris.sh` shou
 ```bash
 docker exec -i claimaudit-iris iris session IRIS -U INTEROP <<< '
   do ##class(HS.FHIRServer.Installer).InstallNamespace()
-  set tSC = ##class(HS.FHIRServer.Installer).InstallInstance("/interop/fhir/r4", "ClaimAudit.FHIR.InteractionsStrategy", "hl7.fhir.r4.core@4.0.1")
+  set tSC = ##class(HS.FHIRServer.Installer).InstallInstance("/fhir/r4", "ClaimAudit.FHIR.InteractionsStrategy", "hl7.fhir.r4.core@4.0.1")
   if tSC { w "FHIR server created",! } else { w "FHIR server: ",$SYSTEM.Status.GetOneErrorText(tSC),! }
 '
 ```

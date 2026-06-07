@@ -28,7 +28,7 @@ The Router URL Map was updated:
 The frontend API calls were updated in `DataManagement.tsx` to use the new paths.
 
 ## Note
-This issue is specific to the IRIS private web server. It does not affect the FHIR endpoint at `/interop/fhir/r4` and does not affect any routes without `/admin/` in the path segment.
+This issue is specific to the IRIS private web server. It does not affect the FHIR endpoint at `/fhir/r4` and does not affect any routes without `/admin/` in the path segment.
 
 ## Affected Files
 - `src/cls/ClaimAudit/REST/Router.cls` — URL Map and method names

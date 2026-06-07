@@ -30,7 +30,7 @@ Instead of attempting to JOIN and select these non-existent columns in SQL, fetc
 Set tClaimResponseId = $Piece(tCRKey, "/", 2)
 If tClaimResponseId '= "" {
     Try {
-        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/interop/fhir/r4")
+        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/fhir/r4")
         Set tReqCR = ##class(HS.FHIRServer.API.Data.Request).%New()
         Set tReqCR.RequestMethod = "GET"
         Set tReqCR.RequestPath = "/ClaimResponse/" _ tClaimResponseId

@@ -119,6 +119,29 @@
     // Configure %UnitTest in INTEROP
     set ^UnitTestRoot="/usr/irissys/.vscode/INTEROP/UnitTestRoot"
 
+    // Compile FHIR-dependent classes FIRST so they are available for FHIR server creation
+    do $SYSTEM.OBJ.Load("/home/irisowner/dev/src/cls/ClaimAudit/FHIR/InteractionsStrategy.cls", "ck")
+    do $SYSTEM.OBJ.Load("/home/irisowner/dev/src/cls/ClaimAudit/FHIR/Interactions.cls", "ck")
+    do $SYSTEM.OBJ.Load("/home/irisowner/dev/src/cls/ClaimAudit/FHIR/RepoManager.cls", "ck")
+
+    // Initialize FHIR metadata and create FHIR server endpoint at /fhir/r4
+    do ##class(HS.FHIRServer.Installer).InstallNamespace()
+    set tSC = ##class(HS.FHIRServer.Installer).InstallInstance("/fhir/r4", "ClaimAudit.FHIR.InteractionsStrategy", "hl7.fhir.r4.core@4.0.1")
+    if tSC {
+        write "FHIR server created at /fhir/r4", !
+        // Secure the FHIR CSP application by tightening MatchRoles
+        zn "%SYS"
+        if ##class(Security.Applications).Exists("/fhir/r4") {
+            do ##class(Security.Applications).Get("/fhir/r4", .prop)
+            set prop("MatchRoles") = ":%DB_INTEROP-CODE:%DB_INTEROP-DATA"
+            do ##class(Security.Applications).Modify("/fhir/r4", .prop)
+            write "FHIR server application secured", !
+        }
+        zn "INTEROP"
+    } else {
+        write "FHIR server error: ", $SYSTEM.Status.GetOneErrorText(tSC), !
+    }
+
 // Compile non-FHIR-dependent classes before ZPM
 do $SYSTEM.OBJ.Load("/home/irisowner/dev/src/cls/ClaimAudit/Debug.cls", "ck")
 do ##class(ClaimAudit.Debug).GrantRolesToUnknownUser()

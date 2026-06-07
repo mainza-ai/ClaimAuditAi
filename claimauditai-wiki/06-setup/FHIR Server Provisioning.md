@@ -1,6 +1,6 @@
 # FHIR Server Provisioning
 
-> The FHIR server configuration provisions the `/interop/fhir/r4` endpoint and registers the custom `ClaimAudit.FHIR.InteractionsStrategy`.
+> The FHIR server configuration provisions the `/fhir/r4` endpoint and registers the custom `ClaimAudit.FHIR.InteractionsStrategy`.
 
 ## Architecture
 
@@ -15,7 +15,7 @@ Runtime Flow:
     ├── InstallNamespace()  ← loads FHIR metadata packages
     │     (hl7.fhir.r3.core, hl7.fhir.r4.core, etc.)
     │
-    ├── InstallInstance("/interop/fhir/r4", ...)
+    ├── InstallInstance("/fhir/r4", ...)
     │     │
     │     ├── Creates HSFHIR_X0001_S.* schema tables
     │     │   (Claim, ClaimResponse, Patient, Task, etc.)
@@ -37,7 +37,7 @@ The default FHIR server storage uses `HS.FHIRServer.Storage.Json.RepoManager`. O
 
 ## Claim Interception Flow
 
-When a Claim is submitted via POST to `/interop/fhir/r4/Claim`:
+When a Claim is submitted via POST to `/fhir/r4/Claim`:
 
 ```
 POST /Claim
@@ -91,7 +91,7 @@ The `/api` web application at `http://localhost:52773/api/*` is dispatched by `C
 docker exec claimaudit-iris iris session IRIS -U INTEROP <<< 'set rs=##class(%SQL.Statement).%ExecDirect(,"SELECT COUNT(*) AS cnt FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA=? AND TABLE_NAME=?","HSFHIR_X0001_S","ClaimResponse") do rs.%Next() w rs.%Get("cnt")'
 
 # Test FHIR endpoint
-curl -s http://localhost:52773/interop/fhir/r4/ClaimResponse
+curl -s http://localhost:52773/fhir/r4/ClaimResponse
 
 # Test API endpoint
 curl -s http://localhost:52773/api/stats

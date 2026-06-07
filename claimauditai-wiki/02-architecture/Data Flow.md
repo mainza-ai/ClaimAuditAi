@@ -10,7 +10,7 @@ The lifecycle of an adjudication transaction proceeds in a synchronous sequence 
 [HTTP 202] <── Mutate Response <── OnAfterRequest <── Create Tasks <--------+
 ```
 
-1. **Payload Ingestion**: The provider POSTs an institutional/professional FHIR `Claim` to the endpoint `/interop/fhir/r4/Claim`.
+1. **Payload Ingestion**: The provider POSTs an institutional/professional FHIR `Claim` to the endpoint `/fhir/r4/Claim`.
 2. **Interception**: `OnBeforeRequest()` triggers `##class(ClaimAudit.AI.Engine).AuditClaim()`.
 3. **Execution**: The engine runs the three analytical tiers. If the threat score exceeds the safety threshold ($\ge 0.35$), the process sets a thread-safe private flag `^||ClaimAuditFlag`.
 4. **Summary Generation**: `%AI.Agent` generates an explainable markdown hold summary.

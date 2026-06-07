@@ -1,6 +1,6 @@
 # Bundle Claims Not Intercepted
 
-> **Symptom:** Claims submitted inside a FHIR Bundle (via `POST /interop/fhir/r4` with a Bundle resource) are saved normally without triggering the AI audit engine. Only direct `POST /interop/fhir/r4/Claim` submissions are intercepted.
+> **Symptom:** Claims submitted inside a FHIR Bundle (via `POST /fhir/r4` with a Bundle resource) are saved normally without triggering the AI audit engine. Only direct `POST /fhir/r4/Claim` submissions are intercepted.
 
 ## Root Cause
 
