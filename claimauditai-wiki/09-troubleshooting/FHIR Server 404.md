@@ -38,7 +38,9 @@ echo 'zn "%SYS" set p("DispatchClass")="ClaimAudit.REST.Router",p("NameSpace")="
 Then verify: `curl -s http://localhost:52773/api/stats`
 
 #### 2. FHIR Server Not Provisioned
-The [[Initialization Script]] at `/docker-entrypoint-initdb.d/init_iris.sh` should provision the FHIR server at runtime. To fix manually:
+By default, the FHIR server is provisioned during the **Docker build phase** inside `iris.script` to ensure it is always ready on container start. 
+
+However, if you mount external databases or if the installation was skipped (e.g. because `/docker-entrypoint-initdb.d/` script executions are bypassed by the base image when detecting an already initialized state), you can provision it manually:
 
 ```bash
 docker exec -i claimaudit-iris iris session IRIS -U INTEROP <<< '
