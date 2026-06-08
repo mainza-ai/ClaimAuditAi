@@ -4,11 +4,11 @@
 
 ## Architecture
 
-The FHIR server runs in the `INTEROP` namespace. It is created at **container runtime** by `init_iris.sh` (not during Docker build), because the FHIR framework classes (`HS.FHIRServer.Storage.Json.*`) are only available after the namespace is fully initialized:
+The FHIR server runs in the `INTEROP` namespace. It is provisioned at **Docker build** time by `iris.script`, ensuring the `/fhir/r4` endpoint is fully baked into the compiled container image. The container startup script `init_iris.sh` acts as a runtime fallback to verify or recreate the endpoint if starting with empty mounted volumes:
 
 ```
-Runtime Flow:
-  init_iris.sh
+Build-Time Flow:
+  iris.script
     │
     ├── Compile FHIR classes (Interactions, InteractionsStrategy, RepoManager)
     │

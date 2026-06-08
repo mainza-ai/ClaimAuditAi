@@ -14,15 +14,19 @@ The build process is automated using the `iris.script` manifest, which executes 
                (^ClaimAuditAI globals in INTEROP)
                        │
                        v
-               Compile Non-FHIR Classes
-               (Router.cls, Engine.cls, Agent.cls)
+               Compile All Custom Classes Recursively
+               (via LoadDir in INTEROP)
+                       │
+                       v
+               Provision FHIR Server & Setup DB
+               (InstallInstance & Engine.Setup)
                        │
                        v
                Register /api Web Application
                        │
                        v
                Load ZPM Module (module.xml)
-               (REST.PKG + AI.PKG only; FHIR classes excluded)
+               (Includes REST, AI, FHIR, and Data packages)
 ```
 
 ### Credential Hash Storage
@@ -46,11 +50,11 @@ This is critical: the CSP Gateway dispatches REST requests as `UnknownUser` — 
 
 2. **ZPM load must be last** — the `zpm "load...":1:1` command with wait mode may consume subsequent stdin as additional ZPM commands. Always place it right before `halt`.
 
-3. **FHIR-dependent classes must be excluded** — `Interactions.cls`, `InteractionsStrategy.cls`, and `RepoManager.cls` extend FHIR server framework classes that don't exist at build time. They are compiled at runtime by `init_iris.sh`. The `module.xml` limits ZPM to only `ClaimAudit.REST.PKG` and `ClaimAudit.AI.PKG`.
+3. **Classes and Tables are Compiled at Build Time** — All custom classes in `src/cls/` are loaded and compiled recursively using `LoadDir("/home/irisowner/dev/src/cls", "ckr", , 1)`. The database schema tables, indices, and vector tables are then created by executing `do ##class(ClaimAudit.AI.Engine).Setup()`. This ensures the database is fully baked into the Docker image.
 
 ## Runtime: `init_iris.sh`
 
-On first container start, the Docker entrypoint executes `init_iris.sh` from `/docker-entrypoint-initdb.d/`. This script:
+On first container start, the Docker entrypoint executes `init_iris.sh` from `/docker-entrypoint-initdb.d/` (or skips it if persistent database files are detected). This script is a fallback that:
 
 ```
 [init_iris.sh] ──> Compile FHIR Classes ──> Check FHIR Server

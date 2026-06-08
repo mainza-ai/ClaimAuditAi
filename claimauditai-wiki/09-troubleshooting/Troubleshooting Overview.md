@@ -8,7 +8,8 @@ If your installation encounters errors, locate the symptom in the table below to
 | :--- | :--- | :--- |
 | Container fails to start or compile | Insufficient VM memory or file permission locks | [[Container Startup Failures]] |
 | GET requests return 404 Not Found | Missing namespace or strategy endpoint mapping | [[FHIR Server 404]] |
-| **Seeding/REST returns `ServiceIdIdx` error** | FHIR server not provisioned, or script called from wrong default namespace | [[ServiceIdIdx Object Open Failure]] |
+| **Seeding/REST returns `ServiceIdIdx` or missing table/class errors** | FHIR server not provisioned, class compilation ordering issues, or wrong default namespace | [[ServiceIdIdx Object Open Failure]] |
+| **Seeding/REST returns `Expecting value` JSON error** | REST output device pollution from `Setup()` Write statements | [[Seeding Fails with Expecting Value JSON Error]] |
 | Claims are not intercepted (save normally) | Strategy classes not compiled or loaded | [[InteractionsStrategy Not Firing]] |
 | Anomaly scores are too low (no holds) | Autoencoder bottleneck saturation or poor learning rates | [[Autoencoder Not Detecting Anomalies]] |
 | Vector search returns empty sets | Malformed TO_VECTOR casting or missing HNSW index | [[Vector Search Returns No Results]] |
@@ -47,4 +48,4 @@ If your installation encounters errors, locate the symptom in the table below to
 - **CSP Cache Flush**: Force cache flushes by running `kill ^%cspSession` in `%SYS`.
 
 ## See Also
-[[Container Startup Failures]] · [[FHIR Server 404]] · [[ServiceIdIdx Object Open Failure]] · [[InteractionsStrategy Not Firing]] · [[Blank UI Due to API Error Responses]] · [[ObjectScript SQL Single-Quote Consumption]] · [[Claim Actions Silently Fail]] · [[Rejected Claims Missing From Ledger]] · [[Dashboard Metrics Stale After Actions]] · [[Dashboard Daily Counts Always Zero]] · [[Theme Not Applied on Page Load]] · [[Admin Routes Return 401]] · [[LLM API Key Lost on Save]] · [[Autoencoder Trains on Random Noise]] · [[Bundle Claims Not Intercepted]] · [[Collusion Graph Performance Degradation]]
+[[Container Startup Failures]] · [[FHIR Server 404]] · [[ServiceIdIdx Object Open Failure]] · [[InteractionsStrategy Not Firing]] · [[Blank UI Due to API Error Responses]] · [[ObjectScript SQL Single-Quote Consumption]] · [[Claim Actions Silently Fail]] · [[Rejected Claims Missing From Ledger]] · [[Dashboard Metrics Stale After Actions]] · [[Dashboard Daily Counts Always Zero]] · [[Theme Not Applied on Page Load]] · [[Admin Routes Return 401]] · [[LLM API Key Lost on Save]] · [[Autoencoder Trains on Random Noise]] · [[Bundle Claims Not Intercepted]] · [[Collusion Graph Performance Degradation]] · [[Seeding Fails with Expecting Value JSON Error]]
