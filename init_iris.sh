@@ -31,19 +31,14 @@ try {
   write "FHIR server installation skipped or already configured: ", ex.DisplayString(), !
 }
 
-// Compile AI Engine classes
-do $SYSTEM.OBJ.Load("/home/irisowner/dev/src/cls/ClaimAudit/AI/Engine.cls", "ck")
-do $SYSTEM.OBJ.Load("/home/irisowner/dev/src/cls/ClaimAudit/AI/Agent.cls", "ck")
+// Compile all custom classes recursively
+do $SYSTEM.OBJ.LoadDir("/home/irisowner/dev/src/cls", "ckr", , 1)
 
 // Run Engine.Setup() to create audit tables and train models (idempotent)
 do ##class(ClaimAudit.AI.Engine).Setup()
 
-// Compile REST Router, Auth, and Debug helper so all routes and permissions are available
-do $SYSTEM.OBJ.Load("/home/irisowner/dev/src/cls/ClaimAudit/Debug.cls", "ck")
+// Grant permissions to UnknownUser
 do ##class(ClaimAudit.Debug).GrantRolesToUnknownUser()
-do $SYSTEM.OBJ.Load("/home/irisowner/dev/src/cls/ClaimAudit/REST/Router.cls", "ck")
-do $SYSTEM.OBJ.Load("/home/irisowner/dev/src/cls/ClaimAudit/REST/Auth.cls", "ck")
-do $SYSTEM.OBJ.Load("/home/irisowner/dev/src/cls/ClaimAudit/Data/GraphStore.cls", "ck")
 
 halt
 EOF

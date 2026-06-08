@@ -1854,7 +1854,6 @@ ClassMethod ChatStream() As %Status
     }
     Quit tSC
 }
-
 /// Dynamic uploader to wipe existing test data and reload expanded patient bundles and claims bundles
 ClassMethod LoadSampleData() As %Status
 {
@@ -1867,6 +1866,8 @@ ClassMethod LoadSampleData() As %Status
     Set $Namespace = "INTEROP"
     Try {
         Set ^ClaimAuditAI("Seeding") = 1
+        // Ensure database tables and indices exist
+        Do ##class(ClaimAudit.AI.Engine).Setup(1)
         // 1. Wipe existing tables for a clean state
         Do ##class(%SQL.Statement).%ExecDirect(, "DELETE FROM HSFHIR_X0001_S.ClaimResponse")
         Do ##class(%SQL.Statement).%ExecDirect(, "DELETE FROM HSFHIR_X0001_S.Claim")

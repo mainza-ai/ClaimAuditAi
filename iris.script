@@ -142,12 +142,12 @@
         write "FHIR server error: ", $SYSTEM.Status.GetOneErrorText(tSC), !
     }
 
-// Compile non-FHIR-dependent classes before ZPM
-do $SYSTEM.OBJ.Load("/home/irisowner/dev/src/cls/ClaimAudit/Debug.cls", "ck")
+// Compile all custom classes recursively
+do $SYSTEM.OBJ.LoadDir("/home/irisowner/dev/src/cls", "ckr", , 1)
+
+// Grant permissions and initialize DB tables + AI models during build
 do ##class(ClaimAudit.Debug).GrantRolesToUnknownUser()
-do $SYSTEM.OBJ.Load("/home/irisowner/dev/src/cls/ClaimAudit/REST/Router.cls", "ck")
-do $SYSTEM.OBJ.Load("/home/irisowner/dev/src/cls/ClaimAudit/AI/Engine.cls", "ck")
-do $SYSTEM.OBJ.Load("/home/irisowner/dev/src/cls/ClaimAudit/AI/Agent.cls", "ck")
+do ##class(ClaimAudit.AI.Engine).Setup()
 
 // Register the REST Web Application
 zn "%SYS"

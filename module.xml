@@ -10,6 +10,7 @@
       <Resource Name="ClaimAudit.REST.PKG"/>
       <Resource Name="ClaimAudit.AI.PKG"/>
       <Resource Name="ClaimAudit.FHIR.PKG"/>
+      <Resource Name="ClaimAudit.Data.PKG"/>
     </Module>
   </Document>
 </Export>

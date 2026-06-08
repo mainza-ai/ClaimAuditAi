@@ -2,7 +2,7 @@ Class ClaimAudit.AI.Engine Extends %RegisteredObject
 {
 
 /// Set up the database tables and native HNSW vector index
-ClassMethod Setup() As %Status
+ClassMethod Setup(pQuiet As %Boolean = 0) As %Status
 {
     Set sc = $$$OK
     Try {
@@ -21,7 +21,7 @@ ClassMethod Setup() As %Status
         Set tSC = tStatement.%Prepare(tSQL)
         If $$$ISOK(tSC) {
             Do tStatement.%Execute()
-            Write "Created table ClaimAudit.ClinicalNotes.", !
+            If 'pQuiet Write "Created table ClaimAudit.ClinicalNotes.", !
         } Else {
             // Table already exists, make sure NoteDate column exists
             Try {
@@ -30,7 +30,7 @@ ClassMethod Setup() As %Status
                 Set tSCAlter = tAlterStatement.%Prepare(tAlterSQL)
                 If $$$ISOK(tSCAlter) {
                     Do tAlterStatement.%Execute()
-                    Write "Added NoteDate column to existing table ClaimAudit.ClinicalNotes.", !
+                    If 'pQuiet Write "Added NoteDate column to existing table ClaimAudit.ClinicalNotes.", !
                 }
             } Catch {}
         }
@@ -41,9 +41,9 @@ ClassMethod Setup() As %Status
         Set tSC = tStatement.%Prepare(tIndexSQL)
         If $$$ISOK(tSC) {
             Do tStatement.%Execute()
-            Write "Created HNSW Vector Index on ClaimAudit.ClinicalNotes.", !
+            If 'pQuiet Write "Created HNSW Vector Index on ClaimAudit.ClinicalNotes.", !
         } Else {
-            Write "HNSW Vector Index already exists or skipped: ", $System.Status.GetErrorText(tSC), !
+            If 'pQuiet Write "HNSW Vector Index already exists or skipped: ", $System.Status.GetErrorText(tSC), !
         }
 
         // 3. Create PatientProjections table for relational graphs
@@ -76,21 +76,21 @@ ClassMethod Setup() As %Status
 
         // Trigger PyTorch autoencoder training with default synthetic values initially
         Set trainResult = ##class(ClaimAudit.AI.Engine).TrainAutoencoder()
-        Write "Autoencoder Model: ", trainResult, !
+        If 'pQuiet Write "Autoencoder Model: ", trainResult, !
 
         // Pre-load NLP sentence transformer model (~80MB download on first use)
         Try {
             Do ..ConfigurePythonPath()
             Set tNLP = ##class(%SYS.Python).Import("nlp_auditor")
             Set tDummy = tNLP."vectorize_text"("warmup")
-            Write "NLP model pre-loaded.", !
+            If 'pQuiet Write "NLP model pre-loaded.", !
         } Catch ex {
-            Write "NLP pre-load skipped: ", ex.DisplayString(), !
+            If 'pQuiet Write "NLP pre-load skipped: ", ex.DisplayString(), !
         }
 
     } Catch ex {
         Set sc = ex.AsStatus()
-        Write "Setup Error: ", ex.DisplayString(), !
+        If 'pQuiet Write "Setup Error: ", ex.DisplayString(), !
     }
     Quit sc
 }
