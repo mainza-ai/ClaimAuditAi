@@ -69,7 +69,7 @@ def _run_tier(tier_num: int, args: tuple, kwargs: dict) -> dict:
 def run_all_tiers(patient_id: str, provider_npi: str, cpt_codes, cpt_displays=None, icd_codes=None,
                   billed_amount: float = 0.0, code_count: int = 1,
                   specialty_code: float = 1.0, patient_age: float = 45.0, duration_days: float = 1.0,
-                  service_date: str = None) -> dict:
+                  service_date: str = None, claim_id: str = None) -> dict:
     """Execute all three audit tiers sequentially to ensure safety in InterSystems IRIS Embedded Python."""
     results = {}
 
@@ -87,6 +87,7 @@ def run_all_tiers(patient_id: str, provider_npi: str, cpt_codes, cpt_displays=No
     nlp_flagged = False
     nlp_reason = ""
     nlp_similarity = 1.0
+    nlp_citations = []
     
     if cpt_displays:
         start_time = time.time()
@@ -95,6 +96,7 @@ def run_all_tiers(patient_id: str, provider_npi: str, cpt_codes, cpt_displays=No
             nlp_flagged = nlp_res.get("flagged", False)
             nlp_reason = nlp_res.get("reason", "")
             nlp_similarity = nlp_res.get("similarity", 1.0)
+            nlp_citations = nlp_res.get("citations", [])
             
             elapsed = time.time() - start_time
             if elapsed > TIER_CONFIG[1]["timeout"]:
@@ -133,11 +135,14 @@ def run_all_tiers(patient_id: str, provider_npi: str, cpt_codes, cpt_displays=No
             nlp_reason = f"{nlp_reason} | {dx_reason}"
         else:
             nlp_reason = dx_reason
+        if claim_id:
+            nlp_citations.append(f"Claim/{claim_id}")
 
     results["tier1"] = {
         "flagged": nlp_flagged,
         "reason": nlp_reason,
-        "similarity": nlp_similarity
+        "similarity": nlp_similarity,
+        "citations": list(set(nlp_citations))
     }
 
     # Run Tier 2: Autoencoder Outlier Profiler
@@ -150,15 +155,25 @@ def run_all_tiers(patient_id: str, provider_npi: str, cpt_codes, cpt_displays=No
     except Exception as e:
         results["tier2"] = {"flagged": True, "reason": f"Tier 2 autoencoder audit failed: {str(e)}. Manual review required.", "loss": 0.0, "threshold": 0.02}
 
+    # Add Tier 2 citations (the claim itself is the evidence of statistical outlier)
+    t2_citations = []
+    if claim_id:
+        t2_citations.append(f"Claim/{claim_id}")
+    results["tier2"]["citations"] = t2_citations
+
     # Run Tier 3: Graph Collusion Analysis
     start_time = time.time()
     try:
         results["tier3"] = _run_tier(3, (patient_id, provider_npi, service_date), {})
         elapsed = time.time() - start_time
         if elapsed > TIER_CONFIG[3]["timeout"]:
-            results["tier3"] = {"flagged": True, "reason": "Tier 3 graph audit timed out. Manual review required.", "findings": []}
+            results["tier3"] = {"flagged": True, "reason": "Tier 3 graph audit timed out. Manual review required.", "findings": [], "citations": []}
     except Exception as e:
-        results["tier3"] = {"flagged": True, "reason": f"Tier 3 graph audit failed: {str(e)}. Manual review required.", "findings": []}
+        results["tier3"] = {"flagged": True, "reason": f"Tier 3 graph audit failed: {str(e)}. Manual review required.", "findings": [], "citations": []}
+
+    # Ensure citations array is present in Tier 3 result
+    if "citations" not in results["tier3"]:
+        results["tier3"]["citations"] = []
 
     return results
 

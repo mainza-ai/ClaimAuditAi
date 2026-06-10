@@ -85,7 +85,7 @@ def verify_clinical_validity(patient_id: str, code_descriptions, service_date: s
                 pass
         
         sql_query = (
-            "SELECT TOP 3 DocumentText, VECTOR_COSINE(Embedding, TO_VECTOR(?, DOUBLE, 384)) AS Similarity "
+            "SELECT TOP 3 DocumentReferenceId, DocumentText, VECTOR_COSINE(Embedding, TO_VECTOR(?, DOUBLE, 384)) AS Similarity "
             "FROM ClaimAudit.ClinicalNotes "
             "WHERE PatientId = ? AND (NoteDate IS NULL OR NoteDate = '' OR NoteDate BETWEEN ? AND ?) "
             "ORDER BY Similarity DESC"
@@ -97,6 +97,7 @@ def verify_clinical_validity(patient_id: str, code_descriptions, service_date: s
         best_evidence = ""
         flagged = False
         findings = []
+        citations = []
         
         # Check all code descriptions
         for desc in code_descriptions:
@@ -108,13 +109,16 @@ def verify_clinical_validity(patient_id: str, code_descriptions, service_date: s
             
             best_similarity_for_code = -1.0
             best_evidence_for_code = ""
+            best_doc_id = ""
             
             for row in rs:
-                text = row[0]
-                similarity = float(row[1])
+                doc_id = row[0]
+                text = row[1]
+                similarity = float(row[2])
                 if similarity > best_similarity_for_code:
                     best_similarity_for_code = similarity
                     best_evidence_for_code = text
+                    best_doc_id = doc_id
             
             # If no notes exist for this patient
             if best_similarity_for_code == -1.0:
@@ -122,13 +126,17 @@ def verify_clinical_validity(patient_id: str, code_descriptions, service_date: s
                     "similarity": 0.0,
                     "evidence": "No clinical notes found for this patient in DocumentReference.",
                     "flagged": True,
-                    "reason": "Missing supporting clinical documentation (phantom billing suspicion)."
+                    "reason": "Missing supporting clinical documentation (phantom billing suspicion).",
+                    "citations": []
                 }
             
             # Track worst similarity score (lowest) among the matched codes
             if best_similarity_for_code < worst_similarity:
                 worst_similarity = best_similarity_for_code
                 best_evidence = best_evidence_for_code
+            
+            if best_doc_id:
+                citations.append(f"DocumentReference/{best_doc_id}")
                 
             code_flagged = best_similarity_for_code < 0.38
             if code_flagged:
@@ -143,7 +151,8 @@ def verify_clinical_validity(patient_id: str, code_descriptions, service_date: s
             "similarity": worst_similarity,
             "evidence": best_evidence,
             "flagged": flagged,
-            "reason": reason
+            "reason": reason,
+            "citations": list(set(citations))
         }
         
     except Exception as e:

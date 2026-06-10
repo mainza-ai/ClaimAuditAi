@@ -23,6 +23,7 @@ export interface AuditTierResult {
   threshold?: number;
   flags: string[];
   summary: string;
+  citations?: string[];
 }
 
 export interface ActionHistoryEntry {

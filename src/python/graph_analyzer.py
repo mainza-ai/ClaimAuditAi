@@ -39,14 +39,15 @@ def build_relational_graph() -> nx.MultiDiGraph:
             G.add_node(str(row[0]), type="provider", name=str(row[1]), address=str(row[2]).lower().strip())
             
         # 3. Fetch Claim edges
-        stmt = iris.sql.prepare("SELECT PatientKey, ProviderNPI, BilledAmount, ServiceDate FROM ClaimAudit.ClaimProjections")
+        stmt = iris.sql.prepare("SELECT ClaimId, PatientKey, ProviderNPI, BilledAmount, ServiceDate FROM ClaimAudit.ClaimProjections")
         rs = stmt.execute()
         claim_count = 0
         for row in rs:
-            p_key = str(row[0])
-            npi = str(row[1])
-            amount = float(row[2])
-            date = str(row[3])
+            claim_id = str(row[0]) if row[0] is not None else ""
+            p_key = str(row[1])
+            npi = str(row[2])
+            amount = float(row[3])
+            date = str(row[4])
             
             # Make sure nodes are added if not registered
             if not G.has_node(p_key):
@@ -54,7 +55,7 @@ def build_relational_graph() -> nx.MultiDiGraph:
             if not G.has_node(npi):
                 G.add_node(npi, type="provider", address="")
                 
-            G.add_edge(p_key, npi, transaction="claim", amount=amount, date=date)
+            G.add_edge(p_key, npi, transaction="claim", claim_id=claim_id, amount=amount, date=date)
             claim_count += 1
 
         return G
@@ -110,6 +111,7 @@ def check_collusion_network(patient_id: str, provider_npi: str, service_date: st
         G = _get_cached_graph()
         flagged = False
         findings = []
+        citations = []
         
         # Verification 1: Address Collision (Unrelated providers sharing physical billing address)
         # Check current provider address
@@ -126,6 +128,9 @@ def check_collusion_network(patient_id: str, provider_npi: str, service_date: st
                     f"Address Collision Warning: Provider shares physical office address ({current_address}) "
                     f"with other distinct billing NPIs ({', '.join(address_peers)}). Potential shell clinic/collusion ring."
                 )
+                citations.append(f"Practitioner/{provider_npi}")
+                for peer in address_peers:
+                    citations.append(f"Practitioner/{peer}")
                 
         # Verification 2: Geo-Temporal Anomaly (Claims for the same patient at dispersed locations on the same day)
         # Check all claims submitted for this patient on this day
@@ -135,9 +140,13 @@ def check_collusion_network(patient_id: str, provider_npi: str, service_date: st
                 edge_dict = G.get_edge_data(patient_id, neighbor)
                 # MultiDiGraph returns {edge_key: edge_attrs, ...}
                 if edge_dict:
-                    edge_data = next(iter(edge_dict.values()))
-                    if edge_data.get("date") == service_date and neighbor != provider_npi:
-                        patient_claims.append(neighbor)
+                    for edge_key, edge_data in edge_dict.items():
+                        if edge_data.get("date") == service_date and neighbor != provider_npi:
+                            patient_claims.append(neighbor)
+                            other_claim_id = edge_data.get("claim_id", "")
+                            if other_claim_id:
+                                citations.append(f"Claim/{other_claim_id}")
+                            citations.append(f"Practitioner/{neighbor}")
             
             # If the patient has claims at multiple providers on the exact same day
             if len(patient_claims) > 0:
@@ -159,6 +168,8 @@ def check_collusion_network(patient_id: str, provider_npi: str, service_date: st
                             f"on {service_date} from provider {provider_npi} ({prov1_addr}) and provider {other_npi} "
                             f"({prov2_addr}). Geographically impossible same-day treatments."
                         )
+                        citations.append(f"Patient/{patient_id}")
+                        citations.append(f"Practitioner/{provider_npi}")
 
         # Verification 3: Referral Ring Cycle Analysis (undirected bipartite cycle detection)
         try:
@@ -182,6 +193,31 @@ def check_collusion_network(patient_id: str, provider_npi: str, service_date: st
                         f"and patients [{', '.join(patients_in_cycle)}]. "
                         f"Relational loop: {cycle_str}. Suspicion of systematic patient steering or collusion."
                     )
+                    
+                    # Add all loop resources as citations
+                    for node in cycle:
+                        ntype = G.nodes[node].get("type")
+                        if ntype == "provider":
+                            citations.append(f"Practitioner/{node}")
+                        elif ntype == "patient":
+                            citations.append(f"Patient/{node}")
+                    
+                    # Find edges and their claims in the cycle
+                    for i in range(len(cycle)):
+                        u = cycle[i]
+                        v = cycle[(i + 1) % len(cycle)]
+                        if G.has_edge(u, v):
+                            edge_data = G.get_edge_data(u, v)
+                            for edge_key, ed in edge_data.items():
+                                cid = ed.get("claim_id")
+                                if cid:
+                                    citations.append(f"Claim/{cid}")
+                        if G.has_edge(v, u):
+                            edge_data = G.get_edge_data(v, u)
+                            for edge_key, ed in edge_data.items():
+                                cid = ed.get("claim_id")
+                                if cid:
+                                    citations.append(f"Claim/{cid}")
 
         reason = ""
         if flagged:
@@ -190,7 +226,8 @@ def check_collusion_network(patient_id: str, provider_npi: str, service_date: st
         return {
             "flagged": flagged,
             "findings": findings,
-            "reason": reason
+            "reason": reason,
+            "citations": list(set(citations))
         }
         
     except Exception as e:
@@ -201,7 +238,8 @@ def check_collusion_network(patient_id: str, provider_npi: str, service_date: st
         return {
             "flagged": True,
             "findings": [f"Graph analysis infrastructure error: {str(e)}"],
-            "reason": f"Tier 3 (Graph) encountered an internal error: {str(e)}. Claim requires manual adjudication review."
+            "reason": f"Tier 3 (Graph) encountered an internal error: {str(e)}. Claim requires manual adjudication review.",
+            "citations": []
         }
 
 def export_graph_for_ui() -> str:

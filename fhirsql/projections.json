@@ -1,0 +1,75 @@
+{
+  "projections": [
+    {
+      "resourceType": "Claim",
+      "tableName": "FHIRSQL.Claim",
+      "description": "Projected table for FHIR Claim resources",
+      "columns": [
+        {
+          "fhirPath": "id",
+          "columnName": "ClaimId",
+          "dataType": "VARCHAR(50)",
+          "isPrimaryKey": true
+        },
+        {
+          "fhirPath": "patient.reference",
+          "columnName": "PatientReference",
+          "dataType": "VARCHAR(100)"
+        },
+        {
+          "fhirPath": "provider.reference",
+          "columnName": "ProviderReference",
+          "dataType": "VARCHAR(100)"
+        },
+        {
+          "fhirPath": "total.value",
+          "columnName": "TotalAmount",
+          "dataType": "DOUBLE"
+        },
+        {
+          "fhirPath": "created",
+          "columnName": "CreatedDate",
+          "dataType": "VARCHAR(30)"
+        }
+      ]
+    },
+    {
+      "resourceType": "ClaimResponse",
+      "tableName": "FHIRSQL.ClaimResponse",
+      "description": "Projected table for FHIR ClaimResponse resources",
+      "columns": [
+        {
+          "fhirPath": "id",
+          "columnName": "ClaimResponseId",
+          "dataType": "VARCHAR(50)",
+          "isPrimaryKey": true
+        },
+        {
+          "fhirPath": "outcome",
+          "columnName": "Outcome",
+          "dataType": "VARCHAR(50)"
+        },
+        {
+          "fhirPath": "disposition",
+          "columnName": "Disposition",
+          "dataType": "VARCHAR(1000)"
+        },
+        {
+          "fhirPath": "patient.reference",
+          "columnName": "PatientReference",
+          "dataType": "VARCHAR(100)"
+        },
+        {
+          "fhirPath": "request.reference",
+          "columnName": "ClaimReference",
+          "dataType": "VARCHAR(100)"
+        },
+        {
+          "fhirPath": "extension.where(url = 'https://claimauditai.com/fhir/extension/risk-score').valueDecimal",
+          "columnName": "RiskScore",
+          "dataType": "DOUBLE"
+        }
+      ]
+    }
+  ]
+}

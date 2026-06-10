@@ -63,6 +63,7 @@ ClassMethod Setup(pQuiet As %Boolean = 0) As %Status
 
         // 5. Create ClaimProjections table
         Set tSQL = "CREATE TABLE ClaimAudit.ClaimProjections ("_
+                   "ClaimId VARCHAR(50), "_
                    "PatientKey VARCHAR(50), "_
                    "ProviderNPI VARCHAR(50), "_
                    "BilledAmount DOUBLE, "_
@@ -72,7 +73,17 @@ ClassMethod Setup(pQuiet As %Boolean = 0) As %Status
                    "DurationDays INTEGER, "_
                    "ServiceDate VARCHAR(10))"
         Set tSC = tStatement.%Prepare(tSQL)
-        If $$$ISOK(tSC) { Do tStatement.%Execute() }
+        If $$$ISOK(tSC) {
+            Do tStatement.%Execute()
+        } Else {
+            // Table already exists, make sure ClaimId column exists
+            Try {
+                Set tAlterStatement = ##class(%SQL.Statement).%New()
+                Set tAlterSQL = "ALTER TABLE ClaimAudit.ClaimProjections ADD COLUMN ClaimId VARCHAR(50)"
+                Set tSCAlter = tAlterStatement.%Prepare(tAlterSQL)
+                If $$$ISOK(tSCAlter) { Do tAlterStatement.%Execute() }
+            } Catch {}
+        }
 
         // Trigger PyTorch autoencoder training with default synthetic values initially
         Set trainResult = ##class(ClaimAudit.AI.Engine).TrainAutoencoder()
@@ -156,6 +167,8 @@ ClassMethod AuditClaim(pClaimJson As %DynamicObject, Output pResult As %DynamicO
         Do ..ConfigurePythonPath()
         
         // Extract basic features from Claim dynamic object
+        Set claimId = pClaimJson.id
+        If claimId = "" Set claimId = "unknown"
         Set patientId = ""
         If $IsObject(pClaimJson.patient) {
             Set patRef = pClaimJson.patient.reference
@@ -286,7 +299,7 @@ ClassMethod AuditClaim(pClaimJson As %DynamicObject, Output pResult As %DynamicO
             patientId, providerNpi, pyCptCodes, pyCptDisplays, pyIcdCodes,
             billedAmount, codeCount,
             specialtyCode, patientAge, durationDays,
-            serviceDate
+            serviceDate, claimId
         )
 
         // Tier 1: NLP results
@@ -294,10 +307,15 @@ ClassMethod AuditClaim(pClaimJson As %DynamicObject, Output pResult As %DynamicO
         Set t1Flagged = 0
         Set t1Reason = ""
         Set t1Sim = 0.0
+        Set t1Citations = ##class(%DynamicArray).%New()
         If $IsObject(tDict1) {
             Set t1Flagged = +tDict1."get"("flagged", 0)
             Set t1Reason = tDict1."get"("reason", "")
             Set t1Sim = +tDict1."get"("similarity", 0.0)
+            Set pyCitations1 = tDict1."get"("citations")
+            If $IsObject(pyCitations1) {
+                Set t1Citations = ##class(%DynamicArray).%FromJSON(jsonLib.dumps(pyCitations1))
+            }
         }
 
         // Tier 2: Autoencoder results
@@ -305,19 +323,29 @@ ClassMethod AuditClaim(pClaimJson As %DynamicObject, Output pResult As %DynamicO
         Set t2Flagged = 0
         Set t2Reason = ""
         Set t2Loss = 0.0
+        Set t2Citations = ##class(%DynamicArray).%New()
         If $IsObject(tDict2) {
             Set t2Flagged = +tDict2."get"("flagged", 0)
             Set t2Reason = tDict2."get"("reason", "")
             Set t2Loss = +tDict2."get"("loss", 0.0)
+            Set pyCitations2 = tDict2."get"("citations")
+            If $IsObject(pyCitations2) {
+                Set t2Citations = ##class(%DynamicArray).%FromJSON(jsonLib.dumps(pyCitations2))
+            }
         }
 
         // Tier 3: Graph results
         Set tDict3 = tAllResults."get"("tier3")
         Set t3Flagged = 0
         Set t3Reason = ""
+        Set t3Citations = ##class(%DynamicArray).%New()
         If $IsObject(tDict3) {
             Set t3Flagged = +tDict3."get"("flagged", 0)
             Set t3Reason = tDict3."get"("reason", "")
+            Set pyCitations3 = tDict3."get"("citations")
+            If $IsObject(pyCitations3) {
+                Set t3Citations = ##class(%DynamicArray).%FromJSON(jsonLib.dumps(pyCitations3))
+            }
         }
 
         // Synthesis & Risk Scoring
@@ -333,6 +361,7 @@ ClassMethod AuditClaim(pClaimJson As %DynamicObject, Output pResult As %DynamicO
             "score": (t1Sim),
             "flags": []
         }
+        Set tObj1.citations = t1Citations
         If t1Reason '= "" {
             Do tObj1.flags.%Push(t1Reason)
             Set tObj1.summary = t1Reason
@@ -353,6 +382,7 @@ ClassMethod AuditClaim(pClaimJson As %DynamicObject, Output pResult As %DynamicO
             "threshold": (tThresh),
             "flags": []
         }
+        Set tObj2.citations = t2Citations
         If t2Reason '= "" {
             Do tObj2.flags.%Push(t2Reason)
             Set tObj2.summary = t2Reason
@@ -368,6 +398,7 @@ ClassMethod AuditClaim(pClaimJson As %DynamicObject, Output pResult As %DynamicO
             "score": 0.0,
             "flags": []
         }
+        Set tObj3.citations = t3Citations
         If $IsObject(tDict3) {
             Set tFindings = tDict3."get"("findings")
             If $IsObject(tFindings) {
@@ -431,6 +462,13 @@ ClassMethod AuditClaim(pClaimJson As %DynamicObject, Output pResult As %DynamicO
         }
         If (patientId '= "") && (providerNpi '= "") {
             Do ##class(ClaimAudit.Data.GraphStore).UpsertEdge(patientId, providerNpi, billedAmount, serviceDate)
+            
+            // Also persist claim to ClaimProjections table
+            Try {
+                Set tStatement = ##class(%SQL.Statement).%New()
+                Do tStatement.%Prepare("INSERT INTO ClaimAudit.ClaimProjections (ClaimId, PatientKey, ProviderNPI, BilledAmount, ItemCount, SpecialtyCode, PatientAge, DurationDays, ServiceDate) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+                Do tStatement.%Execute(claimId, patientId, providerNpi, billedAmount, codeCount, specialtyCode, patientAge, durationDays, serviceDate)
+            } Catch {}
         }
         // Invalidate graph cache so the next claim audit sees this claim's edges.
         // Without this, claims 2-8 hit the 30s TTL cache and see an empty/stale graph.
@@ -447,13 +485,13 @@ ClassMethod AuditClaim(pClaimJson As %DynamicObject, Output pResult As %DynamicO
         // Populate fallback tierResults so the FHIR extension is always stored
         Set pResult.tierResults = ##class(%DynamicArray).%New()
         Do pResult.tierResults.%Push({
-            "tier": 1, "label": "Semantic Clinical Audit", "score": 0.0, "flags": (##class(%DynamicArray).%New()), "summary": ("NLP audit pipeline failed: " _ ex.DisplayString() _ ". Verify NVIDIA_API_KEY and Python orchestration logs.")
+            "tier": 1, "label": "Semantic Clinical Audit", "score": 0.0, "flags": (##class(%DynamicArray).%New()), "summary": ("NLP audit pipeline failed: " _ ex.DisplayString() _ ". Verify NVIDIA_API_KEY and Python orchestration logs."), "citations": (##class(%DynamicArray).%New())
         })
         Do pResult.tierResults.%Push({
-            "tier": 2, "label": "Statistical Outlier Profiler", "score": 0.0, "threshold": 0, "flags": (##class(%DynamicArray).%New()), "summary": ("Autoencoder anomaly detection failed: " _ ex.DisplayString())
+            "tier": 2, "label": "Statistical Outlier Profiler", "score": 0.0, "threshold": 0, "flags": (##class(%DynamicArray).%New()), "summary": ("Autoencoder anomaly detection failed: " _ ex.DisplayString()), "citations": (##class(%DynamicArray).%New())
         })
         Do pResult.tierResults.%Push({
-            "tier": 3, "label": "Collusion Network Analysis", "score": 0.0, "flags": (##class(%DynamicArray).%New()), "summary": ("Graph collusion analysis failed: " _ ex.DisplayString())
+            "tier": 3, "label": "Collusion Network Analysis", "score": 0.0, "flags": (##class(%DynamicArray).%New()), "summary": ("Graph collusion analysis failed: " _ ex.DisplayString()), "citations": (##class(%DynamicArray).%New())
         })
     }
     Quit sc

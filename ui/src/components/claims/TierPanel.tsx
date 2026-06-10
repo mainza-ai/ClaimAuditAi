@@ -82,6 +82,28 @@ export function TierPanel({ result }: { result: AuditTierResult }) {
               ))}
             </ul>
           )}
+          {result.citations && result.citations.length > 0 && (
+            <div className="mt-3 pt-3 border-t flex flex-wrap gap-2 items-center" style={{ borderColor: 'var(--border-default)' }}>
+              <span className="text-xs font-bold uppercase tracking-wider mr-1" style={{ color: 'var(--text-tertiary)' }}>
+                Evidence:
+              </span>
+              {result.citations.map((citation, i) => (
+                <span
+                  key={i}
+                  className="px-2 py-0.5 rounded text-xs font-mono border hover:scale-105 transition-transform cursor-default flex items-center gap-1.5"
+                  style={{
+                    backgroundColor: 'var(--bg-card)',
+                    borderColor: 'var(--border-default)',
+                    color: 'var(--text-secondary)',
+                    boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)'
+                  }}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: TIER_LABEL_COLORS[result.tier] }} />
+                  {citation}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

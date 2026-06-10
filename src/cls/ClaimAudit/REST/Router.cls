@@ -1969,8 +1969,8 @@ ClassMethod LoadSampleData() As %Status
                     ElseIf tClaim.id = "claimaudit-claim7" { Set tAge = 42, tItems = 1, tDuration = 1 }
                     ElseIf tClaim.id = "claimaudit-claim8" { Set tAge = 29, tItems = 4, tDuration = 7 }
 
-                    Do tStatement.%Prepare("INSERT INTO ClaimAudit.ClaimProjections (PatientKey, ProviderNPI, BilledAmount, ItemCount, SpecialtyCode, PatientAge, DurationDays, ServiceDate) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-                    Do tStatement.%Execute(tPatId, tProvId, tAmount, tItems, tSpecialty, tAge, tDuration, "2026-05-29")
+                    Do tStatement.%Prepare("INSERT INTO ClaimAudit.ClaimProjections (ClaimId, PatientKey, ProviderNPI, BilledAmount, ItemCount, SpecialtyCode, PatientAge, DurationDays, ServiceDate) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+                    Do tStatement.%Execute(tClaim.id, tPatId, tProvId, tAmount, tItems, tSpecialty, tAge, tDuration, "2026-05-29")
 
                     // Dispatch Claim to FHIR server — will trigger interactions strategy & python agent!
                     Set tReqClaim = ##class(HS.FHIRServer.API.Data.Request).%New()
@@ -2358,7 +2358,7 @@ ClassMethod UploadClaimData() As %Status
 
         // Insert ClaimProjections so the autoencoder has training data for uploaded claims
         Set tInsStmt = ##class(%SQL.Statement).%New()
-        Do tInsStmt.%Prepare("INSERT INTO ClaimAudit.ClaimProjections (PatientKey, ProviderNPI, BilledAmount, ItemCount, SpecialtyCode, PatientAge, DurationDays, ServiceDate) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+        Do tInsStmt.%Prepare("INSERT INTO ClaimAudit.ClaimProjections (ClaimId, PatientKey, ProviderNPI, BilledAmount, ItemCount, SpecialtyCode, PatientAge, DurationDays, ServiceDate) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
         Set tProjCount = 0
         If tResourceType = "Bundle" {
             If $IsObject(tJson.entry) {
@@ -2400,7 +2400,9 @@ ClassMethod InsertProjectionFromClaim(pClaim As %DynamicObject, pStmt As %SQL.St
         Set tServiceDate = $EXTRACT(pClaim.created, 1, 10)
         If tServiceDate = "" Set tServiceDate = $ZDate($Horolog, 3)
 
-        Do pStmt.%Execute(tPatId, tProvId, tAmount, tItemCount, 1, 45, 1, tServiceDate)
+        Set tClaimId = pClaim.id
+        If tClaimId = "" Set tClaimId = "unknown"
+        Do pStmt.%Execute(tClaimId, tPatId, tProvId, tAmount, tItemCount, 1, 45, 1, tServiceDate)
         Set pCount = pCount + 1
     } Catch {}
 }
