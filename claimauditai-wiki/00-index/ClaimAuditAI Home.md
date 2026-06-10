@@ -54,6 +54,7 @@ ClaimAuditAI shifts the payment integrity paradigm from retrospective "pay-and-c
 - [[ClaimResponse - HOLD vs Pass]] — Output shapes of pended versus disbursed claims.
 - [[OperationOutcome Structure]] — Error schemas and strict FHIR regex pattern matches.
 - [[MCP Handshake and Tool Discovery]] — Handshaking protocols for agent orchestration.
+- [[Terminology MCP Server]] — CPT and ICD code lookup and validation using FastMCP.
 
 ### 📂 08 - Testing & Validation
 - [[Testing Overview]] — Verification suites and live mock bundle ingestion.

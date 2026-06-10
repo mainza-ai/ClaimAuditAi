@@ -14,8 +14,13 @@ FHIR JSON Resources ──> [Analysis] ──> [Transformation] ──> [Project
 
 These projected tables allow our Embedded Python PyTorch and NetworkX engines to query clinical and financial datasets using standard SQL.
 
+## ⚙️ Pre-Configured Projections & Helper
+To enable immediate setup and standardized analytics, the platform provides:
+- **`fhirsql/projections.json`**: Contains configuration metadata for projecting `Claim` and `ClaimResponse` resources. This file can be imported directly into the InterSystems FHIR SQL Builder Management Portal GUI to spin up relational projections.
+- **`ClaimAudit.FHIR.SQLBuilderHelper`**: An ObjectScript class that wraps dynamic SQL queries against the projected FHIR SQL schema. It handles reading mapped billing properties (like CPT codes, ICD diagnoses, amounts, and dates) with robust fail-safes and query builders.
+
 ## Key Details
-- **Target Schema**: `ClaimAudit`
+- **Target Schema**: `ClaimAudit` (e.g. `ClaimAudit.ClaimProjections`)
 - **Generated Projections**: `ClaimProjections`, `PatientProjections`, `ProviderProjections`.
 - **Sync Trigger**: Automated transactional projections managed by the IRIS database compiler.
 - **Specialty Mapping**: Dynamically extracted from provider records to compute dynamic anomaly thresholds.
