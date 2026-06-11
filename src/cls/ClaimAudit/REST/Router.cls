@@ -1786,7 +1786,7 @@ ClassMethod Chat() As %Status
         // Route to provider via Embedded Python — reuses existing provider logic
         Do ##class(ClaimAudit.AI.Engine).ConfigurePythonPath()
         Set tResult = ##class(%SYS.Python).Import("llm_router")
-        Set tResponse = ""_tResult.run_chat_agent(tSystemPrompt, tMessages.%ToJSON())
+        Set tResponse = ""_tResult."run_chat_agent"(tSystemPrompt, tMessages.%ToJSON())
         Write {"response": (tResponse)}.%ToJSON()
     } Catch ex {
         Set tSC = ex.AsStatus()
