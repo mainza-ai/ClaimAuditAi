@@ -26,7 +26,7 @@ ClassMethod GetHistory(pClaimId As %String) As %DynamicArray
     Set tArr = []
     Try {
         Set tStatement = ##class(%SQL.Statement).%New()
-        Set tSC = tStatement.%Prepare("SELECT Role, Content, Timestamp FROM ClaimAudit_Data.ChatHistory WHERE ClaimId = ? ORDER BY Timestamp ASC")
+        Set tSC = tStatement.%Prepare("SELECT ""Role"", Content, ""Timestamp"" FROM ClaimAudit_Data.ChatHistory WHERE ClaimId = ? ORDER BY ""Timestamp"" ASC")
         If $$$ISOK(tSC) {
             Set tRS = tStatement.%Execute(pClaimId)
             While tRS.%Next() {
