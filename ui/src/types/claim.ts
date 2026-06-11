@@ -3,6 +3,7 @@ export interface HeldClaim {
   patientId: string;
   patientName?: string;
   providerId: string;
+  providerName?: string;
   cptCode: string;
   icdCode: string;
   totalAmount: number;
@@ -43,6 +44,7 @@ export interface ClaimDetail extends HeldClaim {
   cptCodes?: string[];
   icdCodes?: string[];
   reportStatus?: 'pending' | 'complete';
+  providerAddress?: string;
 }
 
 export interface SystemStats {

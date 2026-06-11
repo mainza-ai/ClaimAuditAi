@@ -42,8 +42,7 @@ export function ClaimRow({ claim }: { claim: HeldClaim }) {
             Claim Response {claim.id}
           </p>
           <p className="text-xs truncate mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-            Patient {claim.patientName || claim.patientId} \u00b7 CPT {claim.cptCode} \u00b7 $
-            {claim.totalAmount?.toLocaleString()}
+            Patient {claim.patientName || claim.patientId} {' \u00b7 '} Provider {claim.providerName || claim.providerId} {' \u00b7 '} CPT {claim.cptCode} {' \u00b7 '} ${claim.totalAmount?.toLocaleString()}
           </p>
         </div>
         {claim.tierResults && claim.tierResults.length > 0 && (

@@ -223,6 +223,18 @@ ClassMethod GetHeldClaims() As %Status
                 } Catch {}
             }
 
+            // Fetch provider name
+            Set tProviderName = "Unknown Provider"
+            If tProviderId '= "" {
+                Try {
+                    Set tProvNameRS = ##class(%SQL.Statement).%ExecDirect(,
+                    "SELECT Name FROM ClaimAudit.ProviderProjections WHERE NPI = ?", tProviderId)
+                    If tProvNameRS.%Next() {
+                        Set tProviderName = tProvNameRS.%Get("Name")
+                    }
+                } Catch {}
+            }
+
             // Escalated check
             Set tEscalated = 0
             If tRequestRef '= "" {
@@ -313,6 +325,7 @@ ClassMethod GetHeldClaims() As %Status
                 "patientId": (tPatientId),
                 "patientName": (tPatientName),
                 "providerId": (tProviderId),
+                "providerName": (tProviderName),
                 "cptCode": (tCptCode),
                 "icdCode": (tIcdCode),
                 "totalAmount": (tBilledAmount),
@@ -761,7 +774,7 @@ ClassMethod GetClaimDetail(id As %String) As %Status
                 Set tReqPat.RequestPath = "/Patient/" _ tPatientId
                 Set tReqPat.Interaction = "read"
                 Set tRespPat = ##class(HS.FHIRServer.API.Data.Response).%New()
-                Do tFHIRService.DispatchRequest(tReqPat, .tRespPat)
+                Do tService.DispatchRequest(tReqPat, .tRespPat)
                 If $IsObject(tRespPat.Json) {
                     Set tPatJson = tRespPat.Json
                     If $IsObject(tPatJson.name) && (tPatJson.name.%Size() > 0) {
@@ -774,7 +787,35 @@ ClassMethod GetClaimDetail(id As %String) As %Status
                         Set tPatientName = tGiven _ " " _ tFamily
                     }
                 }
-            } Catch {}
+            } Catch ex {
+                Set ^ClaimAuditError($ZTS, "PatientRead", id) = ex.DisplayString()
+            }
+        }
+        If (tPatientName = "") || (tPatientName = "Unknown Patient") {
+            Try {
+                Set tPatRS = ##class(%SQL.Statement).%ExecDirect(, "SELECT Name FROM ClaimAudit.PatientProjections WHERE Key = ?", tPatientId)
+                If tPatRS.%Next() {
+                    Set tPatientName = tPatRS.%Get("Name")
+                }
+            } Catch ex {
+                Set ^ClaimAuditError($ZTS, "PatientProjectionRead", id) = ex.DisplayString()
+            }
+        }
+        If tPatientName = "" Set tPatientName = "Unknown Patient"
+
+        // Fetch provider details
+        Set tProviderName = "Unknown Provider"
+        Set tProviderAddress = ""
+        If tProviderId '= "" {
+            Try {
+                Set tProvRS = ##class(%SQL.Statement).%ExecDirect(, "SELECT Name, AddressLine FROM ClaimAudit.ProviderProjections WHERE NPI = ?", tProviderId)
+                If tProvRS.%Next() {
+                    Set tProviderName = tProvRS.%Get("Name")
+                    Set tProviderAddress = tProvRS.%Get("AddressLine")
+                }
+            } Catch ex {
+                Set ^ClaimAuditError($ZTS, "ProviderProjectionRead", id) = ex.DisplayString()
+            }
         }
 
         // Fetch linked tasks and notifications
@@ -810,6 +851,8 @@ ClassMethod GetClaimDetail(id As %String) As %Status
             "patientId": (tPatientId),
             "patientName": (tPatientName),
             "providerId": (tProviderId),
+            "providerName": (tProviderName),
+            "providerAddress": (tProviderAddress),
             "cptCode": (tCptCode),
             "icdCode": (tIcdCode),
             "cptCodes": (tCptCodesArr),

@@ -23,6 +23,7 @@ import {
   Check,
   User,
   Shield,
+  Building,
 } from 'lucide-react';
 
 export function ClaimDetail() {
@@ -385,12 +386,63 @@ export function ClaimDetail() {
         >
           <User size={14} /> Patient Information
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
           {[
             { label: 'Name', value: claim.patientName || 'Unknown' },
             { label: 'Patient ID', value: claim.patientId, accent: true },
-            { label: 'Provider ID', value: claim.providerId || '\u2014' },
             { label: 'Clinical Notes', value: `${claim.linkedClinicalNotes?.length ?? 0} notes` },
+          ].map(({ label, value, accent }) => (
+            <div key={label}>
+              <span
+                style={{
+                  fontSize: 10,
+                  color: 'var(--text-tertiary)',
+                  textTransform: 'uppercase',
+                  fontFamily: 'var(--font-mono)',
+                  display: 'block',
+                  marginBottom: 4,
+                }}
+              >
+                {label}
+              </span>
+              <span
+                style={{
+                  fontSize: 14,
+                  fontWeight: 600,
+                  fontFamily: 'var(--font-mono)',
+                  color: accent ? 'var(--accent-primary)' : 'var(--text-primary)',
+                }}
+              >
+                {value}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Provider Details Card */}
+      <div className="card" style={{ padding: 20 }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            fontSize: 12,
+            fontWeight: 700,
+            fontFamily: 'var(--font-mono)',
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em',
+            color: 'var(--accent-primary)',
+            marginBottom: 12,
+          }}
+        >
+          <Building size={14} /> Provider Information
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+          {[
+            { label: 'Name', value: claim.providerName || 'Unknown Provider' },
+            { label: 'Provider NPI (ID)', value: claim.providerId, accent: true },
+            { label: 'Business Address', value: claim.providerAddress || 'Address Not Provided' },
           ].map(({ label, value, accent }) => (
             <div key={label}>
               <span

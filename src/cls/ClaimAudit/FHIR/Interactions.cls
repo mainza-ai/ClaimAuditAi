@@ -17,7 +17,7 @@ Method OnBeforeRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest A
             Set tIter = pFHIRRequest.Json.entry.%GetIterator()
             While tIter.%GetNext(.tKey, .tEntry) {
                 If $IsObject(tEntry.resource) && (tEntry.resource.resourceType = "Claim") {
-                    Do ..AuditSingleClaim(tEntry.resource)
+                    Do ..AuditSingleClaim(tEntry.resource, tKey)
                 }
             }
         }

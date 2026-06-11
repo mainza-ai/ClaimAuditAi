@@ -5,6 +5,10 @@ Class ClaimAudit.Data.GraphStore Extends %RegisteredObject
 ClassMethod UpsertPatient(pPatientId As %String, pName As %String = "") As %Boolean
 {
     Try {
+        Set tExisting = $Get(^ClaimAuditGraph("node", pPatientId))
+        If (tExisting '= "") && (pName = "") {
+            Set pName = $ListGet(tExisting, 2)
+        }
         Set ^ClaimAuditGraph("node", pPatientId) = $ListBuild("patient", pName)
         Return 1
     } Catch { Return 0 }
@@ -14,6 +18,11 @@ ClassMethod UpsertPatient(pPatientId As %String, pName As %String = "") As %Bool
 ClassMethod UpsertProvider(pNPI As %String, pName As %String = "", pAddress As %String = "") As %Boolean
 {
     Try {
+        Set tExisting = $Get(^ClaimAuditGraph("node", pNPI))
+        If tExisting '= "" {
+            If pName = "" Set pName = $ListGet(tExisting, 2)
+            If pAddress = "" Set pAddress = $ListGet(tExisting, 3)
+        }
         Set ^ClaimAuditGraph("node", pNPI) = $ListBuild("provider", pName, pAddress)
         Return 1
     } Catch { Return 0 }

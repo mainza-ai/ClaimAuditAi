@@ -396,10 +396,24 @@ ClassMethod AuditClaim(pClaimJson As %DynamicObject, Output pResult As %DynamicO
         // Incrementally persist graph nodes and edges for real-time collusion network
         // (no full SQL rebuild needed — graph is updated on each claim audit)
         If patientId '= "" {
-            Do ##class(ClaimAudit.Data.GraphStore).UpsertPatient(patientId)
+            Set tPatientName = ""
+            Try {
+                Set tPatRS = ##class(%SQL.Statement).%ExecDirect(, "SELECT Name FROM ClaimAudit.PatientProjections WHERE Key = ?", patientId)
+                If tPatRS.%Next() Set tPatientName = tPatRS.%Get("Name")
+            } Catch {}
+            Do ##class(ClaimAudit.Data.GraphStore).UpsertPatient(patientId, tPatientName)
         }
         If providerNpi '= "" {
-            Do ##class(ClaimAudit.Data.GraphStore).UpsertProvider(providerNpi, "", "")
+            Set tProvName = ""
+            Set tProvAddr = ""
+            Try {
+                Set tProvRS = ##class(%SQL.Statement).%ExecDirect(, "SELECT Name, AddressLine FROM ClaimAudit.ProviderProjections WHERE NPI = ?", providerNpi)
+                If tProvRS.%Next() {
+                    Set tProvName = tProvRS.%Get("Name")
+                    Set tProvAddr = tProvRS.%Get("AddressLine")
+                }
+            } Catch {}
+            Do ##class(ClaimAudit.Data.GraphStore).UpsertProvider(providerNpi, tProvName, tProvAddr)
         }
         If (patientId '= "") && (providerNpi '= "") {
             Do ##class(ClaimAudit.Data.GraphStore).UpsertEdge(patientId, providerNpi, billedAmount, serviceDate)
