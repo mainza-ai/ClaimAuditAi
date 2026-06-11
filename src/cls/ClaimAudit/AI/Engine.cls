@@ -103,6 +103,8 @@ ClassMethod Setup(pQuiet As %Boolean = 0) As %Status
         Set sc = ex.AsStatus()
         If 'pQuiet Write "Setup Error: ", ex.DisplayString(), !
     }
+    // Automatically start background adjudication queue worker
+    If $$$ISOK(sc) Do ..StartWorker()
     Quit sc
 }
 
@@ -289,6 +291,20 @@ ClassMethod AuditClaim(pClaimJson As %DynamicObject, Output pResult As %DynamicO
             } Catch {}
         }
         
+        // Auto-train Autoencoder if no weights exist and we have >= 5 claim projections
+        Set tWeightsPath = "/home/irisowner/dev/src/python/autoencoder_model.pth"
+        If '##class(%File).Exists(tWeightsPath) {
+            Try {
+                Set tCountRS = ##class(%SQL.Statement).%ExecDirect(, "SELECT COUNT(*) AS cnt FROM ClaimAudit.ClaimProjections")
+                If tCountRS.%Next(), (+tCountRS.%Get("cnt") >= 5) {
+                    Do ..ConfigurePythonPath()
+                    Set tAE = ##class(%SYS.Python).Import("autoencoder_train")
+                    Do tAE."_invalidate_cache"()
+                    Set tTrainRes = tAE."train_autoencoder"()
+                }
+            } Catch {}
+        }
+
         // Run agentic audit using AgentWrapper
         Set agentJsonStr = ##class(ClaimAudit.AI.AgentWrapper).AuditClaimAgent(
             patientId, providerNpi, tCptCodes, tCptDisplays, tIcdCodes,
@@ -450,6 +466,317 @@ ClassMethod AuditClaim(pClaimJson As %DynamicObject, Output pResult As %DynamicO
         })
     }
     Quit sc
+}
+
+ClassMethod StartWorker() As %Status
+{
+    Set tJob = +$Get(^ClaimAuditAI("WorkerJob"))
+    If tJob > 0 {
+        If $Data(^$Job(tJob)) {
+            Quit $$$OK
+        }
+    }
+    JOB ..WorkerLoop()
+    Set ^ClaimAuditAI("WorkerJob") = $ZChild
+    Quit $$$OK
+}
+
+ClassMethod WorkerLoop()
+{
+    New $Namespace
+    Set $Namespace = "INTEROP"
+    
+    Set ^ClaimAuditAI("WorkerRunning") = 1
+    While $Get(^ClaimAuditAI("WorkerRunning")) = 1 {
+        Try {
+            Set tRS = ##class(%SQL.Statement).%ExecDirect(,
+                "SELECT ID, ClaimResponseId FROM ClaimAudit_Data.Queue WHERE Status = 'pending' ORDER BY CreatedAt ASC")
+            If tRS.%Next() {
+                Set tQueueId = tRS.%Get("ID")
+                Set tCRId = tRS.%Get("ClaimResponseId")
+                
+                Do ##class(%SQL.Statement).%ExecDirect(,
+                    "UPDATE ClaimAudit_Data.Queue SET Status = 'processing' WHERE ID = ?", tQueueId)
+                    
+                Set tErrorMsg = ""
+                Set tSC = ..ExecuteAdjudication(tCRId, .tErrorMsg)
+                
+                Set tProcessedAt = $Translate($ZDateTime($ZTIMESTAMP, 3, 1), " ", "T") _ "Z"
+                If $$$ISOK(tSC) {
+                    Do ##class(%SQL.Statement).%ExecDirect(,
+                        "UPDATE ClaimAudit_Data.Queue SET Status = 'completed', ProcessedAt = ? WHERE ID = ?",
+                        tProcessedAt, tQueueId)
+                } Else {
+                    Do ##class(%SQL.Statement).%ExecDirect(,
+                        "UPDATE ClaimAudit_Data.Queue SET Status = 'failed', ProcessedAt = ?, ErrorDetails = ? WHERE ID = ?",
+                        tProcessedAt, tErrorMsg, tQueueId)
+                }
+            }
+        } Catch ex {
+            Set ^ClaimAuditAI("WorkerError", $ZTS) = ex.DisplayString()
+        }
+        Hang 1
+    }
+}
+
+ClassMethod ExecuteAdjudication(pCRId As %String, ByRef pErrorMsg As %String) As %Status
+{
+    Set tSC = $$$OK
+    Set pErrorMsg = ""
+    Try {
+        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/fhir/r4")
+        Set tRequest = ##class(HS.FHIRServer.API.Data.Request).%New()
+        Set tRequest.RequestMethod = "GET"
+        Set tRequest.RequestPath = "/ClaimResponse/" _ pCRId
+        Set tRequest.Interaction = "read"
+        Set tResponse = ##class(HS.FHIRServer.API.Data.Response).%New()
+        Do tService.DispatchRequest(tRequest, .tResponse)
+
+        If '$IsObject(tResponse.Json) {
+            Set pErrorMsg = "ClaimResponse not found"
+            Quit
+        }
+        Set tCRJson = tResponse.Json
+
+        Set tPatientRef = tCRJson.patient.reference
+        Set tPatientId = $Piece(tPatientRef, "/", 2)
+        Set tRequestRef = tCRJson.request.reference
+        Set tClaimId = $Piece(tRequestRef, "/", 2)
+        Set tLastModified = tCRJson.meta.lastUpdated
+        Set tSubmittedAt = tLastModified
+        Set tProviderId = "claimaudit-prov"
+        Set tBilledAmount = 0.0
+
+        Set tCptCode = "Unknown"
+        Set tCptCodesJSON = ""
+        Set tIcdCodesJSON = ""
+
+        If $IsObject(tCRJson.extension) {
+            Set tExtIter = tCRJson.extension.%GetIterator()
+            While tExtIter.%GetNext(.tK, .tExt) {
+                If tExt.url = "https://claimauditai.com/fhir/extension/cpt-codes" {
+                    Set tCptCodesJSON = tExt.valueString
+                }
+                If tExt.url = "https://claimauditai.com/fhir/extension/cpt-code" {
+                    Set tCptCode = tExt.valueString
+                }
+                If tExt.url = "https://claimauditai.com/fhir/extension/icd-codes" {
+                    Set tIcdCodesJSON = tExt.valueString
+                }
+                If tExt.url = "https://claimauditai.com/fhir/extension/provider-npi" {
+                    Set tProviderId = tExt.valueString
+                }
+            }
+        }
+
+        If tClaimId '= "" {
+            Try {
+                Set tReqClaim = ##class(HS.FHIRServer.API.Data.Request).%New()
+                Set tReqClaim.RequestMethod = "GET"
+                Set tReqClaim.RequestPath = "/Claim/" _ tClaimId
+                Set tReqClaim.Interaction = "read"
+                Set tRespClaim = ##class(HS.FHIRServer.API.Data.Response).%New()
+                Do tService.DispatchRequest(tReqClaim, .tRespClaim)
+                If $IsObject(tRespClaim.Json) {
+                    Set tClaimJson = tRespClaim.Json
+                    If tClaimJson.created '= "" Set tSubmittedAt = tClaimJson.created
+                    If $IsObject(tClaimJson.total) Set tBilledAmount = +tClaimJson.total.value
+                    If (tCptCode = "Unknown") && $IsObject(tClaimJson.item) && (tClaimJson.item.%Size() > 0) {
+                        Set tItem = tClaimJson.item.%Get(0)
+                        If $IsObject(tItem.productOrService) && $IsObject(tItem.productOrService.coding) {
+                            Set tCoding = tItem.productOrService.coding.%Get(0)
+                            If tCoding '= "" {
+                                Set tCptCode = tCoding.display
+                                If tCptCode = "" Set tCptCode = tCoding.code
+                            }
+                        }
+                    }
+                    If (tProviderId = "claimaudit-prov") && $IsObject(tClaimJson.provider) {
+                        Set tProvRef = tClaimJson.provider.reference
+                        Set tProviderId = $Piece(tProvRef, "/", 2)
+                    }
+                }
+            } Catch {}
+        }
+
+        If (tBilledAmount = 0.0) && $IsObject(tCRJson.total) && (tCRJson.total.%Size() > 0) {
+            Set tTotalItem = tCRJson.total.%Get(0)
+            If $IsObject(tTotalItem.amount) {
+                Set tBilledAmount = +tTotalItem.amount.value
+            }
+        }
+
+        Set tCptCodesArr = []
+        If tCptCodesJSON '= "" {
+            Try {
+                Set tCptCodesArr = ##class(%DynamicArray).%FromJSON(tCptCodesJSON)
+            } Catch {}
+        } ElseIf tCptCode '= "" {
+            Do tCptCodesArr.%Push(tCptCode)
+        }
+
+        Set tCptDisplays = []
+        Do tCptDisplays.%Push(tCptCode)
+
+        Set tIcdCodesArr = []
+        If tIcdCodesJSON '= "" {
+            Try {
+                Set tIcdCodesArr = ##class(%DynamicArray).%FromJSON(tIcdCodesJSON)
+            } Catch {}
+        }
+
+        // Fetch projections for autoencoder parameters
+        Set specialtyCode = 1
+        Set patientAge = 45
+        Set durationDays = 1
+
+        If tPatientId '= "" {
+            Try {
+                Set tPatRS = ##class(HS.FHIRServer.API.Data.Request).%New()
+                Set tPatRS.RequestMethod = "GET"
+                Set tPatRS.RequestPath = "/Patient/" _ tPatientId
+                Set tPatRS.Interaction = "read"
+                Set tRespPat = ##class(HS.FHIRServer.API.Data.Response).%New()
+                Do tService.DispatchRequest(tPatRS, .tRespPat)
+                If $IsObject(tRespPat.Json) {
+                    Set tBirthDate = tRespPat.Json.birthDate
+                    If tBirthDate '= "" {
+                        Set birthYear = +$Piece(tBirthDate, "-", 1)
+                        Set claimYear = +$Piece(tSubmittedAt, "-", 1)
+                        If (claimYear > 0) && (birthYear > 0) {
+                            Set patientAge = claimYear - birthYear
+                        }
+                    }
+                }
+            } Catch {}
+        }
+
+        If tPatientId '= "" {
+            Try {
+                Set tCPRS = ##class(%SQL.Statement).%ExecDirect(,
+                "SELECT SpecialtyCode, PatientAge, DurationDays "_
+                "FROM ClaimAudit.ClaimProjections WHERE PatientKey = ?", tPatientId)
+                If tCPRS.%Next() {
+                    If specialtyCode = 1 Set specialtyCode = +tCPRS.%Get("SpecialtyCode")
+                    If patientAge = 45 Set patientAge = +tCPRS.%Get("PatientAge")
+                    If durationDays = 1 Set durationDays = +tCPRS.%Get("DurationDays")
+                }
+            } Catch {}
+        }
+
+        // Run active agent audit
+        Set agentJsonStr = ##class(ClaimAudit.AI.AgentWrapper).AuditClaimAgent(
+            tPatientId, tProviderId, tCptCodesArr, tCptDisplays, tIcdCodesArr,
+            tBilledAmount, tCptCodesArr.%Size(), specialtyCode, patientAge, durationDays,
+            $Extract(tSubmittedAt, 1, 10), tClaimId, 0
+        )
+
+        Set agentRes = ##class(%DynamicObject).%FromJSON(agentJsonStr)
+        Set status = agentRes.status
+        Set score = +agentRes.threatIndex
+        Set tLLMSummary = agentRes.justification
+        If tLLMSummary = "" Set tLLMSummary = "Audit completed by background task agent."
+
+        // Update ClaimResponse resource in the database
+        Do tCRJson.%Set("disposition", tLLMSummary)
+        If status = "HOLD" {
+            Do tCRJson.%Set("outcome", "queued")
+        } Else {
+            Do tCRJson.%Set("outcome", "complete")
+        }
+
+        Set tNewExtensions = []
+        If $IsObject(tCRJson.extension) {
+            Set tExtIter = tCRJson.extension.%GetIterator()
+            While tExtIter.%GetNext(.tK, .tExt) {
+                If (tExt.url = "https://claimauditai.com/fhir/extension/risk-score") ||
+                   (tExt.url = "https://claimauditai.com/fhir/extension/explanation") ||
+                   (tExt.url = "https://claimauditai.com/fhir/extension/tier-results") {
+                    Continue
+                }
+                Do tNewExtensions.%Push(tExt)
+            }
+        }
+        Do tNewExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/risk-score", "valueDecimal": (score)})
+        Do tNewExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/explanation", "valueString": (tLLMSummary)})
+        If $IsObject(agentRes.findings) {
+            Set tTierResults = []
+            Set tT1 = agentRes.findings.tier1
+            If $IsObject(tT1) {
+                Do tTierResults.%Push({
+                    "tier": 1,
+                    "flagged": (tT1.flagged),
+                    "score": (tT1.similarity),
+                    "summary": (tT1.reason),
+                    "citations": (tT1.citations)
+                })
+            }
+            Set tT2 = agentRes.findings.tier2
+            If $IsObject(tT2) {
+                Do tTierResults.%Push({
+                    "tier": 2,
+                    "flagged": (tT2.flagged),
+                    "score": (tT2.loss),
+                    "summary": (tT2.reason),
+                    "citations": (tT2.citations)
+                })
+            }
+            Set tT3 = agentRes.findings.tier3
+            If $IsObject(tT3) {
+                Do tTierResults.%Push({
+                    "tier": 3,
+                    "flagged": (tT3.flagged),
+                    "score": 0.0,
+                    "summary": (tT3.reason),
+                    "citations": (tT3.citations)
+                })
+            }
+            Do tNewExtensions.%Push({"url": "https://claimauditai.com/fhir/extension/tier-results", "valueString": (tTierResults.%ToJSON())})
+        }
+        Set tCRJson.extension = tNewExtensions
+
+        Set tPutRequest = ##class(HS.FHIRServer.API.Data.Request).%New()
+        Set tPutRequest.RequestMethod = "PUT"
+        Set tPutRequest.RequestPath = "/ClaimResponse/" _ pCRId
+        Set tPutRequest.Interaction = "update"
+        Set tPutRequest.Json = tCRJson
+        Set tPutResponse = ##class(HS.FHIRServer.API.Data.Response).%New()
+        Do tService.DispatchRequest(tPutRequest, .tPutResponse)
+        
+        If (status = "APPROVE") && (tClaimId '= "") {
+            Try {
+                Set tTaskRS = ##class(%SQL.Statement).%ExecDirect(,
+                    "SELECT ID FROM HSFHIR_X0001_S.Task WHERE focus = ?", "Claim/" _ tClaimId)
+                If tTaskRS.%Next() {
+                    Set tTaskId = tTaskRS.%Get("ID")
+                    
+                    Set tGetRequest = ##class(HS.FHIRServer.API.Data.Request).%New()
+                    Set tGetRequest.RequestMethod = "GET"
+                    Set tGetRequest.RequestPath = "/Task/" _ tTaskId
+                    Set tGetRequest.Interaction = "read"
+                    Set tGetResp = ##class(HS.FHIRServer.API.Data.Response).%New()
+                    Do tService.DispatchRequest(tGetRequest, .tGetResp)
+                    
+                    If $IsObject(tGetResp.Json) {
+                        Set tTaskJson = tGetResp.Json
+                        Do tTaskJson.%Set("status", "completed")
+                        
+                        Set tPutTask = ##class(HS.FHIRServer.API.Data.Request).%New()
+                        Set tPutTask.RequestMethod = "PUT"
+                        Set tPutTask.RequestPath = "/Task/" _ tTaskId
+                        Set tPutTask.Interaction = "update"
+                        Set tPutTask.Json = tTaskJson
+                        Set tPutTaskResp = ##class(HS.FHIRServer.API.Data.Response).%New()
+                        Do tService.DispatchRequest(tPutTask, .tPutTaskResp)
+                    }
+                }
+            } Catch {}
+        }
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+        Set pErrorMsg = ex.DisplayString()
+    }
+    Quit tSC
 }
 
 }

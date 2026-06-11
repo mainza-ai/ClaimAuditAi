@@ -2039,6 +2039,19 @@ ClassMethod LoadSampleData() As %Status
 
         Do ..AdminLog("seed", "Seeded 8 sample claims with diversified risk distribution.")
 
+        // Auto-train the Autoencoder model on the freshly-seeded projections
+        Try {
+            Set tAE = ##class(%SYS.Python).Import("autoencoder_train")
+            Do tAE."_invalidate_cache"()
+            Set tTrainRes = tAE."train_autoencoder"()
+            If $IsObject(tTrainRes) {
+                Set tMessage = tTrainRes."get"("message", "")
+                Do ..AdminLog("retrain", "Automatic autoencoder model retrained during seeding. Result: " _ tMessage)
+            }
+        } Catch ex {
+            Do ..AdminLog("retrain", "Automatic autoencoder model retraining failed during seeding: " _ ex.DisplayString())
+        }
+
         Kill ^ClaimAuditAI("Seeding")
         Set tMsg = "Successfully ingested " _ tCount _ " FHIR Claims and parsed 8 Patient profiles."
         Write {"status": "success", "message": (tMsg)}.%ToJSON()

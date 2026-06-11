@@ -12,51 +12,110 @@ except ImportError:
 _graph_cache = {"graph": None, "timestamp": 0, "ttl": 30}
 _graph_lock = threading.Lock()
 
-def build_relational_graph() -> nx.MultiDiGraph:
+def build_relational_graph(patient_id: str = None, provider_npi: str = None) -> nx.MultiDiGraph:
     """Query IRIS database relations and construct a NetworkX MultiDiGraph representing entity connections.
-    MultiDiGraph prevents duplicate edge overwrites between the same patient-provider pair.
-    When running outside IRIS (iris module unavailable), returns an empty graph — no mock data."""
+    If patient_id and provider_npi are provided, constructs a localized 2-hop ego-network to scale to production volume.
+    Otherwise, builds the global graph for the dashboard visualization."""
     G = nx.MultiDiGraph()
     if not iris:
         return G
 
     try:
-        # Populate DiGraph using Dynamic SQL from FHIR SQL Builder projected tables
-        # Let's query Practitioners, Patients, and Claims
-        # Node Type 1: Patient
-        # Node Type 2: Practitioner (with address attributes)
-        
-        # 1. Fetch Patients
-        stmt = iris.sql.prepare("SELECT Key, Name FROM ClaimAudit.PatientProjections")
-        rs = stmt.execute()
-        for row in rs:
-            G.add_node(str(row[0]), type="patient", name=str(row[1]))
+        if patient_id or provider_npi:
+            target_patient = patient_id or ""
+            target_provider = provider_npi or ""
             
-        # 2. Fetch Providers (Practitioners) and their addresses
-        stmt = iris.sql.prepare("SELECT NPI, Name, AddressLine FROM ClaimAudit.ProviderProjections")
-        rs = stmt.execute()
-        for row in rs:
-            G.add_node(str(row[0]), type="provider", name=str(row[1]), address=str(row[2]).lower().strip())
+            # 1. Fetch localized Claim edges
+            stmt = iris.sql.prepare(
+                "SELECT ClaimId, PatientKey, ProviderNPI, BilledAmount, ServiceDate "
+                "FROM ClaimAudit.ClaimProjections "
+                "WHERE PatientKey = ? OR ProviderNPI = ? "
+                "OR PatientKey IN (SELECT PatientKey FROM ClaimAudit.ClaimProjections WHERE ProviderNPI = ?) "
+                "OR ProviderNPI IN (SELECT ProviderNPI FROM ClaimAudit.ClaimProjections WHERE PatientKey = ?)"
+            )
+            rs = stmt.execute(target_patient, target_provider, target_provider, target_patient)
             
-        # 3. Fetch Claim edges
-        stmt = iris.sql.prepare("SELECT ClaimId, PatientKey, ProviderNPI, BilledAmount, ServiceDate FROM ClaimAudit.ClaimProjections")
-        rs = stmt.execute()
-        claim_count = 0
-        for row in rs:
-            claim_id = str(row[0]) if row[0] is not None else ""
-            p_key = str(row[1])
-            npi = str(row[2])
-            amount = float(row[3])
-            date = str(row[4])
+            seen_patients = {target_patient} if target_patient else set()
+            seen_providers = {target_provider} if target_provider else set()
+            edges = []
             
-            # Make sure nodes are added if not registered
-            if not G.has_node(p_key):
-                G.add_node(p_key, type="patient")
-            if not G.has_node(npi):
-                G.add_node(npi, type="provider", address="")
+            for row in rs:
+                claim_id = str(row[0]) if row[0] is not None else ""
+                p_key = str(row[1])
+                npi = str(row[2])
+                amount = float(row[3])
+                date = str(row[4])
                 
-            G.add_edge(p_key, npi, transaction="claim", claim_id=claim_id, amount=amount, date=date)
-            claim_count += 1
+                seen_patients.add(p_key)
+                seen_providers.add(npi)
+                edges.append((p_key, npi, claim_id, amount, date))
+                
+            # 2. Fetch details for all seen patients
+            for p_key in seen_patients:
+                if p_key:
+                    p_stmt = iris.sql.prepare("SELECT Name FROM ClaimAudit.PatientProjections WHERE Key = ?")
+                    p_rs = p_stmt.execute(p_key)
+                    p_name = ""
+                    for p_row in p_rs:
+                        p_name = str(p_row[0])
+                    G.add_node(p_key, type="patient", name=p_name)
+                    
+            # 3. Fetch details for all seen providers AND address peers of the target provider
+            peer_stmt = iris.sql.prepare(
+                "SELECT NPI, Name, AddressLine FROM ClaimAudit.ProviderProjections "
+                "WHERE NPI = ? OR (AddressLine IS NOT NULL AND AddressLine != '' AND AddressLine = ("
+                "SELECT AddressLine FROM ClaimAudit.ProviderProjections WHERE NPI = ? AND AddressLine IS NOT NULL AND AddressLine != ''"
+                "))"
+            )
+            peer_rs = peer_stmt.execute(target_provider, target_provider)
+            for row in peer_rs:
+                seen_providers.add(str(row[0]))
+                G.add_node(str(row[0]), type="provider", name=str(row[1]), address=str(row[2]).lower().strip())
+                
+            for npi in seen_providers:
+                if npi and not G.has_node(npi):
+                    prov_stmt = iris.sql.prepare("SELECT Name, AddressLine FROM ClaimAudit.ProviderProjections WHERE NPI = ?")
+                    prov_rs = prov_stmt.execute(npi)
+                    prov_name, prov_addr = "", ""
+                    for prov_row in prov_rs:
+                        prov_name = str(prov_row[0])
+                        prov_addr = str(prov_row[1]).lower().strip()
+                    G.add_node(npi, type="provider", name=prov_name, address=prov_addr)
+                    
+            # 4. Add the claim edges to the graph
+            for p_key, npi, claim_id, amount, date in edges:
+                G.add_edge(p_key, npi, transaction="claim", claim_id=claim_id, amount=amount, date=date)
+                
+        else:
+            # 1. Fetch Patients
+            stmt = iris.sql.prepare("SELECT Key, Name FROM ClaimAudit.PatientProjections")
+            rs = stmt.execute()
+            for row in rs:
+                G.add_node(str(row[0]), type="patient", name=str(row[1]))
+                
+            # 2. Fetch Providers (Practitioners) and their addresses
+            stmt = iris.sql.prepare("SELECT NPI, Name, AddressLine FROM ClaimAudit.ProviderProjections")
+            rs = stmt.execute()
+            for row in rs:
+                G.add_node(str(row[0]), type="provider", name=str(row[1]), address=str(row[2]).lower().strip())
+                
+            # 3. Fetch Claim edges
+            stmt = iris.sql.prepare("SELECT ClaimId, PatientKey, ProviderNPI, BilledAmount, ServiceDate FROM ClaimAudit.ClaimProjections")
+            rs = stmt.execute()
+            for row in rs:
+                claim_id = str(row[0]) if row[0] is not None else ""
+                p_key = str(row[1])
+                npi = str(row[2])
+                amount = float(row[3])
+                date = str(row[4])
+                
+                # Make sure nodes are added if not registered
+                if not G.has_node(p_key):
+                    G.add_node(p_key, type="patient")
+                if not G.has_node(npi):
+                    G.add_node(npi, type="provider", address="")
+                    
+                G.add_edge(p_key, npi, transaction="claim", claim_id=claim_id, amount=amount, date=date)
 
         return G
     except Exception as e:
@@ -88,8 +147,12 @@ def _extract_state(address: str) -> str:
     return ""
 
 
-def _get_cached_graph(force_rebuild: bool = False) -> nx.MultiDiGraph:
+def _get_cached_graph(force_rebuild: bool = False, patient_id: str = None, provider_npi: str = None) -> nx.MultiDiGraph:
     """Get the relational graph from cache or rebuild if TTL expired."""
+    # Localized queries bypass the cache to guarantee real-time precision on specific audits
+    if patient_id or provider_npi:
+        return build_relational_graph(patient_id=patient_id, provider_npi=provider_npi)
+
     with _graph_lock:
         now = time.time()
         if not force_rebuild and _graph_cache["graph"] is not None and (now - _graph_cache["timestamp"]) < _graph_cache["ttl"]:
@@ -108,7 +171,7 @@ def invalidate_graph_cache():
 def check_collusion_network(patient_id: str, provider_npi: str, service_date: str) -> dict:
     """Analyze transaction graph topologies to identify address overlaps, geo-temporal leaps, and kickback rings."""
     try:
-        G = _get_cached_graph()
+        G = _get_cached_graph(patient_id=patient_id, provider_npi=provider_npi)
         flagged = False
         findings = []
         citations = []

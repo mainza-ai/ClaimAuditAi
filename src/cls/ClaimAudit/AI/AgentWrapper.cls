@@ -10,7 +10,7 @@ ClassMethod AuditClaimAgent(patientId As %String, providerNpi As %String, cptCod
         Do ##class(ClaimAudit.AI.Engine).ConfigurePythonPath()
         
         Set hasNativeAgent = ##class(%Dictionary.CompiledClass).%ExistsId("%AI.Agent")
-        Set isSeeding = +$Get(^ClaimAuditAI("Seeding"))
+        Set isSeeding = +$Get(^ClaimAuditAI("Seeding")) || +$Get(^||ClaimAuditAI("Ingesting"))
         
         If hasNativeAgent {
             // Native AI Hub execution (bridges dynamically to avoid compile-time errors on standard containers)

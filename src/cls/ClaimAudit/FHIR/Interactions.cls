@@ -7,6 +7,7 @@ Method OnBeforeRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest A
     // Clean process private flag variables for this thread only for new Claim requests
     If (pFHIRRequest.Type = "Claim") || (pFHIRRequest.Type = "Bundle") {
         Kill ^||ClaimAuditFlag
+        Set ^||ClaimAuditAI("Ingesting") = 1
     }
     
     // Intercept POST/PUT Claim creations (direct or inside Bundle entries)
@@ -690,6 +691,7 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
             Set ^ClaimAuditError($ZTS) = ex.DisplayString()
             Kill ^||ClaimAuditFlag
     }
+    Kill ^||ClaimAuditAI("Ingesting")
 }
 }
 }
