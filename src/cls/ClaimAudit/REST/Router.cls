@@ -1786,7 +1786,7 @@ ClassMethod Chat() As %Status
         // Route to provider via Embedded Python — reuses existing provider logic
         Do ##class(ClaimAudit.AI.Engine).ConfigurePythonPath()
         Set tResult = ##class(%SYS.Python).Import("llm_router")
-        Set tResponse = ""_tResult.chat(tSystemPrompt, tMessages.%ToJSON())
+        Set tResponse = ""_tResult.run_chat_agent(tSystemPrompt, tMessages.%ToJSON())
         Write {"response": (tResponse)}.%ToJSON()
     } Catch ex {
         Set tSC = ex.AsStatus()
@@ -1828,9 +1828,8 @@ ClassMethod ChatStream() As %Status
         Do ##class(ClaimAudit.AI.Engine).ConfigurePythonPath()
         Set tLLM = ##class(%SYS.Python).Import("llm_router")
 
-        // Use the non-streaming chat() function and split into SSE chunks manually.
-        // chat_stream() generator fails in the IRIS Python bridge due to StopIteration handling.
-        Set tResponse = ""_tLLM."chat"(tSystemPrompt, tMessages.%ToJSON(), 1024)
+        // Use the agentic chat assistant loop and split into SSE chunks manually.
+        Set tResponse = ""_tLLM."run_chat_agent"(tSystemPrompt, tMessages.%ToJSON())
 
         // Send response in chunks as SSE data lines
         Set tLen = $LENGTH(tResponse)

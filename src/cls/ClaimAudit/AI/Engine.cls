@@ -289,161 +289,102 @@ ClassMethod AuditClaim(pClaimJson As %DynamicObject, Output pResult As %DynamicO
             } Catch {}
         }
         
-        // Run all three AI tiers in sequence
-        Set orchestrator = ##class(%SYS.Python).Import("tier_orchestrator")
-        Set jsonLib = ##class(%SYS.Python).Import("json")
-        Set pyCptCodes = jsonLib.loads(tCptCodes.%ToJSON())
-        Set pyCptDisplays = jsonLib.loads(tCptDisplays.%ToJSON())
-        Set pyIcdCodes = jsonLib.loads(tIcdCodes.%ToJSON())
-        Set tAllResults = orchestrator."run_all_tiers"(
-            patientId, providerNpi, pyCptCodes, pyCptDisplays, pyIcdCodes,
-            billedAmount, codeCount,
-            specialtyCode, patientAge, durationDays,
+        // Run agentic audit using AgentWrapper
+        Set agentJsonStr = ##class(ClaimAudit.AI.AgentWrapper).AuditClaimAgent(
+            patientId, providerNpi, tCptCodes, tCptDisplays, tIcdCodes,
+            billedAmount, codeCount, specialtyCode, patientAge, durationDays,
             serviceDate, claimId
         )
-
-        // Tier 1: NLP results
-        Set tDict1 = tAllResults."get"("tier1")
-        Set t1Flagged = 0
-        Set t1Reason = ""
-        Set t1Sim = 0.0
-        Set t1Citations = ##class(%DynamicArray).%New()
-        If $IsObject(tDict1) {
-            Set t1Flagged = +tDict1."get"("flagged", 0)
-            Set t1Reason = tDict1."get"("reason", "")
-            Set t1Sim = +tDict1."get"("similarity", 0.0)
-            Set pyCitations1 = tDict1."get"("citations")
-            If $IsObject(pyCitations1) {
-                Set t1Citations = ##class(%DynamicArray).%FromJSON(jsonLib.dumps(pyCitations1))
-            }
+        
+        Set agentRes = ##class(%DynamicObject).%FromJSON(agentJsonStr)
+        Set status = agentRes.status
+        Set score = +agentRes.threatIndex
+        
+        Set pResult.score = score
+        If status = "HOLD" {
+            Set pResult.flagged = 1
+        } Else {
+            Set pResult.flagged = 0
         }
-
-        // Tier 2: Autoencoder results
-        Set tDict2 = tAllResults."get"("tier2")
-        Set t2Flagged = 0
-        Set t2Reason = ""
-        Set t2Loss = 0.0
-        Set t2Citations = ##class(%DynamicArray).%New()
-        If $IsObject(tDict2) {
-            Set t2Flagged = +tDict2."get"("flagged", 0)
-            Set t2Reason = tDict2."get"("reason", "")
-            Set t2Loss = +tDict2."get"("loss", 0.0)
-            Set pyCitations2 = tDict2."get"("citations")
-            If $IsObject(pyCitations2) {
-                Set t2Citations = ##class(%DynamicArray).%FromJSON(jsonLib.dumps(pyCitations2))
-            }
-        }
-
-        // Tier 3: Graph results
-        Set tDict3 = tAllResults."get"("tier3")
-        Set t3Flagged = 0
-        Set t3Reason = ""
-        Set t3Citations = ##class(%DynamicArray).%New()
-        If $IsObject(tDict3) {
-            Set t3Flagged = +tDict3."get"("flagged", 0)
-            Set t3Reason = tDict3."get"("reason", "")
-            Set pyCitations3 = tDict3."get"("citations")
-            If $IsObject(pyCitations3) {
-                Set t3Citations = ##class(%DynamicArray).%FromJSON(jsonLib.dumps(pyCitations3))
-            }
-        }
-
-        // Synthesis & Risk Scoring
-        Set score = 0.0
-        Set flaggedCount = 0
         
         Set tTierArr = ##class(%DynamicArray).%New()
+        Set findings = agentRes.findings
         
-        // Tier 1
-        Set tObj1 = {
-            "tier": 1,
-            "label": "Semantic Clinical Audit",
-            "score": (t1Sim),
-            "flags": []
-        }
-        Set tObj1.citations = t1Citations
-        If t1Reason '= "" {
-            Do tObj1.flags.%Push(t1Reason)
-            Set tObj1.summary = t1Reason
-        } Else {
-            Set tObj1.summary = "Clinical SOAP notes match the procedural description."
-        }
-        Do tTierArr.%Push(tObj1)
-
-        // Tier 2
-        Set tThresh = 0.02
-        If $IsObject(tDict2) {
-            Set tThresh = +tDict2."get"("threshold", 0.02)
-        }
-        Set tObj2 = {
-            "tier": 2,
-            "label": "Statistical Outlier Profiler",
-            "score": (t2Loss),
-            "threshold": (tThresh),
-            "flags": []
-        }
-        Set tObj2.citations = t2Citations
-        If t2Reason '= "" {
-            Do tObj2.flags.%Push(t2Reason)
-            Set tObj2.summary = t2Reason
-        } Else {
-            Set tObj2.summary = "Claim billing features are within normal statistical bounds."
-        }
-        Do tTierArr.%Push(tObj2)
-
-        // Tier 3
-        Set tObj3 = {
-            "tier": 3,
-            "label": "Collusion Network Analysis",
-            "score": 0.0,
-            "flags": []
-        }
-        Set tObj3.citations = t3Citations
-        If $IsObject(tDict3) {
-            Set tFindings = tDict3."get"("findings")
-            If $IsObject(tFindings) {
-                Set jsonLib = ##class(%SYS.Python).Import("json")
-                Set tFindingsArr = ##class(%DynamicArray).%FromJSON(jsonLib.dumps(tFindings))
-                Set tFindIter = tFindingsArr.%GetIterator()
-                While tFindIter.%GetNext(.tFK, .tFV) {
-                    Do tObj3.flags.%Push(tFV)
+        If $IsObject(findings) {
+            // Tier 1
+            Set t1 = findings.tier1
+            If $IsObject(t1) {
+                Set tObj1 = {
+                    "tier": 1,
+                    "label": "Semantic Clinical Audit",
+                    "score": (+t1.similarity),
+                    "flags": []
                 }
+                If t1.citations '= "" Set tObj1.citations = t1.citations
+                If t1.reason '= "" {
+                    Do tObj1.flags.%Push(t1.reason)
+                    Set tObj1.summary = t1.reason
+                    If t1.flagged Do pResult.reasons.%Push("Tier 1 (NLP): " _ t1.reason)
+                } Else {
+                    Set tObj1.summary = "Clinical SOAP notes match the procedural description."
+                }
+                Do tTierArr.%Push(tObj1)
+            }
+            
+            // Tier 2
+            Set t2 = findings.tier2
+            If $IsObject(t2) {
+                Set tObj2 = {
+                    "tier": 2,
+                    "label": "Statistical Outlier Profiler",
+                    "score": (+t2.loss),
+                    "threshold": (+t2.threshold),
+                    "flags": []
+                }
+                If t2.citations '= "" Set tObj2.citations = t2.citations
+                If t2.reason '= "" {
+                    Do tObj2.flags.%Push(t2.reason)
+                    Set tObj2.summary = t2.reason
+                    If t2.flagged Do pResult.reasons.%Push("Tier 2 (ML): " _ t2.reason)
+                } Else {
+                    Set tObj2.summary = "Claim billing features are within normal statistical bounds."
+                }
+                Do tTierArr.%Push(tObj2)
+            }
+            
+            // Tier 3
+            Set t3 = findings.tier3
+            If $IsObject(t3) {
+                Set tObj3 = {
+                    "tier": 3,
+                    "label": "Collusion Network Analysis",
+                    "score": 0.0,
+                    "flags": []
+                }
+                If t3.citations '= "" Set tObj3.citations = t3.citations
+                If $IsObject(t3.findings) {
+                    Set tFindIter = t3.findings.%GetIterator()
+                    While tFindIter.%GetNext(.tFK, .tFV) {
+                        Do tObj3.flags.%Push(tFV)
+                    }
+                }
+                If t3.reason '= "" {
+                    If tObj3.flags.%Size() = 0 Do tObj3.flags.%Push(t3.reason)
+                    Set tObj3.summary = t3.reason
+                    If t3.flagged Do pResult.reasons.%Push("Tier 3 (Graph): " _ t3.reason)
+                } Else {
+                    Set tObj3.summary = "Referral loop scan complete. Patient-provider relational topology is clean, geodetic limits matched."
+                }
+                Do tTierArr.%Push(tObj3)
             }
         }
-        If t3Reason '= "" {
-            If tObj3.flags.%Size() = 0 Do tObj3.flags.%Push(t3Reason)
-            Set tObj3.summary = t3Reason
-        } Else {
-            Set tObj3.summary = "Referral loop scan complete. Patient-provider relational topology is clean, geodetic limits matched."
-        }
-        Do tTierArr.%Push(tObj3)
-
+        
         Set pResult.tierResults = tTierArr
-
-        If t1Flagged {
-            Set score = score + 0.35
-            Set flaggedCount = flaggedCount + 1
-            Do pResult.reasons.%Push("Tier 1 (NLP): " _ t1Reason)
-        }
-        If t2Flagged {
-            Set score = score + 0.35
-            Set flaggedCount = flaggedCount + 1
-            Do pResult.reasons.%Push("Tier 2 (ML): " _ t2Reason)
-        }
-        If t3Flagged {
-            Set score = score + 0.30
-            Set flaggedCount = flaggedCount + 1
-            Do pResult.reasons.%Push("Tier 3 (Graph): " _ t3Reason)
-        }
         
-        // Cap score at 1.0
-        If score > 1.0 Set score = 1.0
-        Set pResult.score = score
-        
-        // If threat score exceeds threshold, flag for hold
-        If score >= 0.35 {
-            Set pResult.flagged = 1
-        }
+        // Add extra agent fields to pResult
+        If agentRes.justification '= "" Set pResult.justification = agentRes.justification
+        If agentRes.nextSteps '= "" Set pResult.nextSteps = agentRes.nextSteps
+        If agentRes.citations '= "" Set pResult.citations = agentRes.citations
         
         Set pResult.patientId = patientId
         Set pResult.providerNpi = providerNpi

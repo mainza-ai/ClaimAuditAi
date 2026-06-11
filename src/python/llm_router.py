@@ -5,6 +5,7 @@ import time
 import logging
 import urllib.request
 import urllib.error
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -183,20 +184,21 @@ The claim has been suspended due to one or more anomalies exceeding our billing 
 """
     return report
 
-def chat(system_prompt: str, messages_json: str, max_tokens: int = 1024, timeout: float = None) -> str:
+def chat(system_prompt: str, messages_json: str, max_tokens: int = 1024, timeout: float = None, tools: list = None, response_format: dict = None) -> Any:
     settings = _load_settings()
     cache_ttl = int(settings.get("cacheTTL", 86400))
-    cache_key = (system_prompt, messages_json, max_tokens)
+    cache_key = (system_prompt, messages_json, max_tokens, json.dumps(tools), json.dumps(response_format))
 
-    # 1. Lookup in response cache
-    with _response_cache_lock:
-        if cache_key in _response_cache:
-            cached_data = _response_cache[cache_key]
-            if time.time() - cached_data["timestamp"] < cache_ttl:
-                logger.info("LLM cache hit.")
-                return cached_data["response"]
-            else:
-                del _response_cache[cache_key]
+    # 1. Lookup in response cache (only if no tools are used)
+    if tools is None:
+        with _response_cache_lock:
+            if cache_key in _response_cache:
+                cached_data = _response_cache[cache_key]
+                if time.time() - cached_data["timestamp"] < cache_ttl:
+                    logger.info("LLM cache hit.")
+                    return cached_data["response"]
+                else:
+                    del _response_cache[cache_key]
 
     primary_provider = settings.get("provider") or os.environ.get("LLM_PROVIDER", "nvidia").strip().lower()
     
@@ -235,18 +237,45 @@ def chat(system_prompt: str, messages_json: str, max_tokens: int = 1024, timeout
                 full_messages = [{"role": "system", "content": system_prompt}] + messages
                 
                 logger.info(f"Attempting LLM call using provider: {provider}, model: {model}")
-                response = client.chat.completions.create(
-                    model=model,
-                    messages=full_messages,
-                    max_tokens=max_tokens,
-                    temperature=0.3,
-                    timeout=timeout,
-                )
+                
+                kwargs = {
+                    "model": model,
+                    "messages": full_messages,
+                    "max_tokens": max_tokens,
+                    "temperature": 0.3,
+                    "timeout": timeout,
+                }
+                if tools is not None:
+                    kwargs["tools"] = tools
+                    kwargs["tool_choice"] = "auto"
+                if response_format is not None:
+                    kwargs["response_format"] = response_format
+
+                response = client.chat.completions.create(**kwargs)
                 if not response.choices:
                     raise ValueError("LLM returned empty response — no choices available")
-                content = clean_non_bmp(response.choices[0].message.content)
+                
+                message = response.choices[0].message
+                content = clean_non_bmp(message.content or "")
 
-                # Store response in cache
+                if tools is not None:
+                    tool_calls_list = []
+                    if getattr(message, "tool_calls", None):
+                        for tc in message.tool_calls:
+                            tool_calls_list.append({
+                                "id": tc.id,
+                                "type": tc.type,
+                                "function": {
+                                    "name": tc.function.name,
+                                    "arguments": tc.function.arguments
+                                }
+                            })
+                    return {
+                        "content": content,
+                        "tool_calls": tool_calls_list
+                    }
+
+                # Store response in cache (only if no tools are used)
                 with _response_cache_lock:
                     _response_cache[cache_key] = {
                         "response": content,
@@ -263,15 +292,16 @@ def chat(system_prompt: str, messages_json: str, max_tokens: int = 1024, timeout
                     # Retries exhausted for this provider, fall back to next provider
                     break
                     
-    # If all LLM calls failed, generate rule-based fallback report
-    logger.error("All LLM providers failed. Executing deterministic fallback report.")
-    try:
-        messages = json.loads(messages_json)
-        user_prompt = messages[0]["content"] if messages else ""
-        if "Adjudication Target Claim Details" in user_prompt:
-            return _generate_rule_based_fallback_summary(user_prompt)
-    except Exception:
-        pass
+    # If all LLM calls failed and it's a non-tool generation, generate rule-based fallback report
+    if tools is None:
+        logger.error("All LLM providers failed. Executing deterministic fallback report.")
+        try:
+            messages = json.loads(messages_json)
+            user_prompt = messages[0]["content"] if messages else ""
+            if "Adjudication Target Claim Details" in user_prompt:
+                return _generate_rule_based_fallback_summary(user_prompt)
+        except Exception:
+            pass
         
     raise RuntimeError(f"All LLM providers failed. Last error: {last_error}")
 
@@ -487,3 +517,66 @@ def parse_disposition(disposition: str) -> str:
     tier_results.append(parse_block(2, "Statistical Outlier Profiler", t2_text, "Claim billing features are within normal statistical bounds."))
     tier_results.append(parse_block(3, "Collusion Network Analysis", t3_text, "Referral loop scan complete. Patient-provider relational topology is clean, geodetic limits matched."))
     return json.dumps(tier_results)
+
+def run_chat_agent(system_prompt: str, messages_json: str) -> str:
+    """Run an agentic chat assistant loop with tools and return the final answer."""
+    import agent_tools
+    tools = agent_tools.registry.get_all_schemas()
+    
+    settings = _load_settings()
+    timeout = float(settings.get("timeout", 300.0))
+    
+    try:
+        messages = json.loads(messages_json)
+    except Exception:
+        messages = []
+        
+    max_steps = 3
+    step = 0
+    while step < max_steps:
+        step += 1
+        try:
+            response = chat(
+                system_prompt=system_prompt,
+                messages_json=json.dumps(messages),
+                max_tokens=1024,
+                timeout=timeout,
+                tools=tools
+            )
+            
+            tool_calls = response.get("tool_calls", [])
+            content = response.get("content", "")
+            
+            assistant_msg = {"role": "assistant", "content": content}
+            if tool_calls:
+                assistant_msg["tool_calls"] = tool_calls
+            messages.append(assistant_msg)
+            
+            if not tool_calls:
+                return content
+                
+            for tc in tool_calls:
+                tc_id = tc["id"]
+                tool_name = tc["function"]["name"]
+                try:
+                    args = json.loads(tc["function"]["arguments"])
+                except Exception:
+                    args = {}
+                
+                tool_result = agent_tools.registry.execute(tool_name, args)
+                
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc_id,
+                    "name": tool_name,
+                    "content": tool_result
+                })
+                
+        except Exception as e:
+            logger.error(f"Error in run_chat_agent step {step}: {str(e)}")
+            break
+            
+    if messages and messages[-1].get("role") == "assistant":
+        return messages[-1].get("content", "Error: failed to generate assistant response.")
+    return "Error: failed to generate response."
+
