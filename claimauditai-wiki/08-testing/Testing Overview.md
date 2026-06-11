@@ -35,7 +35,7 @@ In addition to E2E integration tests, ClaimAuditAI maintains comprehensive unit 
   ```bash
   .venv/bin/pytest
   ```
-- **Coverage**: Covers `llm_router` settings cache, parser, rate limiting, `nlp_auditor` sentence embeddings, `graph_analyzer` cycle detection, and `autoencoder_train` specialty code scaling.
+- **Coverage**: Covers `llm_router` settings cache, parser, rate limiting, `nlp_auditor` sentence embeddings, `graph_analyzer` cycle detection, `autoencoder_train` specialty code scaling, and `agent_graph` Pydantic Graph FSM node transitions and fallback workflows.
 
 ### Frontend Unit Tests (vitest)
 - **Framework**: `vitest` with `@vitest/coverage-v8` coverage checking.

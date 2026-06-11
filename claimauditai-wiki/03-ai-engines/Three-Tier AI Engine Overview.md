@@ -22,7 +22,7 @@ By combining three distinct analytical engines, the platform identifies fraudule
                                     |
                                     v
                   +-----------------------------------+
-                  |    %AI.Agent Synthesis Orchestrator|
+                  |     Pydantic Graph FSM & Agent    |
                   +-----------------------------------+
 ```
 
@@ -31,7 +31,7 @@ By combining three distinct analytical engines, the platform identifies fraudule
 - **Tier 3 (Relational Collusion)**: Identifies provider fraud rings and referral loops using graph analytics.
 
 ## Key Details
-- **Cooperation Protocol**: The tiers execute sequentially inside the Embedded Python environment to prevent database context and memory access collisions under heavy concurrency.
+- **Cooperation Protocol**: The tiers execute sequentially as structured nodes (`ClinicalAuditNode`, `AnomalyAuditNode`, `NetworkAuditNode`) in a compiled Pydantic Graph FSM to guarantee type safety and prevent database context collisions.
 - **Score Synthesis**: The outcomes of all three tiers are combined into a standardized anomaly object. Tier 1 (NLP) contributes +0.35, Tier 2 (Autoencoder) +0.35, Tier 3 (Graph) +0.30, capped at 1.0. The score is stored as a FHIR ClaimResponse extension (`risk-score`) — the single source of truth read by all endpoints.
 - **Default Action Limit**: Any single-tier failure or a combined threat score $\ge 0.35$ triggers a hold status.
 - **Risk Classification**: Unified across all endpoints using numeric thresholds on the stored risk-score extension: $\ge 0.86$ = critical, $\ge 0.50$ = high, else = medium. Disposition text matching is no longer used.

@@ -42,7 +42,7 @@ The system bypasses typical network serialization gaps by staging all analytical
 - **Kernel Interceptor**: Extends `HS.FHIRServer.Storage.Json.Interactions`.
 - **Database Engine**: Manages native HNSW vector indexes and dynamic SQL projections.
 - **Embedded Python Layer**: Accesses PyTorch, NetworkX, and SentenceTransformers directly inside the database process.
-- **AI Hub**: Leverages `%AI.Agent` to orchestrate OpenAI-compatible LLM providers.
+- **AI Hub & FSM Orchestration**: Bridges native `%AI.Agent` calls with a type-safe Python **Pydantic Graph FSM** using `ClaimAudit.AI.AgentWrapper`.
 
 ## See Also
 [[Data Flow]] · [[FHIR Interception Strategy]] · [[Project Directory Structure]]
