@@ -125,8 +125,18 @@ def _create_client(provider: str, settings: dict):
         client = OpenAI(api_key=api_key, base_url=base_url)
         return client, model
 
+    elif provider == "openrouter":
+        from openai import OpenAI
+        api_key = settings.get("openrouterApiKey") or os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPEN_ROUTER_API_KEY")
+        if not api_key:
+            raise ValueError("LLM_PROVIDER is 'openrouter' but OPENROUTER_API_KEY is not set.")
+        base_url = settings.get("openrouterBaseUrl") or os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+        model = settings.get("openrouterModel") or os.environ.get("OPENROUTER_MODEL", "google/gemini-2.5-pro")
+        client = OpenAI(api_key=api_key, base_url=base_url)
+        return client, model
+
     else:
-        raise ValueError(f"Unknown LLM_PROVIDER '{provider}'. Valid values: nvidia, ollama, openai")
+        raise ValueError(f"Unknown LLM_PROVIDER '{provider}'. Valid values: nvidia, ollama, openai, openrouter")
 
 
 def _generate_rule_based_fallback_summary(prompt: str) -> str:
@@ -204,7 +214,7 @@ def chat(system_prompt: str, messages_json: str, max_tokens: int = 1024, timeout
     
     # Provider queue: try primary, then fallbacks
     providers_queue = [primary_provider]
-    for p in ["openai", "nvidia", "ollama"]:
+    for p in ["openai", "nvidia", "openrouter", "ollama"]:
         if p not in providers_queue:
             providers_queue.append(p)
             
@@ -215,6 +225,8 @@ def chat(system_prompt: str, messages_json: str, max_tokens: int = 1024, timeout
             if provider == "nvidia" and not (settings.get("nvidiaApiKey") or os.environ.get("NVIDIA_API_KEY")):
                 continue
             if provider == "openai" and not (settings.get("openaiApiKey") or os.environ.get("OPENAI_API_KEY")):
+                continue
+            if provider == "openrouter" and not (settings.get("openrouterApiKey") or os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPEN_ROUTER_API_KEY")):
                 continue
         except Exception:
             continue

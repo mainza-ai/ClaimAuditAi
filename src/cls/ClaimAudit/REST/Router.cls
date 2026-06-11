@@ -377,6 +377,8 @@ ClassMethod GetLLMSettings() As %Status
             "ollamaBaseUrl": (..GetSetting(tJson, "ollamaBaseUrl", "OLLAMA_BASE_URL")),
             "ollamaModel":   (..GetSetting(tJson, "ollamaModel", "OLLAMA_MODEL")),
             "openaiModel":   (..GetSetting(tJson, "openaiModel", "OPENAI_MODEL")),
+            "openrouterModel": (..GetSetting(tJson, "openrouterModel", "OPENROUTER_MODEL")),
+            "openrouterBaseUrl": (..GetSetting(tJson, "openrouterBaseUrl", "OPENROUTER_BASE_URL")),
             "rateLimitPerMin": (..GetSettingInt(tJson, "rateLimitPerMin", 120)),
             "cacheTTL":      (..GetSettingInt(tJson, "cacheTTL", 86400))
         }

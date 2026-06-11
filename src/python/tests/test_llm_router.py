@@ -63,6 +63,13 @@ class TestGetClientAndModel:
         with pytest.raises(ValueError, match="OPENAI_API_KEY"):
             llm_router._get_client_and_model()
 
+    def test_raises_on_openrouter_no_key(self, monkeypatch):
+        monkeypatch.setenv("LLM_PROVIDER", "openrouter")
+        monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+        monkeypatch.delenv("OPEN_ROUTER_API_KEY", raising=False)
+        with pytest.raises(ValueError, match="OPENROUTER_API_KEY"):
+            llm_router._get_client_and_model()
+
 
 class TestChat:
     def test_chat_requires_valid_json(self, monkeypatch):

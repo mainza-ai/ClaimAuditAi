@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../api/client';
 import { Save, RefreshCw, CheckCircle, AlertTriangle } from 'lucide-react';
 
-type Provider = 'nvidia' | 'ollama' | 'openai';
+type Provider = 'nvidia' | 'ollama' | 'openai' | 'openrouter';
 
 interface LLMSettingsData {
   provider: Provider;
@@ -12,6 +12,8 @@ interface LLMSettingsData {
   ollamaBaseUrl: string;
   ollamaModel: string;
   openaiModel: string;
+  openrouterModel: string;
+  openrouterBaseUrl: string;
   rateLimitPerMin?: number;
   cacheTTL?: number;
 }
@@ -36,6 +38,9 @@ export function LLMSettings() {
   const [ollamaModel, setOllamaModel] = useState('');
   const [openaiModel, setOpenaiModel] = useState('gpt-4');
   const [openaiKey, setOpenaiKey] = useState('');
+  const [openrouterModel, setOpenrouterModel] = useState('google/gemini-2.5-pro');
+  const [openrouterKey, setOpenrouterKey] = useState('');
+  const [openrouterBaseUrl, setOpenrouterBaseUrl] = useState('https://openrouter.ai/api/v1');
   const [rateLimitPerMin, setRateLimitPerMin] = useState(120);
   const [cacheTTL, setCacheTTL] = useState(86400);
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
@@ -50,6 +55,8 @@ export function LLMSettings() {
       setOllamaBaseUrl(settings.ollamaBaseUrl || 'http://localhost:11434');
       setOllamaModel(settings.ollamaModel || '');
       setOpenaiModel(settings.openaiModel || 'gpt-4');
+      setOpenrouterModel(settings.openrouterModel || 'google/gemini-2.5-pro');
+      setOpenrouterBaseUrl(settings.openrouterBaseUrl || 'https://openrouter.ai/api/v1');
       setRateLimitPerMin(settings.rateLimitPerMin !== undefined ? settings.rateLimitPerMin : 120);
       setCacheTTL(settings.cacheTTL !== undefined ? settings.cacheTTL : 86400);
     }
@@ -99,6 +106,10 @@ export function LLMSettings() {
     } else if (provider === 'openai') {
       payload.openaiModel = openaiModel;
       if (openaiKey) payload.openaiApiKey = openaiKey;
+    } else if (provider === 'openrouter') {
+      payload.openrouterModel = openrouterModel;
+      payload.openrouterBaseUrl = openrouterBaseUrl;
+      if (openrouterKey) payload.openrouterApiKey = openrouterKey;
     }
     save.mutate(payload);
   }
@@ -127,6 +138,11 @@ export function LLMSettings() {
       value: 'openai',
       label: 'OpenAI',
       description: 'Cloud-based. Requires OpenAI API key.',
+    },
+    {
+      value: 'openrouter',
+      label: 'OpenRouter',
+      description: 'Cloud-based. Requires OpenRouter API key. Allows access to hundreds of open-source and commercial models.',
     },
   ];
 
@@ -471,6 +487,91 @@ export function LLMSettings() {
                 </option>
               ))}
             </select>
+          </div>
+        </div>
+      )}
+
+      {provider === 'openrouter' && (
+        <div className="card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <p
+            style={{
+              margin: 0,
+              fontSize: 12,
+              fontWeight: 600,
+              color: 'var(--text-tertiary)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.06em',
+            }}
+          >
+            OpenRouter Configuration
+          </p>
+          <div>
+            <label
+              style={{
+                fontSize: 13,
+                fontWeight: 500,
+                color: 'var(--text-secondary)',
+                display: 'block',
+                marginBottom: 6,
+              }}
+            >
+              API Key
+            </label>
+            <input
+              type="password"
+              placeholder="Leave blank to keep existing key"
+              value={openrouterKey}
+              onChange={(e) => {
+                setOpenrouterKey(e.target.value);
+                setDirty(true);
+              }}
+              className="input"
+            />
+          </div>
+          <div>
+            <label
+              style={{
+                fontSize: 13,
+                fontWeight: 500,
+                color: 'var(--text-secondary)',
+                display: 'block',
+                marginBottom: 6,
+              }}
+            >
+              Base URL
+            </label>
+            <input
+              type="text"
+              value={openrouterBaseUrl}
+              onChange={(e) => {
+                setOpenrouterBaseUrl(e.target.value);
+                setDirty(true);
+              }}
+              className="input"
+            />
+          </div>
+          <div>
+            <label
+              style={{
+                fontSize: 13,
+                fontWeight: 500,
+                color: 'var(--text-secondary)',
+                display: 'block',
+                marginBottom: 6,
+              }}
+            >
+              Model
+            </label>
+            <input
+              type="text"
+              value={openrouterModel}
+              onChange={(e) => {
+                setOpenrouterModel(e.target.value);
+                setDirty(true);
+              }}
+              className="input"
+              placeholder="google/gemini-2.5-pro"
+            />
           </div>
         </div>
       )}
