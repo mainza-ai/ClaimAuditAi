@@ -203,6 +203,34 @@ export function DataManagement() {
             Error seeding data: {(seedData.error as Error)?.message || 'Unknown error'}
           </p>
         )}
+
+        <div
+          style={{
+            marginTop: 16,
+            padding: 12,
+            borderRadius: 6,
+            border: '1px solid var(--border-default)',
+            backgroundColor: 'var(--bg-page)',
+            display: 'flex',
+            gap: 10,
+            alignItems: 'flex-start',
+            fontSize: 12.5,
+            color: 'var(--text-secondary)',
+          }}
+        >
+          <Bot size={16} style={{ color: 'var(--accent-primary)', flexShrink: 0, marginTop: 2 }} />
+          <div>
+            <strong>Risk Adjudication Note:</strong> Seeded claims initially display with a <strong>medium</strong> risk level. The slow LLM pipeline is bypassed during bulk ingestion to prevent HTTP timeouts, and the ML Autoencoder is not yet trained.
+            <div style={{ marginTop: 6 }}>
+              To compute full threat levels:
+              <ol style={{ paddingLeft: 16, marginTop: 4, marginBottom: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <li>Click <strong>Retrain Model</strong> (below) to train the Autoencoder on the seeded data.</li>
+                <li>Go to the Holds Queue and open any pended claim.</li>
+                <li>Click <strong>Re-run Audit</strong> on the detail view to trigger the active LLM agent analysis.</li>
+              </ol>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="card" style={{ padding: 20 }}>
