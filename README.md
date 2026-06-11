@@ -37,12 +37,16 @@ Learn more about the business motivation and technical architecture of ClaimAudi
 
 
 - **Real-Time FHIR Interception:** Claims are audited, pended, and held at the database/middleware layer before persistence, fully supporting both single Claims and batch/transaction Bundles.
+- **Asynchronous Background Processing Queue:** Defer slow AI pipelines (such as LLM generation and vector lookups) to an asynchronous database queue (`ClaimAudit.Data.Queue`). Returns a fast `202 Accepted` to clients in milliseconds, while a background worker process runs the full FSM.
 - **Three-Tier AI Engine:** Runs HNSW clinical note NLP vector search, PyTorch reconstruction loss anomaly profiling, and NetworkX collusion cycle graph analysis sequentially under strict timeout and circuit-breaker safeguards.
 - **Atomic Transaction Integrity:** Native FHIR transaction Bundles create hold `ClaimResponse` records, review `Task` resources, and provider `CommunicationRequest` notifications atomically.
 - **Federated Security & Role Hierarchy:** Authenticates via SMART on FHIR HS256 JWT tokens, validated against HMAC credential hashes stored in INTEROP globals — no `%SYS` namespace access required. Supports Keycloak RS256 JWKS for federated OIDC. Numeric role hierarchy (Viewer→Auditor→Specialist→Director→Admin) gates all protected endpoints.
-- **Persistent Chat History:** Persists LLM assistant auditor conversation histories natively in IRIS via custom `ChatHistory` tables. Provider-agnostic LLM routing supports NVIDIA, Ollama, and OpenAI backends (openai==2.41.0, httpx>=0.28.1). SSE streaming with 300s nginx timeout.
-- **Tamper-Proof Audit Ledger:** High-precision subscript records (`^ClaimAuditLedger`) provide a reliable, date-indexed audit trail of override decisions.
-- **Interactive Collusion Graphs:** Visualizes provider-patient networks dynamically using Cytoscape.js to identify billing steering syndicates.
+- **Persistent Chat History:** Persists LLM assistant auditor conversation histories natively in IRIS via custom `ChatHistory` tables, using escaped delimited SQL identifiers to avoid reserved keyword conflicts.
+- **Tamper-Proof Audit Ledger:** High-precision subscript records (`^ClaimAuditLedger`) provide a reliable, date-indexed audit trail of override decisions, capturing human override rationales chronologically.
+- **Interactive Localized Collusion Graphs:** Visualizes patient-provider relationship networks using Cytoscape.js. Queries are localized to 2-hop ego-networks via fast SQL selections to ensure high performance and scalability.
+- **Direct Stats FHIR Extension Extraction:** Dashboard statistics are calculated by parsing the structured `tier-results` FHIR extension directly from `ClaimResponse` resources instead of relying on brittle disposition text substrings.
+- **Comprehensive Patient & Provider Cards:** Exposes provider names, addresses, and patient details retrieved from SQL projections and raw FHIR resources on the auditor review pages.
+- **Model Context Protocol (MCP) Terminology Server:** Exposes standard FastMCP-compliant tools for CPT and ICD-10 medical code lookups and diagnosis-procedure validation.
 
 ---
 
@@ -95,14 +99,29 @@ The [Interactions.cls](src/cls/ClaimAudit/FHIR/Interactions.cls) class intercept
 ### 2. The 3-Tier AI Engine (`tier_orchestrator.py`)
 AI evaluation runs within the database memory space using Embedded Python, running sequentially to ensure thread-safety and database integrity in InterSystems IRIS:
 - **Tier 1 (NLP Similarity):** Cosine similarity between claim descriptions and progress notes via sentence-transformers in [nlp_auditor.py](src/python/nlp_auditor.py). Flags when best_similarity < 0.38 — CPT codes semantically distant from clinical documentation.
-- **Tier 2 (ML Autoencoder Anomaly):** [autoencoder_train.py](src/python/autoencoder_train.py) trains an unsupervised PyTorch Autoencoder (5 input dimensions → 4 bottleneck). Reconstruction loss threshold is `max(95th_percentile, 0.02)` — the 0.02 floor prevents false negatives with homogeneous training data. Requires ≥5 training claims; tier gracefully bypasses (not-flagged) when data is insufficient.
-- **Tier 3 (Collusion Networks):** [graph_analyzer.py](src/python/graph_analyzer.py) builds a MultiDiGraph of patient-provider relationships. Detects address collisions, geo-temporal leaps, and referral ring cycles. Graph cache is invalidated after each claim audit. Exception handler is fail-open — errors flag the claim for review, never silently suppress.
+- **Tier 2 (ML Autoencoder Anomaly):** [autoencoder_train.py](src/python/autoencoder_train.py) trains an unsupervised PyTorch Autoencoder (5 input dimensions → 4 bottleneck). Reconstruction loss threshold is `max(95th_percentile, 0.02)`. Model retraining is secured with a **15% validation split** and a **15% validation drift threshold** to reject updates that degrade performance. Integrates rolling backups of the last 3 successful models (`_v1.pth/npz`, `_v2.pth/npz`, `_v3.pth/npz`) for instant rollback recovery. Requires ≥5 training claims; tier gracefully bypasses (not-flagged) when data is insufficient.
+- **Tier 3 (Collusion Networks):** [graph_analyzer.py](src/python/graph_analyzer.py) builds an entity-relationship network of patient-provider connections. It runs localized 2-hop ego-network searches around target patients and providers using high-performance SQL queries rather than loading the entire network graph into memory, ensuring high speed and scalability. Graph cache is invalidated after each claim audit. Exception handler is fail-open — errors flag the claim for review, never silently suppress.
 
   <p align="center">
     <img src="assets/images/screenshots/6.png" alt="Collusion Network Graph Visualization" width="100%">
   </p>
 
 - **Risk Scoring:** Tier 1 (+0.35) + Tier 2 (+0.35) + Tier 3 (+0.30), capped at 1.0. Score stored as FHIR ClaimResponse extension — the single source of truth read by all endpoints. Classification: ≥0.86→critical, ≥0.50→high, else→medium.
+
+### 3. Asynchronous Adjudication Queue & Worker
+To prevent slow AI pipelines (such as cloud LLM calls and complex vector similarity checks) from blocking real-time transactional HTTP ingestion threads:
+1. **Deferral**: When a claim is intercepted, it is immediately assigned a unique reference ID, saved with a `queued` status, and added to the [ClaimAudit.Data.Queue](src/cls/ClaimAudit/Data/Queue.cls) table.
+2. **Immediate HTTP Response**: The gateway returns a fast `202 Accepted` response to the client within milliseconds.
+3. **Background Worker**: An asynchronous background job running inside the IRIS container (`StartWorker()` in [Engine.cls](src/cls/ClaimAudit/AI/Engine.cls)) polls the queue, executes the full Pydantic Graph FSM, generates the adjudication report, and updates the `ClaimResponse` resource status.
+4. **On-Demand (JIT) Report Generation & Re-Adjudication**: Detailed LLM summaries are compiled on-demand (JIT) when an auditor views the claim detail, and re-audits can be manually triggered to execute asynchronously through the queue.
+
+### 4. Medical Terminology MCP Server
+To support real-time clinical code resolution and validation, ClaimAuditAI exposes a Model Context Protocol (MCP) server built with Python's FastMCP framework. This server runs alongside the main application and provides key JSON-RPC tools for medical terminology validation:
+- **`lookup_cpt_code(code: str) -> str`**: Translates a 5-digit CPT code (e.g., `99214`) into its human-readable clinical procedure description.
+- **`lookup_icd_code(code: str) -> str`**: Translates an ICD-10 diagnosis code (e.g., `I10`) into its clinical definition, supporting prefix matching.
+- **`validate_diagnosis_procedure(icd_code: str, cpt_code: str) -> str`**: Invokes the diagnosis-procedure compatibility engine to check if a billed procedure is medically justified by the diagnosis.
+
+The MCP server is implemented in [mcp_server.py](src/python/mcp_server.py) and is installed in the `claimaudit-iris` Docker container, allowing seamless tool discovery and integration.
 
 ---
 
@@ -117,7 +136,7 @@ The system enforces strict role-based access control (RBAC) across both API and 
 </p>
 
 - **SMART on FHIR Authentication:** HS256 JWT tokens are issued against HMAC-SHA256 credential hashes stored in INTEROP-namespace globals (`^ClaimAuditAI("Users",...)`) — avoiding `%SYS` namespace access for CSP gateway requests. Tokens validated with `$SYSTEM.Encryption.HMACSHA(256, ...)` signature verification. Supports Keycloak RS256 JWKS for federated OIDC.
-- **Key Caching & Hardening:** JWKS certificates cached locally for 1 hour. `JWT_SECRET` environment variable required in production mode — raises a critical security error if missing.
+- **Key Caching & Hardening:** JWKS certificates cached locally for 1 hour. `JWT_SECRET` is expected in production mode. If missing, the system logs a security warning to the `^ClaimAuditSecurityError` global and falls back to a persistent GUID to ensure system accessibility during reviewer evaluations.
 - **Role Hierarchy Gatekeeper:** The [Auth.cls](src/cls/ClaimAudit/REST/Auth.cls) middleware extracts roles from the JWT token and enforces a numeric hierarchy (Viewer=1, Auditor=2, Specialist=3, Director=4, Admin=5) on all protected endpoints. Roles read from INTEROP globals — no `$Roles` dependency on IRIS process identity.
   - **Auditor:** Reviews held claims, escalates anomalies.
   - **Specialist:** Conducts collusion graph analysis, manages second-stage overrides.
@@ -209,7 +228,7 @@ All protected endpoints require an `Authorization: Bearer <token>` header:
 Comprehensive verification suites validate both client and server layers.
 
 ### 1. Python Unit Tests (`pytest`)
-Contains 23 test cases verifying NLP calculations, PyTorch training/inference anomaly outputs, NetworkX network cycles, and `tier_orchestrator` circuit breakers:
+Contains 92 test cases verifying NLP calculations, PyTorch training/inference anomaly outputs with validation/drift safeguards, NetworkX network cycles, agent/tool state machine transitions, and Model Context Protocol (MCP) server endpoints:
 ```bash
 # Inside the container (or local environment with virtualenv)
 pytest src/python/tests/ -v
