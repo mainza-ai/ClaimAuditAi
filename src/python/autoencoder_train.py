@@ -105,13 +105,45 @@ def train_autoencoder() -> str:
         # Feature Statistics for normalization
         means = np.mean(data, axis=0)
         stds = np.std(data, axis=0)
-        np.savez(STATS_PATH, means=means, stds=stds)
         
         # Normalize dataset
         normalized_data = normalize_features(data, means, stds)
         tensor_data = torch.tensor(normalized_data, dtype=torch.float32)
         
+        # Set random seeds for reproducibility and deterministic training
+        np.random.seed(42)
+        torch.manual_seed(42)
+        
+        # Validation Split: 15% split if we have enough samples
+        n_samples = len(historical_claims)
+        if n_samples >= 10:
+            indices = np.arange(n_samples)
+            np.random.shuffle(indices)
+            val_size = max(1, int(n_samples * 0.15))
+            val_indices = indices[:val_size]
+            train_indices = indices[val_size:]
+            
+            train_data = tensor_data[train_indices]
+            val_data = tensor_data[val_indices]
+        else:
+            train_data = tensor_data
+            val_data = tensor_data
+
+        # Check if old model exists to compute baseline validation loss
+        old_loss = None
+        if os.path.exists(MODEL_PATH) and os.path.exists(STATS_PATH):
+            try:
+                old_model = ClaimAutoencoder(input_dim=5)
+                old_model.load_state_dict(torch.load(MODEL_PATH, weights_only=True))
+                old_model.eval()
+                with torch.no_grad():
+                    old_reconstructed = old_model(val_data)
+                    old_loss = float(torch.mean((old_reconstructed - val_data) ** 2).item())
+            except Exception:
+                pass
+        
         # Model & Training Staging
+        torch.manual_seed(42)
         model = ClaimAutoencoder(input_dim=5)
         criterion = nn.MSELoss()
         optimizer = optim.Adam(model.parameters(), lr=0.01)
@@ -121,18 +153,70 @@ def train_autoencoder() -> str:
         model.train()
         for epoch in range(epochs):
             optimizer.zero_grad()
-            outputs = model(tensor_data)
-            loss = criterion(outputs, tensor_data)
+            outputs = model(train_data)
+            loss = criterion(outputs, train_data)
             loss.backward()
             optimizer.step()
             
-        # Calculate dynamic reconstruction threshold (95th percentile of normal reconstruction loss)
+        # Evaluate candidate model on validation data
         model.eval()
+        with torch.no_grad():
+            candidate_reconstructed = model(val_data)
+            candidate_loss = float(torch.mean((candidate_reconstructed - val_data) ** 2).item())
+
+        # Validate drift against old loss (15% limit)
+        if old_loss is not None and old_loss > 1e-6:
+            drift_percent = (candidate_loss - old_loss) / old_loss
+            if drift_percent > 0.15:
+                # Log critical warning to stderr and reject the candidate update
+                sys.stderr.write(f"Autoencoder validation failure: drift of {drift_percent*100:.2f}% exceeds the 15% limit. Candidate Loss: {candidate_loss:.6f}, Old Loss: {old_loss:.6f}\n")
+                return f"Error: Validation drift of {drift_percent*100:.2f}% exceeds 15% limit. Training rejected to prevent model degradation."
+
+        # Calculate dynamic reconstruction threshold (95th percentile of normal reconstruction loss)
         with torch.no_grad():
             reconstructed = model(tensor_data)
             mse_losses = torch.mean((reconstructed - tensor_data) ** 2, dim=1).numpy()
             threshold = max(np.percentile(mse_losses, 95), 0.02)
             
+        # Safeguard: Rotate backups of previous successful models (up to 3 versions)
+        for i in range(2, 0, -1):
+            old_model_file = MODEL_PATH.replace(".pth", f"_v{i}.pth")
+            old_stats_file = STATS_PATH.replace(".npz", f"_v{i}.npz")
+            next_model_file = MODEL_PATH.replace(".pth", f"_v{i+1}.pth")
+            next_stats_file = STATS_PATH.replace(".npz", f"_v{i+1}.npz")
+            if os.path.exists(old_model_file):
+                try:
+                    if os.path.exists(next_model_file):
+                        os.remove(next_model_file)
+                    os.rename(old_model_file, next_model_file)
+                except Exception:
+                    pass
+            if os.path.exists(old_stats_file):
+                try:
+                    if os.path.exists(next_stats_file):
+                        os.remove(next_stats_file)
+                    os.rename(old_stats_file, next_stats_file)
+                except Exception:
+                    pass
+                
+        # Move current successful model to v1
+        if os.path.exists(MODEL_PATH):
+            try:
+                backup_m = MODEL_PATH.replace(".pth", "_v1.pth")
+                if os.path.exists(backup_m):
+                    os.remove(backup_m)
+                os.rename(MODEL_PATH, backup_m)
+            except Exception:
+                pass
+        if os.path.exists(STATS_PATH):
+            try:
+                backup_s = STATS_PATH.replace(".npz", "_v1.npz")
+                if os.path.exists(backup_s):
+                    os.remove(backup_s)
+                os.rename(STATS_PATH, backup_s)
+            except Exception:
+                pass
+
         # Save model state and parameters
         torch.save(model.state_dict(), MODEL_PATH)
         np.savez(STATS_PATH, means=means, stds=stds, threshold=threshold)

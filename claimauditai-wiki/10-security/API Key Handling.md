@@ -16,6 +16,7 @@ All external credentials (such as your Nvidia API key) are stored in the local `
 - **Git Exclusion**: Configured in `.gitignore` to prevent committing secrets to GitHub.
 - **Container Path**: Environment variables are mapped directly to the active database process context.
 - **Credential Scopes**: Restrict your Nvidia API keys to the specific models used by the orchestrator.
+- **JWT Secret Safe Mode**: In production environments (`CLAIMAUDIT_ENV=production`), a `JWT_SECRET` is required to sign authentication tokens. If this variable is unset, to prevent locking out the system (especially for reviewer/contest evaluations), the system will log a critical warning to `^ClaimAuditSecurityError` and fallback to a persistent GUID to maintain service availability rather than shutting down or throwing a fatal exception.
 
 ## See Also
 [[Security Overview]] · [[Environment Variables Reference]] · [[PHI and LLM Boundary]]

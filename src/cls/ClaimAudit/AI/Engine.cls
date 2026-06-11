@@ -314,7 +314,7 @@ ClassMethod AuditClaim(pClaimJson As %DynamicObject, Output pResult As %DynamicO
         
         Set agentRes = ##class(%DynamicObject).%FromJSON(agentJsonStr)
         Set status = agentRes.status
-        Set score = +agentRes.threatIndex
+        Set score = +agentRes."threat_index"
         
         Set pResult.score = score
         If status = "HOLD" {
@@ -673,7 +673,7 @@ ClassMethod ExecuteAdjudication(pCRId As %String, ByRef pErrorMsg As %String) As
 
         Set agentRes = ##class(%DynamicObject).%FromJSON(agentJsonStr)
         Set status = agentRes.status
-        Set score = +agentRes.threatIndex
+        Set score = +agentRes."threat_index"
         Set tLLMSummary = agentRes.justification
         If tLLMSummary = "" Set tLLMSummary = "Audit completed by background task agent."
 

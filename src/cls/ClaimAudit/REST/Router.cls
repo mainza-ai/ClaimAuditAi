@@ -1664,11 +1664,6 @@ ClassMethod GetStats() As %Status
                 Set tResp = ##class(HS.FHIRServer.API.Data.Response).%New()
                 Do tService.DispatchRequest(tReq, .tResp)
                 If $IsObject(tResp.Json) {
-                    Set tDisp = tResp.Json.disposition
-                    If (tDisp [ "Tier 1") || (tDisp [ "Clinical") || (tDisp [ "Validity") { Set tTier1Count = tTier1Count + 1 }
-                    If (tDisp [ "Tier 2") || (tDisp [ "Statistical") || (tDisp [ "Outlier") || (tDisp [ "autoencoder") { Set tTier2Count = tTier2Count + 1 }
-                    If (tDisp [ "Tier 3") || (tDisp [ "Collusion") || (tDisp [ "steering") || (tDisp [ "Address") || (tDisp [ "leap") { Set tTier3Count = tTier3Count + 1 }
-                    
                     If $IsObject(tResp.Json.extension) {
                         Set tExtIter = tResp.Json.extension.%GetIterator()
                         While tExtIter.%GetNext(.tK, .tExt) {
@@ -1677,6 +1672,27 @@ ClassMethod GetStats() As %Status
                                 If tScore >= 0.86 { Set tCrit = tCrit + 1
                                 } ElseIf tScore >= 0.50 { Set tHigh = tHigh + 1
                                 } Else { Set tMed = tMed + 1 }
+                            }
+                            If tExt.url = "https://claimauditai.com/fhir/extension/tier-results" {
+                                Try {
+                                    Set tTierJSON = ##class(%DynamicArray).%FromJSON(tExt.valueString)
+                                    If $IsObject(tTierJSON) {
+                                        For tIdx = 0:1:tTierJSON.%Size()-1 {
+                                            Set tTierObj = tTierJSON.%Get(tIdx)
+                                            If $IsObject(tTierObj) {
+                                                Set tTierNum = +tTierObj.tier
+                                                Set tFlagged = 0
+                                                If $IsObject(tTierObj.flags) && (tTierObj.flags.%Size() > 0) Set tFlagged = 1
+                                                
+                                                If tFlagged {
+                                                    If tTierNum = 1 Set tTier1Count = tTier1Count + 1
+                                                    If tTierNum = 2 Set tTier2Count = tTier2Count + 1
+                                                    If tTierNum = 3 Set tTier3Count = tTier3Count + 1
+                                                }
+                                            }
+                                        }
+                                    }
+                                } Catch {}
                             }
                         }
                     }

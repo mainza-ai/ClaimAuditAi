@@ -84,6 +84,75 @@ class TestTrainAutoencoder:
         # Since no iris module and no data, should skip
         assert isinstance(result, (str, dict))
 
+    @pytest.mark.skipif(autoencoder_train.torch is None, reason="PyTorch not installed")
+    def test_training_validation_and_backup(self, monkeypatch, tmp_path):
+        # Create temp path for MODEL_PATH and STATS_PATH
+        model_file = str(tmp_path / "autoencoder.pth")
+        stats_file = str(tmp_path / "stats.npz")
+        monkeypatch.setattr(autoencoder_train, "MODEL_PATH", model_file)
+        monkeypatch.setattr(autoencoder_train, "STATS_PATH", stats_file)
+        
+        # Mock iris
+        class MockRow:
+            def __init__(self, data):
+                self.data = data
+            def __getitem__(self, idx):
+                return self.data[idx]
+                
+        class MockRS:
+            def __init__(self):
+                # 15 sample claims
+                self.rows = [
+                    [100.0, 2.0, 1.0, 45.0, 1.0],
+                    [120.0, 2.0, 1.0, 42.0, 1.0],
+                    [90.0, 1.0, 1.0, 50.0, 1.0],
+                    [110.0, 2.0, 1.0, 47.0, 1.0],
+                    [95.0, 2.0, 1.0, 44.0, 1.0],
+                    [105.0, 2.0, 1.0, 46.0, 1.0],
+                    [115.0, 3.0, 1.0, 48.0, 1.0],
+                    [85.0, 1.0, 1.0, 40.0, 1.0],
+                    [125.0, 2.0, 1.0, 52.0, 1.0],
+                    [130.0, 2.0, 1.0, 55.0, 1.0],
+                    [140.0, 3.0, 1.0, 58.0, 2.0],
+                    [150.0, 3.0, 1.0, 60.0, 2.0],
+                    [98.0, 2.0, 1.0, 43.0, 1.0],
+                    [102.0, 2.0, 1.0, 45.0, 1.0],
+                    [108.0, 2.0, 1.0, 46.0, 1.0],
+                ]
+                self.idx = 0
+            def __iter__(self):
+                return self
+            def __next__(self):
+                if self.idx >= len(self.rows):
+                    raise StopIteration
+                res = MockRow(self.rows[self.idx])
+                self.idx += 1
+                return res
+                
+        class MockStmt:
+            def execute(self):
+                return MockRS()
+                
+        class MockIris:
+            class sql:
+                @staticmethod
+                def prepare(sql_str):
+                    return MockStmt()
+                    
+        monkeypatch.setattr(autoencoder_train, "iris", MockIris)
+        
+        # First train: should succeed and save model files
+        result1 = autoencoder_train.train_autoencoder()
+        assert "Successfully trained" in result1
+        assert os.path.exists(model_file)
+        assert os.path.exists(stats_file)
+        
+        # Second train: should rotate backups and succeed
+        result2 = autoencoder_train.train_autoencoder()
+        assert "Successfully trained" in result2
+        assert os.path.exists(model_file.replace(".pth", "_v1.pth"))
+        assert os.path.exists(stats_file.replace(".npz", "_v1.npz"))
+
 
 class TestEvaluateClaimAnomaly:
     def test_returns_dict(self):

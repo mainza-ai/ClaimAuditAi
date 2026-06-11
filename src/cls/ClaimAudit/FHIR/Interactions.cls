@@ -417,11 +417,14 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
                 Set tCRRespEntry = tResponseBundle.Json.entry.%Get(0)
                 If $IsObject(tCRRespEntry) && $IsObject(tCRRespEntry.response) {
                     Set tLocation = tCRRespEntry.response.location
+                    Set ^ClaimAuditDebugLocation($ZTS, "tLocation") = tLocation
+                    If $Extract(tLocation, 1) = "/" Set tLocation = $Extract(tLocation, 2, *)
                     Set tCreatedCRId = $Piece(tLocation, "/", 2)
                 }
             }
             If tCreatedCRId '= "" {
                 Set claimResponse.id = tCreatedCRId
+                Do ##class(ClaimAudit.Data.Queue).Enqueue(tCreatedCRId)
             }
 
             Set ^ClaimAuditStatusLog($ZTS, "Bundle", "status") = tResponseBundle.Status
@@ -457,6 +460,7 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
                     If $IsObject(tRespEntry) && $IsObject(tRespEntry.response) {
                         Set tLocation = tRespEntry.response.location
                     }
+                    If $Extract(tLocation, 1) = "/" Set tLocation = $Extract(tLocation, 2, *)
                     Set tClaimId = $Piece(tLocation, "/", 2)
                     If tClaimId = "" {
                         Set tReqEntry = pFHIRRequest.Json.entry.%Get(tKey)
@@ -654,12 +658,15 @@ Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As
                             Set tCRLocation = ""
                             If $IsObject(tHoldRespEntry) && $IsObject(tHoldRespEntry.response) {
                                 Set tCRLocation = tHoldRespEntry.response.location
+                                Set ^ClaimAuditDebugLocation($ZTS, "tCRLocation") = tCRLocation
                             }
+                            If $Extract(tCRLocation, 1) = "/" Set tCRLocation = $Extract(tCRLocation, 2, *)
                             Set tCRId = $Piece(tCRLocation, "/", 2)
                             
                             Set claimRespObj = tTempClaimResponse.GetAt(tFlaggedKey)
                             If (tCRId '= "") && $IsObject(claimRespObj) {
                                 Set claimRespObj.id = tCRId
+                                Do ##class(ClaimAudit.Data.Queue).Enqueue(tCRId)
                             }
                             
                             // Mutate original entry response in pFHIRResponse
