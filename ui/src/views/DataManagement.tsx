@@ -220,7 +220,7 @@ export function DataManagement() {
         >
           <Bot size={16} style={{ color: 'var(--accent-primary)', flexShrink: 0, marginTop: 2 }} />
           <div>
-            <strong>Risk Adjudication Note:</strong> Seeded claims initially display with a <strong>medium</strong> risk level. The slow LLM pipeline is bypassed during bulk ingestion to prevent HTTP timeouts, and the ML Autoencoder is not yet trained.
+            <strong>Risk Adjudication Note:</strong> Seeded claims initially display with a <strong>medium or high</strong> risk level. The slow LLM pipeline is bypassed during bulk ingestion to prevent HTTP timeouts, and the ML Autoencoder is not yet trained.
             <div style={{ marginTop: 6 }}>
               To compute full threat levels:
               <ol style={{ paddingLeft: 16, marginTop: 4, marginBottom: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>

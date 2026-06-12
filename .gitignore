@@ -17,7 +17,9 @@ fhir-strategy-template/
 # Embedded Python Model Artifacts & Caches
 src/python/model_cache/
 src/python/autoencoder.pth
+src/python/autoencoder_v*.pth
 src/python/stats.npz
+src/python/stats_v*.npz
 
 # Python Caches
 __pycache__/
