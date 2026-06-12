@@ -70,19 +70,83 @@ OnAfterRequest
 
 ## API Endpoints (REST Router)
 
-The `/api` web application at `http://localhost:52773/api/*` is dispatched by `ClaimAudit.REST.Router` (`%CSP.REST` subclass):
+The `/api` web application at `http://localhost:52773/api/*` is dispatched by `ClaimAudit.REST.Router` (`%CSP.REST` subclass), with 40 registered routes:
 
-| Endpoint | Method | Handler | Returns |
-|----------|--------|---------|---------|
-| `/api/stats` | GET | `GetStats` | System metrics (held count, approved today, model status) |
-| `/api/stats/trends` | GET | `GetTrends` | 7-day weekly trend data |
-| `/api/claims/held` | GET | `GetHeldClaims` | Array of held (queued) ClaimResponses |
-| `/api/claims/:id` | GET | `GetClaimDetail` | Full claim detail with parsed disposition |
-| `/api/claims/:id/approve` | POST | `ApproveClaim` | Approve (disburse) a held claim |
-| `/api/claims/:id/escalate` | POST | `EscalateClaim` | Escalate to director review |
-| `/api/ledger` | GET | `GetLedger` | Audit ledger of approved/escalated claims |
-| `/api/chat` | POST | `Chat` | LLM-powered audit assistant |
-| `/api/samples/load` | POST | `LoadSampleData` | Seed sample FHIR bundles for testing |
+### Authentication
+
+| Method | Path | Access | Handler | Description |
+|--------|------|--------|---------|-------------|
+| `POST` | `/api/auth/login` | Public | `Login` | Authenticate and return signed JWT |
+| `POST` | `/api/auth/introspect` | Public | `Introspect` | SMART on FHIR token validation (RFC 7662) |
+| `POST` | `/api/auth/debug` | Public | `AuthDebug` | Auth troubleshooting endpoint |
+
+### Statistics & Metrics
+
+| Method | Path | Access | Handler | Description |
+|--------|------|--------|---------|-------------|
+| `GET` | `/api/stats` | Protected | `GetStats` | System metrics (held count, approved today, risk distribution, model status) |
+| `GET` | `/api/stats/trends` | Protected | `GetTrends` | 7-day weekly trend data |
+| `GET` | `/api/stats/model-performance` | Protected | `GetModelPerformance` | Model precision metrics |
+| `GET` | `/api/metrics` | Protected | `GetMetrics` | Prometheus-style operational metrics |
+| `GET` | `/api/fhir/metadata` | Protected | `GetCapabilityStatement` | FHIR CapabilityStatement |
+
+### Claims
+
+| Method | Path | Access | Handler | Description |
+|--------|------|--------|---------|-------------|
+| `GET` | `/api/claims/held` | Protected | `GetHeldClaims` | Array of held (queued) ClaimResponses |
+| `GET` | `/api/claims/export` | Protected | `ExportClaims` | CSV export of held claims |
+| `GET` | `/api/claims/:id` | Protected | `GetClaimDetail` | Full claim detail with disposition and tier results |
+| `POST` | `/api/claims/:id/approve` | Director+ | `ApproveClaim` | Approve (disburse) a held claim |
+| `POST` | `/api/claims/:id/escalate` | Auditor+ | `EscalateClaim` | Escalate to director review (priority=stat) |
+| `POST` | `/api/claims/:id/reject` | Director+ | `RejectClaim` | Reject a claim (outcome=error) |
+| `POST` | `/api/claims/:id/reaudit` | Auditor+ | `ReauditClaim` | Re-run AI audit on a held claim |
+| `POST` | `/api/claims/:id/generate-report` | Protected | `GenerateDetailedReport` | Generate detailed audit report |
+| `POST` | `/api/claims/summarize-rationale` | Protected | `SummarizeRationale` | AI-summarize user rationale text |
+
+### Chat & Assistant
+
+| Method | Path | Access | Handler | Description |
+|--------|------|--------|---------|-------------|
+| `POST` | `/api/chat` | Protected | `Chat` | Non-streaming AI audit assistant chat |
+| `POST` | `/api/chat/stream` | Protected | `ChatStream` | SSE streaming AI audit assistant chat |
+| `GET` | `/api/chat/history/:id` | Protected | `GetChatHistory` | Load chat history for a claim |
+| `POST` | `/api/chat/history/:id` | Protected | `SaveChatMessage` | Save a chat message for a claim |
+
+### Ledger & Graph
+
+| Method | Path | Access | Handler | Description |
+|--------|------|--------|---------|-------------|
+| `GET` | `/api/ledger` | Protected | `GetLedger` | Audit ledger of approved/escalated/rejected claims |
+| `GET` | `/api/graph` | Protected | `GetCollusionGraph` | Collusion network graph data |
+
+### LLM Settings
+
+| Method | Path | Access | Handler | Description |
+|--------|------|--------|---------|-------------|
+| `GET` | `/api/settings/llm` | Admin | `GetLLMSettings` | Current LLM provider config |
+| `POST` | `/api/settings/llm` | Admin | `UpdateLLMSettings` | Update LLM provider config |
+| `GET` | `/api/settings/llm/ollama/models` | Admin | `GetOllamaModels` | List available Ollama models |
+
+### System & Admin
+
+| Method | Path | Access | Handler | Description |
+|--------|------|--------|---------|-------------|
+| `POST` | `/api/samples/load` | Admin | `LoadSampleData` | Seed sample FHIR data |
+| `GET` | `/api/system/status` | Admin | `GetDataStatus` | Repository resource counts |
+| `POST` | `/api/system/clear` | Admin | `ClearAllData` | Clear all test data |
+| `POST` | `/api/system/upload` | Admin | `UploadClaimData` | Upload FHIR Claim or Bundle |
+| `GET` | `/api/system/health` | Admin | `GetSystemHealth` | 6-component health check |
+| `POST` | `/api/system/retrain-model` | Admin | `RetrainModel` | Retrain autoencoder |
+| `GET` | `/api/system/admin-log` | Admin | `GetAdminLog` | Admin audit trail |
+| `GET` | `/api/system/users` | Admin | `ListUsers` | List all users |
+| `POST` | `/api/system/users` | Admin | `CreateUser` | Create new user |
+| `PUT` | `/api/system/users/:username` | Admin | `UpdateUser` | Update user |
+| `DELETE` | `/api/system/users/:username` | Admin | `DeleteUser` | Delete user |
+| `GET` | `/api/system/backup` | Admin | `BackupRepository` | Download FHIR backup bundle |
+| `POST` | `/api/system/backfill-tier-results` | Admin | `BackfillTierResults` | Backfill missing tier-result extensions |
+
+> **Note:** Admin/data endpoints use the `/system/` prefix. The `/admin/` path prefix is blocked by IRIS CSP security and returns 401.
 
 ## Verification
 

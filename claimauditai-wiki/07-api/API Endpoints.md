@@ -41,33 +41,43 @@ Standard SMART on FHIR token validation also supports federated OpenID Connect (
 |--------|------|--------|-------------|----------|
 | `POST` | `/api/auth/login` | Public | Authenticates credentials and returns a signed JWT | Standard OAuth2/SMART token object |
 | `POST` | `/api/auth/introspect` | Public | SMART on FHIR token validation (RFC 7662) | `{"active": true, "sub": "...", "roles": [...], ...}` |
+| `POST` | `/api/auth/debug` | Public | Auth troubleshooting — returns decoded token info | `{"sub": "...", "roles": [...], "iat": ..., "exp": ...}` |
 | `GET` | `/api/stats` | Protected | System metrics | `{"held": N, "approvedToday": N, "interceptedTotal": N, "totalValueHeld": N, "modelStatus": "...", "leakageRate": N, "riskDistribution": [...], "dailyInterceptedCounts": [...]}` |
 | `GET` | `/api/stats/trends` | Protected | 7-day trend data | `[{"day": "Mon", "processed": N, "held": N, "approved": N, "leakagePrevented": N}, ...]` |
-| `GET` | `/api/claims/held` | Protected | Held (queued) claims | `[{"id": "...", "patientId": "...", "patientName": "...", "providerId": "...", "cptCode": "...", "icdCode": "...", "totalAmount": N, "riskScore": N, "riskLevel": "critical|high|medium", "escalated": 0|1, "outcome": "queued|complete|error"}, ...]` |
-| `GET` | `/api/claims/:id` | Protected | Claim detail | Full claim with `disposition`, `tierResults`, `taskId`, `taskStatus`, `taskPriority`, `communicationRequestId`, `escalated`, `outcome`, `actionHistory`, `linkedClinicalNotes`, `providerId` (from Claim) |
+| `GET` | `/api/stats/model-performance` | Protected | Model precision metrics | `{"precision": N, "recall": "N/A", "f1": "N/A", "truePositives": N, "falsePositives": N, "note": "..."}` |
+| `GET` | `/api/metrics` | Protected | Prometheus-style operational metrics | `{"fhirEndpointCalls": N, "auditsRun": N, "avgAuditLatencyMs": N}` |
+| `GET` | `/api/fhir/metadata` | Protected | FHIR CapabilityStatement | FHIR R4 CapabilityStatement JSON |
+| `GET` | `/api/claims/held` | Protected | Held (queued) claims | `[{"id": "...", "patientId": "...", "patientName": "...", "providerId": "...", "cptCode": "...", "icdCode": "...", "totalAmount": N, "riskScore": N, "riskLevel": "critical\|high\|medium", "escalated": 0\|1, "outcome": "queued\|complete\|error", "tierResults": [...]}, ...]` |
+| `GET` | `/api/claims/export` | Protected | CSV download of held claims | `text/csv` attachment with headers: ClaimResponseID, PatientID, PatientName, CPTCode, ICDCode, RiskLevel, RiskScore, BilledAmount, LastModified |
+| `GET` | `/api/claims/:id` | Protected | Claim detail | Full claim with `disposition`, `tierResults`, `taskId`, `taskStatus`, `taskPriority`, `communicationRequestId`, `escalated`, `outcome`, `actionHistory`, `linkedClinicalNotes`, `providerId` |
 | `POST` | `/api/claims/:id/approve` | Director+ | Approve a held claim (writes to ledger, completes task) | Accepts `{"authorizedBy": "...", "rationaleSummary": "..."}` |
 | `POST` | `/api/claims/:id/escalate` | Auditor+ | Escalate to director (sets task priority=stat in single step) | Accepts `{"authorizedBy": "...", "rationaleSummary": "..."}` |
 | `POST` | `/api/claims/:id/reject` | Director+ | Reject a claim (outcome=error, cancels task) | Accepts `{"authorizedBy": "...", "rationaleSummary": "..."}` |
-| `GET` | `/api/ledger` | Protected | Override audit ledger log (includes escalated tasks) | `[{"id": "...", "claimId": "...", "action": "approved|escalated|rejected", "authorizedBy": "...", "timestamp": "...", "reason": "...", "amount": N, "providerId": "..."}]` |
-| `POST` | `/api/chat` | Protected | AI audit assistant chat | `{"response": "..."}` |
+| `POST` | `/api/claims/:id/reaudit` | Auditor+ | Re-run AI audit on a held claim | `{"reaudited": true, "riskScore": N, "tierResults": [...], "dispositionGenerated": 0\|1}` |
+| `POST` | `/api/claims/:id/generate-report` | Protected | Generate detailed audit report | `{"reportUrl": "...", "format": "markdown"}` |
+| `GET` | `/api/ledger` | Protected | Override audit ledger log | `[{"id": "...", "claimId": "...", "action": "approved\|escalated\|rejected", "authorizedBy": "...", "timestamp": "...", "reason": "...", "amount": N, "providerId": "..."}]` |
+| `POST` | `/api/chat` | Protected | Non-streaming AI audit assistant | `{"response": "..."}` |
+| `POST` | `/api/chat/stream` | Protected | SSE streaming AI audit assistant | SSE `data:` events with 80-char chunks + `data: [DONE]` sentinel |
+| `GET` | `/api/chat/history/:id` | Protected | Load persisted chat history | Array of `{role, content, timestamp}` |
+| `POST` | `/api/chat/history/:id` | Protected | Save a chat message | Accepts `{"role": "...", "content": "...", "timestamp": "..."}` |
 | `POST` | `/api/samples/load` | Admin | Seed FHIR sample data | `{"status": "success", "message": "..."}` |
 | `GET` | `/api/graph` | Protected | Collusion network graph | `{"nodes": [...], "edges": [...], "insights": [...], "nodeCount": N, "edgeCount": N, "insightCount": N}` |
-| `GET` | `/api/settings/llm` | Admin | Current LLM provider config | `{"provider": "nvidia|ollama|openai", "nvidiaModel": "...", "nvidiaBaseUrl": "...", ...}` |
+| `GET` | `/api/settings/llm` | Admin | Current LLM provider config | `{"provider": "nvidia\|ollama\|openai\|openrouter", "nvidiaModel": "...", "nvidiaBaseUrl": "...", "openrouterModel": "...", "openrouterBaseUrl": "...", "rateLimitPerMin": 120, "cacheTTL": 86400, ...}` |
 | `POST` | `/api/settings/llm` | Admin | Update LLM provider config | Merges with existing `.llm_settings.json` (API keys survive updates) |
 | `GET` | `/api/settings/llm/ollama/models` | Admin | List Ollama models | `["model1", "model2", ...]` |
-| `POST` | `/api/claims/summarize-rationale` | Protected | AI-summarize audit rationale | Accepts `{"action": "approve|escalate|reject", "userText": "..."}`, returns `{"summary": "..."}` |
-| `GET` | `/api/stats/model-performance` | Protected | Model precision metrics | `{"precision": N, "recall": "N/A", "f1": "N/A", "truePositives": N, "falsePositives": N, "note": "..."}` |
+| `POST` | `/api/claims/summarize-rationale` | Protected | AI-summarize audit rationale | Accepts `{"action": "approve\|escalate\|reject", "userText": "..."}`, returns `{"summary": "..."}` |
 | `POST` | `/api/system/clear` | Admin | Clear all FHIR test data (also clears graph globals) | `{"success": true, "message": "..."}` |
 | `GET` | `/api/system/status` | Admin | Repository resource counts (10 tables) | `{"claimResponses": N, "tasks": N, "patients": N, ..., "lastSeededAt": "..."}` |
 | `POST` | `/api/system/upload` | Admin | Upload external FHIR data (Claim or Bundle) | Accepts JSON body; auto-creates ClaimProjections |
-| `GET` | `/api/system/health` | Admin | 6-component system health check | `{"status": "healthy|degraded", "components": {"fhirEndpoint": {...}, "pythonBridge": {...}, "autoencoder": {...}, "graphEngine": {...}, "llm": {...}, "database": {...}}}` |
-| `POST` | `/api/system/retrain-model` | Admin | Retrain autoencoder on current data (>5 claims) | `{"success": true|false, "message": "..."}` |
+| `GET` | `/api/system/health` | Admin | 6-component system health check | `{"status": "healthy\|degraded", "components": {"fhirEndpoint": {...}, "pythonBridge": {...}, "autoencoder": {...}, "graphEngine": {...}, "llm": {...}, "database": {...}}}` |
+| `POST` | `/api/system/retrain-model` | Admin | Retrain autoencoder on current data (>5 claims) | `{"success": true\|false, "message": "..."}` |
 | `GET` | `/api/system/admin-log` | Admin | Admin audit trail | `{"data": [{"date", "timestamp", "action", "detail", "user"}, ...], "total": N}` |
 | `GET` | `/api/system/users` | Admin | List all users with roles | `{"data": [{"username", "fullName", "roles": [...]}, ...], "total": N}` |
 | `POST` | `/api/system/users` | Admin | Create user with HMAC-SHA256 hash | Accepts `{"username", "password", "fullName", "roles": [...]}` |
 | `PUT` | `/api/system/users/:username` | Admin | Update user roles/password/name | Accepts `{"password", "fullName", "roles": [...]}` (password optional) |
 | `DELETE` | `/api/system/users/:username` | Admin | Delete user (prevents last admin deletion) | Returns 400 if would remove only admin |
 | `GET` | `/api/system/backup` | Admin | Download FHIR repository as transaction Bundle | `Content-Type: application/fhir+json` with attachment disposition |
+| `POST` | `/api/system/backfill-tier-results` | Admin | Backfill missing tier-results extensions on queued claims | `{"success": true, "updated": N, "skipped": N}` |
 
 > **Note:** Admin/data endpoints use the `/system/` prefix (not `/admin/`). The `/admin/` path prefix is blocked by IRIS CSP security settings and returns 401.
 

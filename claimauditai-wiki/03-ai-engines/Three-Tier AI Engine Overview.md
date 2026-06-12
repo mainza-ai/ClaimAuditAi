@@ -37,5 +37,16 @@ By combining three distinct analytical engines, the platform identifies fraudule
 - **Risk Classification**: Unified across all endpoints using numeric thresholds on the stored risk-score extension: $\ge 0.86$ = critical, $\ge 0.50$ = high, else = medium. Disposition text matching is no longer used.
 - **Local Verification**: Supports offline evaluation via local CPU PyTorch execution and sentence transformers.
 
+## Additional Python Modules
+
+The AI engine layer also includes:
+
+| Module | Purpose |
+|--------|---------|
+| `tier_orchestrator.py` | Sequential tier execution with per-tier timeouts (180s/120s/120s) and circuit breaker (3 failures → 60s cooldown) |
+| `agent_tools.py` | Tool registry for the ReAct agent loop — wraps `nlp_auditor`, `autoencoder_train`, `graph_analyzer`, and `dx_procedure_validator` as callable tools |
+| `dx_procedure_validator.py` | Diagnosis-Procedure (ICD–CPT) compatibility validation — checks if the billed procedure is medically justified by the diagnosis |
+| `mcp_server.py` | FastMCP terminology server — exposes `lookup_cpt_code`, `lookup_icd_code`, and `validate_codes` as MCP tools |
+
 ## See Also
 [[Tier 1 - Semantic Clinical Auditor]] · [[Tier 2 - Statistical Outlier Profiler]] · [[Tier 3 - Collusion Network Mapper]] · [[Orchestration - AI Hub]]

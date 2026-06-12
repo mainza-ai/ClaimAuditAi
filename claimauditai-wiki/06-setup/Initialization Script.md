@@ -88,7 +88,7 @@ The runtime script checks if `HSFHIR_X0001_S.ClaimResponse` table exists before 
 
 The `Engine.Setup()` call is idempotent — it creates tables only if they don't exist and skips re-training if the autoencoder model file is present.
 
-The Router compilation (`$SYSTEM.OBJ.Load(...)`) always runs to ensure the latest source is compiled, including the full suite of `/system` routes: `/system/status`, `/system/clear`, `/system/upload`, `/system/health`, `/system/users`, `/system/backup`, `/system/admin-log`, and `/system/retrain-model`.
+The Router compilation (`$SYSTEM.OBJ.Load(...)`) always runs to ensure the latest source is compiled, including the full suite of `/system` routes: `/system/status`, `/system/clear`, `/system/upload`, `/system/health`, `/system/users` (GET+POST), `/system/users/:username` (PUT+DELETE), `/system/backup`, `/system/admin-log`, `/system/retrain-model`, `/system/backfill-tier-results`.
 
 ## Key Details
 - **Build Manifest**: `iris.script` (runs during Docker build)

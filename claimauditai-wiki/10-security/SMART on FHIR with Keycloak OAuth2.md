@@ -70,12 +70,14 @@ Application-level endpoint security is enforced via a numerical role hierarchy i
 | Role Name | Numeric Level | Required Scope / Description |
 | :--- | :--- | :--- |
 | **Viewer** | 1 | View dashboard statistics (Read-only) |
-| **Auditor** | 2 | Perform manual reviews (Approve, Escalated, Reject) |
-| **Specialist** | 3 | View network collusion graphs, execute overrides |
-| **Director** | 4 | Final approval/rejection overrides |
-| **Admin** | 5 | Modify LLM settings, re-train models, reload data |
+| **Auditor** | 2 | View held claims queue, re-audit held claims, escalate to Director (priority=stat). Cannot approve or reject. |
+| **Specialist** | 3 | View network collusion graphs, review escalated claims, escalate further to Director. Cannot approve or reject. |
+| **Director** | 4 | Final approval/rejection overrides; resolve escalated holds |
+| **Admin** | 5 | User management, LLM settings, retrain models, seed/clear data, health dashboard, backup, audit log |
 
 Roles are parsed from Keycloak's `realm_access.roles` claim or the token's top-level `roles` array. Higher roles inherit the capabilities of all lower roles.
+
+> **Known role inconsistency (reaudit):** The backend endpoint `POST /api/claims/:id/reaudit` uses `RequireAuth("Auditor")`, so any Auditor+ can re-audit claims via the API. However, the UI `permissions.ts` restricts the re-audit button to `Admin` only. If a non-Admin user needs to re-audit from the UI, update `canReaudit` in `ui/src/utils/permissions.ts` to include `"Auditor"`.
 
 ---
 

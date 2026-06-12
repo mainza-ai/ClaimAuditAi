@@ -7,16 +7,20 @@ The autoencoder is designed for unsupervised anomaly detection. It consists of a
 ```
 Input x (Dimensions: 5)
    │
-   ▼   [Fully Connected Layer: 5 -> 16]
-Encoder (ReLU)
+   ▼   [Fully Connected Layer: 5 -> 16]  + ReLU
+Encoder (compression)
    │
-   ▼   [Fully Connected Layer: 16 -> 8]
-Latent Bottleneck z (Dimensions: 8)
+   ▼   [Fully Connected Layer: 16 -> 8]  + ReLU
    │
-   ▼   [Fully Connected Layer: 8 -> 4]
-Decoder (ReLU)
+   ▼   [Fully Connected Layer: 8 -> 4]   + ReLU
+Latent Bottleneck z (Dimensions: 4)
    │
-   ▼   [Fully Connected Layer: 4 -> 5]
+   ▼   [Fully Connected Layer: 4 -> 8]   + ReLU
+Decoder (expansion)
+   │
+   ▼   [Fully Connected Layer: 8 -> 16]  + ReLU
+   │
+   ▼   [Fully Connected Layer: 16 -> 5]  (linear, no activation)
 Output x' (Reconstruction)
 ```
 
@@ -38,9 +42,10 @@ To prevent model degradation and ensure training reliability in production envir
 
 ## Key Details
 - **Input Dimensions**: 5 (BilledAmount, ItemCount, SpecialtyCode, PatientAge, DurationDays).
-- **Latent Bottleneck Dimensions**: 4 (compressed from 5→16→8→4 for reconstruction).
+- **Latent Bottleneck Dimensions**: 4 (encoder: 5→16→8→4; decoder: 4→8→16→5).
+- **Output Activation**: Linear (no activation function) — correct for MSE reconstruction loss.
 - **Framework**: PyTorch (`torch.nn.Module`).
-- **Hidden Layers**: Fully connected linear layers with ReLU activation functions.
+- **Hidden Layers**: Fully connected linear layers with ReLU activation functions; no sigmoid activations.
 - **Training Data Source**: `ClaimAudit.ClaimProjections` table (populated by LoadSampleData).
 - **Minimum Threshold Floor**: 0.02 (prevents false negatives at extremely low reconstruction losses).
 - **Validation Drift Limit**: 15% (rejects updates that degrade validation metrics).

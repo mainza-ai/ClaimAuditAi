@@ -16,14 +16,22 @@ claimauditai/
 │   └── sample_patient_bundle.json
 ├── src/                  # Strategy implementation package
 │   ├── cls/
-│   │   └── ClaimAudit/   # Root ObjectScript package
-│   │       ├── FHIR/     # Strategy, RepoManager, and Interceptor classes
-│   │       └── AI/       # Engine, Agent, and Toolset definitions
-│   └── python/           # Embedded Python analytics engines
+│   │   └── ClaimAudit/           # Root ObjectScript package
+│   │       ├── FHIR/             # Strategy, RepoManager, and Interceptor classes
+│   │       ├── AI/               # Engine, Agent, and Toolset definitions
+│   │       ├── REST/             # Router, Auth, and admin endpoints
+│   │       └── Data/             # ChatHistory, GraphStore, Queue, Debug
+│   └── python/                 # Embedded Python analytics engines
 │       ├── agent_orchestrator.py
+│       ├── agent_graph.py       # Pydantic Graph FSM nodes
+│       ├── agent_tools.py       # Tool registry for ReAct agent
 │       ├── nlp_auditor.py
 │       ├── autoencoder_train.py
-│       └── graph_analyzer.py
+│       ├── graph_analyzer.py
+│       ├── tier_orchestrator.py # Circuit breaker, sequential tier execution
+│       ├── llm_router.py        # Multi-provider LLM routing + rate limiter
+│       ├── dx_procedure_validator.py  # Diagnosis-Procedure compatibility validation
+│       └── mcp_server.py        # FastMCP terminology server
 ```
 
 ## Key Details
