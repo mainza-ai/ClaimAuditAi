@@ -49,4 +49,4 @@ The AI engine layer also includes:
 | `mcp_server.py` | FastMCP terminology server — exposes `lookup_cpt_code`, `lookup_icd_code`, and `validate_codes` as MCP tools |
 
 ## See Also
-[[Tier 1 - Semantic Clinical Auditor]] · [[Tier 2 - Statistical Outlier Profiler]] · [[Tier 3 - Collusion Network Mapper]] · [[Orchestration - AI Hub]]
+[[Tier 1 - Semantic Clinical Auditor]] · [[Tier 2 - Statistical Outlier Profiler]] · [[Tier 3 - Collusion Network Mapper]] · [[Orchestration - AI Hub]] · [[LLM Router Architecture]] · [[Agent Tool Registry]] · [[Diagnosis-Procedure Validator]]

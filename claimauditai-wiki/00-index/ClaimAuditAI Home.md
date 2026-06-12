@@ -18,6 +18,8 @@ ClaimAuditAI shifts the payment integrity paradigm from retrospective "pay-and-c
 - [[FHIR Interception Strategy]] — Overriding `HS.FHIRServer` methods pre-commit.
 - [[RequestContext vs InteractionsContext]] — Memory context boundaries in strategy execution.
 - [[Project Directory Structure]] — Standard file placements and component roles.
+- [[Data Classes]] — ChatHistory, GraphStore, Queue, and Debug persistence classes.
+- [[UI Architecture Overview]] — React frontend views, components, stores, and data flow.
 
 ### 📂 03 - AI Adjudication Engines
 - [[Three-Tier AI Engine Overview]] — Combined semantic, statistical, and graph threat scoring.
@@ -25,6 +27,9 @@ ClaimAuditAI shifts the payment integrity paradigm from retrospective "pay-and-c
 - [[Tier 2 - Statistical Outlier Profiler]] — Unsupervised PyTorch Autoencoders profiling claim anomalies.
 - [[Tier 3 - Collusion Network Mapper]] — NetworkX relational collusion ring and fraud checks.
 - [[Orchestration - AI Hub]] — `%AI.Agent`, `%AI.ToolSet`, and Model Context Protocol routing.
+- [[LLM Router Architecture]] — Multi-provider fallback, rate limiting, caching, and streaming.
+- [[Agent Tool Registry]] — ReAct agent tool registry with auto-generated LLM schemas.
+- [[Diagnosis-Procedure Validator]] — ICD–CPT compatibility validation rules.
 
 ### 📂 04 - FHIR Integration
 - [[FHIR Resource Lifecycle]] — Creation, validation, mutation, and database storage.
@@ -32,6 +37,7 @@ ClaimAuditAI shifts the payment integrity paradigm from retrospective "pay-and-c
 - [[HNSW Vector Index]] — Native high-performance database similarity indexing.
 - [[VECTOR_COSINE Query Pattern]] — SQL syntax for matching clinical text embeddings.
 - [[FHIR Resource Reference Table]] — Map of operational resources and their linkages.
+- [[FHIR Extension Definitions]] — Custom ClaimResponse extensions for audit scores and metadata.
 
 ### 📂 05 - Machine Learning & Mathematics
 - [[Autoencoder Architecture]] — Bottle-necked neural networks for reconstruction loss.
