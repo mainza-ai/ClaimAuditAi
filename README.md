@@ -38,12 +38,12 @@ Learn more about the business motivation and technical architecture of ClaimAudi
 
 - **Real-Time FHIR Interception:** Claims are audited, pended, and held at the database/middleware layer before persistence, fully supporting both single Claims and batch/transaction Bundles.
 - **Asynchronous Background Processing Queue:** Defer slow AI pipelines (such as LLM generation and vector lookups) to an asynchronous database queue (`ClaimAudit.Data.Queue`). Returns a fast `202 Accepted` to clients in milliseconds, while a background worker process runs the full FSM.
-- **Three-Tier AI Engine:** Runs HNSW clinical note NLP vector search, PyTorch reconstruction loss anomaly profiling, and NetworkX collusion cycle graph analysis sequentially under strict timeout and circuit-breaker safeguards.
+- **Three-Tier AI Engine:** Runs HNSW clinical note NLP vector search, PyTorch reconstruction loss anomaly profiling, and NetworkX collusion cycle graph analysis sequentially under strict timeout and circuit-breaker safeguards. The circuit breaker (default: 3 failures → 60s cooldown) halts tier execution to prevent cascading failures, with per-tier timeouts of 180s / 120s / 120s.
 - **Atomic Transaction Integrity:** Native FHIR transaction Bundles create hold `ClaimResponse` records, review `Task` resources, and provider `CommunicationRequest` notifications atomically.
 - **Federated Security & Role Hierarchy:** Authenticates via SMART on FHIR HS256 JWT tokens, validated against HMAC credential hashes stored in INTEROP globals — no `%SYS` namespace access required. Supports Keycloak RS256 JWKS for federated OIDC. Numeric role hierarchy (Viewer→Auditor→Specialist→Director→Admin) gates all protected endpoints.
-- **Persistent Chat History:** Persists LLM assistant auditor conversation histories natively in IRIS via custom `ChatHistory` tables, using escaped delimited SQL identifiers to avoid reserved keyword conflicts.
+- **Persistent Chat History:** Persists LLM assistant auditor conversation histories natively in IRIS via `ClaimAudit.Data.ChatHistory`, using escaped delimited SQL identifiers to avoid reserved keyword conflicts. The chat assistant uses **SSE streaming** — `llm_router.chat_stream()` yields token chunks from OpenAI-compatible providers, buffered by the ObjectScript endpoint into 80-character SSE `data:` lines for real-time UI display.
 - **Tamper-Proof Audit Ledger:** High-precision subscript records (`^ClaimAuditLedger`) provide a reliable, date-indexed audit trail of override decisions, capturing human override rationales chronologically.
-- **Interactive Localized Collusion Graphs:** Visualizes patient-provider relationship networks using Cytoscape.js. Queries are localized to 2-hop ego-networks via fast SQL selections to ensure high performance and scalability.
+- **Interactive Localized Collusion Graphs:** Visualizes patient-provider relationship networks using Cytoscape.js via `ClaimAudit.Data.GraphStore`, which persists the provider-patient network in `^ClaimAuditGraph` globals and auto-detects address collisions. Queries are localized to 2-hop ego-networks via fast SQL selections to ensure high performance and scalability.
 - **Direct Stats FHIR Extension Extraction:** Dashboard statistics are calculated by parsing the structured `tier-results` FHIR extension directly from `ClaimResponse` resources instead of relying on brittle disposition text substrings.
 - **Comprehensive Patient & Provider Cards:** Exposes provider names, addresses, and patient details retrieved from SQL projections and raw FHIR resources on the auditor review pages.
 - **Model Context Protocol (MCP) Terminology Server:** Exposes standard FastMCP-compliant tools for CPT and ICD-10 medical code lookups and diagnosis-procedure validation.
@@ -52,7 +52,7 @@ Learn more about the business motivation and technical architecture of ClaimAudi
 
 ## 🏗 System Architecture
 
-ClaimAuditAI integrates InterSystems IRIS for Health with an Embedded Python runtime and a React/TypeScript frontend.
+ClaimAuditAI integrates InterSystems IRIS for Health with an Embedded Python runtime and a React/TypeScript frontend (React 19, Vite, TanStack Query, Zustand, Cytoscape.js, Tailwind CSS).
 
 ```
        [ Submitted Claim ]
@@ -97,7 +97,7 @@ The [Interactions.cls](src/cls/ClaimAudit/FHIR/Interactions.cls) class intercept
 </p>
 
 ### 2. The 3-Tier AI Engine (`tier_orchestrator.py`)
-AI evaluation runs within the database memory space using Embedded Python, running sequentially to ensure thread-safety and database integrity in InterSystems IRIS:
+AI evaluation runs within the database memory space using Embedded Python, running **sequentially** (not in parallel) to ensure thread-safety and database integrity in InterSystems IRIS. The orchestrator enforces a **circuit breaker** (default: 3 failures → 60s cooldown) and per-tier timeouts (Tier1=180s, Tier2=120s, Tier3=120s) to prevent cascading failures:
 - **Tier 1 (NLP Similarity):** Cosine similarity between claim descriptions and progress notes via sentence-transformers in [nlp_auditor.py](src/python/nlp_auditor.py). Flags when best_similarity < 0.38 — CPT codes semantically distant from clinical documentation.
 - **Tier 2 (ML Autoencoder Anomaly):** [autoencoder_train.py](src/python/autoencoder_train.py) trains an unsupervised PyTorch Autoencoder (5 input dimensions → 4 bottleneck). Reconstruction loss threshold is `max(95th_percentile, 0.02)`. Model retraining is secured with a **15% validation split** and a **15% validation drift threshold** to reject updates that degrade performance. Integrates rolling backups of the last 3 successful models (`_v1.pth/npz`, `_v2.pth/npz`, `_v3.pth/npz`) for instant rollback recovery. Requires ≥5 training claims; tier gracefully bypasses (not-flagged) when data is insufficient.
 - **Tier 3 (Collusion Networks):** [graph_analyzer.py](src/python/graph_analyzer.py) builds an entity-relationship network of patient-provider connections. It runs localized 2-hop ego-network searches around target patients and providers using high-performance SQL queries rather than loading the entire network graph into memory, ensuring high speed and scalability. Graph cache is invalidated after each claim audit. Exception handler is fail-open — errors flag the claim for review, never silently suppress.
@@ -121,7 +121,9 @@ To support real-time clinical code resolution and validation, ClaimAuditAI expos
 - **`lookup_icd_code(code: str) -> str`**: Translates an ICD-10 diagnosis code (e.g., `I10`) into its clinical definition, supporting prefix matching.
 - **`validate_diagnosis_procedure(icd_code: str, cpt_code: str) -> str`**: Invokes the diagnosis-procedure compatibility engine to check if a billed procedure is medically justified by the diagnosis.
 
-The MCP server is implemented in [mcp_server.py](src/python/mcp_server.py) and is installed in the `claimaudit-iris` Docker container, allowing seamless tool discovery and integration.
+The MCP server is implemented in [mcp_server.py](src/python/mcp_server.py) and delegates to [dx_procedure_validator.py](src/python/dx_procedure_validator.py), which maintains 13 ICD-10 chapter → CPT range validation rules (e.g., `F` prefix → psychiatric codes 90791–90899) and flags unsupported code combinations as potential upcoding.
+
+The MCP server runs inside the `claimaudit-iris` Docker container, allowing seamless tool discovery and integration.
 
 ---
 
@@ -153,7 +155,7 @@ The system enforces strict role-based access control (RBAC) across both API and 
 - A modern browser (Chrome/Firefox/Safari)
 - **An LLM Backend Provider (Local or Cloud):**
   - **Local:** Ollama running locally (recommended: `llama3.2:3b-instruct-fp16` (6.4 GB) or `granite4.1:3b-bf16` (6.8 GB)) accessible from the container.
-  - **Cloud:** An API key for cloud LLM providers (OpenAI or NVIDIA NIM), configured in the `.env` file.
+  - **Cloud:** An API key for OpenAI, NVIDIA NIM, or **OpenRouter** (supports `google/gemini-2.5-pro` among other models), configured in the `.env` file.
 
 ### Setup & Run
 1. Clone the repository and configure environments:
@@ -201,25 +203,74 @@ For system administrators and operations teams, ClaimAuditAI provides dedicated 
 
 ## 🔌 REST API Catalog
 
-All protected endpoints require an `Authorization: Bearer <token>` header:
+All protected endpoints require an `Authorization: Bearer <token>` header. Routes are organized by functional area:
 
+**Authentication**
 | Method | Path | Access | Purpose |
 |:---|:---|:---|:---|
 | `POST` | `/api/auth/login` | Public | Authenticates credentials and returns a signed JWT |
 | `POST` | `/api/auth/introspect` | Public | SMART on FHIR token validation (RFC 7662) |
+| `GET` | `/api/auth/debug` | Public | Decoded token info for debugging |
+
+**Stats & Metrics**
+| Method | Path | Access | Purpose |
+|:---|:---|:---|:---|
 | `GET` | `/api/stats` | Protected | Aggregated hold, complete, and value metrics |
+| `GET` | `/api/stats/model-performance` | Protected | AI model precision/recall/F1 metrics (from ^ClaimAuditMLMetrics) |
+| `GET` | `/api/metrics` | Protected | Prometheus-style system metrics |
+
+**Claims Operations**
+| Method | Path | Access | Purpose |
+|:---|:---|:---|:---|
 | `GET` | `/api/claims/held` | Protected | Paginated active hold queue |
+| `GET` | `/api/claims/export` | Protected | CSV export of held claims |
 | `GET` | `/api/claims/:id` | Protected | Detailed claim JSON with AI reason summaries |
 | `POST` | `/api/claims/:id/approve` | Director+ | Approve override (writes to ledger, completes task) |
+| `POST` | `/api/claims/:id/escalate` | Auditor+ | Progresses task status (Specialist → Director) |
 | `POST` | `/api/claims/:id/reject` | Director+ | Reject claim (sets outcome to error, cancels task) |
-| `POST` | `/api/claims/:id/escalate` | Auditor+ | Progresses task status (Specialist -> Director) |
-| `GET` | `/api/ledger` | Protected | Paginated override audit ledger log |
-| `GET` | `/api/graph` | Protected | Cytoscape network graph data |
-| `GET` | `/api/stats/model-performance` | Protected | AI model precision/recall/F1 metrics |
+| `POST` | `/api/claims/:id/reaudit` | Auditor+ | Re-run AI audit pipeline on a held claim |
+| `POST` | `/api/claims/:id/generate-report` | Protected | JIT LLM adjudication report generation |
+| `POST` | `/api/claims/summarize-rationale` | Protected | LLM summary of auditor decision rationale |
+
+**Chat & AI Assistant**
+| Method | Path | Access | Purpose |
+|:---|:---|:---|:---|
 | `POST` | `/api/chat` | Protected | AI audit assistant (provider-agnostic LLM) |
 | `POST` | `/api/chat/stream` | Protected | SSE streaming chat response |
-| `GET/POST`| `/api/settings/llm` | Admin | Query or update runtime LLM provider settings |
-| `POST` | `/api/samples/load` | Admin | Clears tables and re-seeds synthetic FHIR data (8 claims with diversified risk) |
+| `GET` | `/api/chat/history/:id` | Protected | Retrieve chat history for a claim |
+| `POST` | `/api/chat/history/:id` | Protected | Save a chat message for a claim |
+
+**Ledger & Graph**
+| Method | Path | Access | Purpose |
+|:---|:---|:---|:---|
+| `GET` | `/api/ledger` | Protected | Paginated override audit ledger log |
+| `GET` | `/api/graph` | Protected | Cytoscape network graph data (from ^ClaimAuditGraph globals) |
+
+**FHIR & Settings**
+| Method | Path | Access | Purpose |
+|:---|:---|:---|:---|
+| `GET` | `/api/fhir/metadata` | Public | FHIR server capability statement |
+| `GET` | `/api/settings/llm` | Admin | Query current LLM provider settings |
+| `POST` | `/api/settings/llm` | Admin | Update LLM provider, model, API keys, rate limit, cache TTL |
+| `GET` | `/api/settings/llm/ollama/models` | Admin | List available Ollama models |
+
+**System & Administration**
+| Method | Path | Access | Purpose |
+|:---|:---|:---|:---|
+| `GET` | `/api/system/status` | Admin | System health overview (models, indexes, queue) |
+| `GET` | `/api/system/health` | Admin | Component-level health check |
+| `POST` | `/api/system/clear` | Admin | Clear all FHIR tables and graph data |
+| `POST` | `/api/system/upload` | Admin | Upload FHIR bundle from JSON payload |
+| `POST` | `/api/system/backup` | Admin | Download full FHIR repository as transaction Bundle |
+| `GET` | `/api/system/admin-log` | Admin | Admin audit trail (paginated) |
+| `POST` | `/api/system/retrain-model` | Admin | Retrain PyTorch autoencoder on current projections |
+| `POST` | `/api/system/backfill-tier-results` | Admin | Backfill tier-results extension for existing ClaimResponses |
+| `POST` | `/api/samples/load` | Admin | Clears tables and re-seeds synthetic FHIR data (8 claims) |
+| `GET` | `/api/system/users` | Admin | List all system users |
+| `POST` | `/api/system/users` | Admin | Create user |
+| `PUT` | `/api/system/users/:username` | Admin | Update user (roles, password, full name) |
+| `DELETE`| `/api/system/users/:username` | Admin | Delete user (prevents removing last admin) |
+| `GET` | `/api/admin-test` | Admin | Simple admin route reachability test |
 
 ---
 
@@ -265,7 +316,7 @@ cd ui
 npm run test:e2e
 ```
 
-### 4. CI/CD Integration
+### 5. CI/CD Integration
 A GitHub Actions workflow ([ci.yml](.github/workflows/ci.yml)) automates quality gates on every push/PR:
 - Linters & Types (`eslint`, `tsc --noEmit`)
 - Python test suite & Vitest coverage exports
