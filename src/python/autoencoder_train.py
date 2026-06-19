@@ -175,12 +175,15 @@ def train_autoencoder() -> str:
         old_loss = None
         if os.path.exists(MODEL_PATH) and os.path.exists(STATS_PATH):
             try:
-                old_model = ClaimAutoencoder(input_dim=5)
-                old_model.load_state_dict(torch.load(MODEL_PATH, weights_only=True))
-                old_model.eval()
-                with torch.no_grad():
-                    old_reconstructed = old_model(val_data)
-                    old_loss = float(torch.mean((old_reconstructed - val_data) ** 2).item())
+                stats = np.load(STATS_PATH)
+                old_dim = len(stats["means"]) if "means" in stats else 5
+                if val_data.shape[1] == old_dim:
+                    old_model = ClaimAutoencoder(input_dim=old_dim)
+                    old_model.load_state_dict(torch.load(MODEL_PATH, weights_only=True))
+                    old_model.eval()
+                    with torch.no_grad():
+                        old_reconstructed = old_model(val_data)
+                        old_loss = float(torch.mean((old_reconstructed - val_data) ** 2).item())
             except Exception:
                 pass
         

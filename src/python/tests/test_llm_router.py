@@ -7,6 +7,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import llm_router
 
+@pytest.fixture(autouse=True)
+def mock_settings_and_env(monkeypatch, request):
+    if request.cls and request.cls.__name__ != "TestLoadSettings":
+        monkeypatch.setattr(llm_router, "_load_env", lambda: None)
+        monkeypatch.setattr(llm_router, "_load_settings", lambda: {})
+
+
 
 class TestCleanNonBmp:
     def test_preserves_ascii(self):
@@ -46,11 +53,6 @@ class TestLoadSettings:
 
 
 class TestGetClientAndModel:
-    @pytest.fixture(autouse=True)
-    def mock_load_env(self, monkeypatch):
-        monkeypatch.setattr(llm_router, "_load_env", lambda: None)
-        monkeypatch.setattr(llm_router, "_load_settings", lambda: {})
-
     def test_raises_on_unknown_provider(self, monkeypatch):
         monkeypatch.setenv("LLM_PROVIDER", "unknown_provider")
         with pytest.raises(ValueError, match="Unknown LLM_PROVIDER"):
