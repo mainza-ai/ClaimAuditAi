@@ -101,7 +101,7 @@ The [Interactions.cls](src/cls/ClaimAudit/FHIR/Interactions.cls) class intercept
 ### 2. The 3-Tier AI Engine (`tier_orchestrator.py`)
 AI evaluation runs within the database memory space using Embedded Python, running **sequentially** (not in parallel) to ensure thread-safety and database integrity in InterSystems IRIS. The orchestrator enforces a **circuit breaker** (default: 3 failures → 60s cooldown) and per-tier timeouts (Tier1=180s, Tier2=120s, Tier3=120s) to prevent cascading failures:
 - **Tier 1 (NLP Similarity):** Cosine similarity between claim descriptions and progress notes via sentence-transformers in [nlp_auditor.py](src/python/nlp_auditor.py). Flags when best_similarity < 0.38 — CPT codes semantically distant from clinical documentation.
-- **Tier 2 (ML Autoencoder Anomaly):** [autoencoder_train.py](src/python/autoencoder_train.py) trains an unsupervised PyTorch Autoencoder (5 input dimensions → 4 bottleneck). Reconstruction loss threshold is `max(95th_percentile, 0.02)`. Model retraining is secured with a **15% validation split** and a **15% validation drift threshold** to reject updates that degrade performance. Integrates rolling backups of the last 3 successful models (`_v1.pth/npz`, `_v2.pth/npz`, `_v3.pth/npz`) for instant rollback recovery. Requires ≥5 training claims; tier gracefully bypasses (not-flagged) when data is insufficient.
+- **Tier 2 (ML Autoencoder Anomaly):** [autoencoder_train.py](src/python/autoencoder_train.py) trains an unsupervised PyTorch Autoencoder (8 input dimensions → 6 bottleneck). Reconstruction loss threshold is `max(95th_percentile, 0.02)`. Model retraining is secured with a **15% validation split** and a **15% validation drift threshold** to reject updates that degrade performance. Integrates rolling backups of the last 3 successful models (`_v1.pth/npz`, `_v2.pth/npz`, `_v3.pth/npz`) for instant rollback recovery. Model loading is backward compatible with legacy 5-dimensional models via dynamic feature slicing and padding. Requires ≥5 training claims; tier gracefully bypasses (not-flagged) when data is insufficient.
 - **Tier 3 (Collusion Networks):** [graph_analyzer.py](src/python/graph_analyzer.py) builds an entity-relationship network of patient-provider connections. It runs localized 2-hop ego-network searches around target patients and providers using high-performance SQL queries rather than loading the entire network graph into memory, ensuring high speed and scalability. Graph cache is invalidated after each claim audit. Exception handler is fail-open — errors flag the claim for review, never silently suppress.
 
   <p align="center">
@@ -292,7 +292,7 @@ All protected endpoints require an `Authorization: Bearer <token>` header. Route
 Comprehensive verification suites validate both client and server layers.
 
 ### 1. Python Unit Tests (`pytest`)
-Contains 92 test cases verifying NLP calculations, PyTorch training/inference anomaly outputs with validation/drift safeguards, NetworkX network cycles, agent/tool state machine transitions, and Model Context Protocol (MCP) server endpoints:
+Contains 101 test cases verifying NLP calculations, PyTorch training/inference anomaly outputs with validation/drift safeguards, NetworkX network cycles, agent/tool state machine transitions, and Model Context Protocol (MCP) server endpoints:
 ```bash
 # Inside the container (or local environment with virtualenv)
 pytest src/python/tests/ -v

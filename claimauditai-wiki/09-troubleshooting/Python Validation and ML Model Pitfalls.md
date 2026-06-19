@@ -56,5 +56,37 @@ Running `pytest` fails on `test_autoencoder_train.py` with `IndexError: index 7 
 
 ---
 
+### 3. Autoencoder state_dict Size Mismatch Load Errors
+Upgrading the PyTorch autoencoder dimension (e.g. from 5 to 8 inputs) causes the model loader to crash with `RuntimeError: Error(s) in loading state_dict for ClaimAutoencoder: size mismatch` when loading the old 5-dim model file.
+
+#### Symptom
+The container logs or python audit calls throw:
+```python
+RuntimeError: Error(s) in loading state_dict for ClaimAutoencoder: size mismatch for encoder.0.weight: copying a param with shape torch.Size([24, 5]) from checkpoint, the shape in current model is torch.Size([24, 8]).
+```
+
+#### Root Cause
+The active `autoencoder.pth` on disk contains weights trained for a 5-dimensional model, but the loader instantiates `ClaimAutoencoder(input_dim=8)` and attempts to load the state dictionary into it.
+
+#### Resolution
+* **Dynamic Dimension Detection:** Instead of hardcoding `input_dim=8` when loading the cached model, dynamically check the dimension of the saved model from `stats.npz` by reading the length of the saved `means` array:
+  ```python
+  stats = np.load(STATS_PATH)
+  means = stats["means"]
+  dim = len(means) if "means" in stats else 8
+  model = ClaimAutoencoder(input_dim=dim)
+  model.load_state_dict(torch.load(MODEL_PATH, weights_only=True))
+  ```
+* **Dynamic Feature Slicing/Padding:** Squeeze or pad the input claim features to match the loaded model's dimensions before running evaluation:
+  ```python
+  if claim_features.shape[1] > dim:
+      claim_features = claim_features[:, :dim]
+  elif claim_features.shape[1] < dim:
+      padding = np.zeros((1, dim - claim_features.shape[1]), dtype=np.float32)
+      claim_features = np.hstack((claim_features, padding))
+  ```
+
+---
+
 ## See Also
 [[Troubleshooting Overview]] · [[Autoencoder Architecture]] · [[Diagnosis-Procedure Validator]]

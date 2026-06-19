@@ -5,22 +5,22 @@
 The autoencoder is designed for unsupervised anomaly detection. It consists of an **Encoder** that compresses the input vector $x$ into a lower-dimensional latent bottleneck representation $z$, and a **Decoder** that reconstructs the original vector as $x'$:
 
 ```
-Input x (Dimensions: 5)
+Input x (Dimensions: 8)
    │
-   ▼   [Fully Connected Layer: 5 -> 16]  + ReLU
+   ▼   [Fully Connected Layer: 8 -> 24]  + ReLU
 Encoder (compression)
    │
-   ▼   [Fully Connected Layer: 16 -> 8]  + ReLU
+   ▼   [Fully Connected Layer: 24 -> 12] + ReLU
    │
-   ▼   [Fully Connected Layer: 8 -> 4]   + ReLU
-Latent Bottleneck z (Dimensions: 4)
+   ▼   [Fully Connected Layer: 12 -> 6]  + ReLU
+Latent Bottleneck z (Dimensions: 6)
    │
-   ▼   [Fully Connected Layer: 4 -> 8]   + ReLU
+   ▼   [Fully Connected Layer: 6 -> 12]  + ReLU
 Decoder (expansion)
    │
-   ▼   [Fully Connected Layer: 8 -> 16]  + ReLU
+   ▼   [Fully Connected Layer: 12 -> 24] + ReLU
    │
-   ▼   [Fully Connected Layer: 16 -> 5]  (linear, no activation)
+   ▼   [Fully Connected Layer: 24 -> 8]  (linear, no activation)
 Output x' (Reconstruction)
 ```
 
@@ -37,12 +37,13 @@ The `LoadSampleData` endpoint seeds 8 claims with diversified features (ages 23-
 To prevent model degradation and ensure training reliability in production environments, the autoencoder training pipeline implements several validation safeguards:
 - **Validation Split (15%)**: During retraining, 15% of historical claim projections are reserved for validation, while the remaining 85% are used for training.
 - **Validation Drift Checking (15% Limit)**: Prior to replacing the active model file (`autoencoder_model.pth`), the candidate model is evaluated on the validation dataset. If its reconstruction loss exceeds the baseline model's loss by more than **15%**, training is rejected with an error/warning message, and the previous model file remains active.
+- **Dynamic Dimension Compatibility**: The model loader dynamically detects the dimension of the saved model from `stats.npz` (e.g. legacy 5-dim vs new 8-dim) and instantiates the matching architecture. Evaluation features are automatically adjusted (sliced or padded) to match, ensuring backward compatibility during model migrations.
 - **Rolling Backups (3 Versions)**: The system maintains a rolling backup of the last 3 successfully trained model weights and stats (`_v1.pth/npz`, `_v2.pth/npz`, `_v3.pth/npz`) for fast rollback recovery.
 - **Weight Determinism**: PyTorch seed setting (`torch.manual_seed(42)`) is executed right before model instantiation to ensure identical initial weights across identical sequential runs, eliminating non-deterministic loss variance.
 
 ## Key Details
-- **Input Dimensions**: 5 (BilledAmount, ItemCount, SpecialtyCode, PatientAge, DurationDays).
-- **Latent Bottleneck Dimensions**: 4 (encoder: 5→16→8→4; decoder: 4→8→16→5).
+- **Input Dimensions**: 8 (BilledAmount, ItemCount, SpecialtyCode, PatientAge, DurationDays, CodeCount, ServiceMonth, ProviderBusyness).
+- **Latent Bottleneck Dimensions**: 6 (encoder: 8→24→12→6; decoder: 6→12→24→8).
 - **Output Activation**: Linear (no activation function) — correct for MSE reconstruction loss.
 - **Framework**: PyTorch (`torch.nn.Module`).
 - **Hidden Layers**: Fully connected linear layers with ReLU activation functions; no sigmoid activations.
