@@ -147,8 +147,28 @@ def run_all_tiers(patient_id: str, provider_npi: str, cpt_codes, cpt_displays=No
 
     # Run Tier 2: Autoencoder Outlier Profiler
     start_time = time.time()
+    # Extract additional features for 8-dim autoencoder
+    t_code_count = float(code_count)
+    t_service_month = 6.0
+    if service_date and len(service_date) >= 7:
+        try:
+            t_service_month = float(int(service_date[5:7]))
+        except:
+            pass
+    t_provider_busyness = 1.0
+    # Try to get provider claim count from the projections table
     try:
-        results["tier2"] = _run_tier(2, (billed_amount, float(code_count), specialty_code, patient_age, duration_days), {})
+        if iris:
+            cnt_stmt = iris.sql.prepare("SELECT COUNT(*) AS cnt FROM ClaimAudit.ClaimProjections WHERE ProviderNPI = ?")
+            cnt_rs = cnt_stmt.execute(provider_npi)
+            for cnt_row in cnt_rs:
+                t_provider_busyness = float(cnt_row[0])
+                if t_provider_busyness < 1:
+                    t_provider_busyness = 1.0
+    except:
+        pass
+    try:
+        results["tier2"] = _run_tier(2, (billed_amount, float(code_count), specialty_code, patient_age, duration_days, t_code_count, t_service_month, t_provider_busyness), {})
         elapsed = time.time() - start_time
         if elapsed > TIER_CONFIG[2]["timeout"]:
             results["tier2"] = {"flagged": True, "reason": "Tier 2 autoencoder audit timed out. Manual review required.", "loss": 0.0, "threshold": 0.02}

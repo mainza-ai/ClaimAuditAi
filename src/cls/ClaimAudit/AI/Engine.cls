@@ -61,17 +61,17 @@ ClassMethod Setup(pQuiet As %Boolean = 0) As %Status
         Set tSC = tStatement.%Prepare(tSQL)
         If $$$ISOK(tSC) { Do tStatement.%Execute() }
 
-        // 5. Create ClaimProjections table
+        // 5. Create ClaimProjections table with primary key
         Set tSQL = "CREATE TABLE ClaimAudit.ClaimProjections ("_
-                   "ClaimId VARCHAR(50), "_
-                   "PatientKey VARCHAR(50), "_
-                   "ProviderNPI VARCHAR(50), "_
-                   "BilledAmount DOUBLE, "_
-                   "ItemCount INTEGER, "_
-                   "SpecialtyCode INTEGER, "_
-                   "PatientAge INTEGER, "_
-                   "DurationDays INTEGER, "_
-                   "ServiceDate VARCHAR(10))"
+                    "ClaimId VARCHAR(50) PRIMARY KEY, "_
+                    "PatientKey VARCHAR(50), "_
+                    "ProviderNPI VARCHAR(50), "_
+                    "BilledAmount DOUBLE, "_
+                    "ItemCount INTEGER, "_
+                    "SpecialtyCode INTEGER, "_
+                    "PatientAge INTEGER, "_
+                    "DurationDays INTEGER, "_
+                    "ServiceDate VARCHAR(10))"
         Set tSC = tStatement.%Prepare(tSQL)
         If $$$ISOK(tSC) {
             Do tStatement.%Execute()
@@ -437,8 +437,12 @@ ClassMethod AuditClaim(pClaimJson As %DynamicObject, Output pResult As %DynamicO
             // Also persist claim to ClaimProjections table
             Try {
                 Set tStatement = ##class(%SQL.Statement).%New()
-                Do tStatement.%Prepare("INSERT INTO ClaimAudit.ClaimProjections (ClaimId, PatientKey, ProviderNPI, BilledAmount, ItemCount, SpecialtyCode, PatientAge, DurationDays, ServiceDate) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-                Do tStatement.%Execute(claimId, patientId, providerNpi, billedAmount, codeCount, specialtyCode, patientAge, durationDays, serviceDate)
+                Do tStatement.%Prepare("UPDATE ClaimAudit.ClaimProjections SET PatientKey=?, ProviderNPI=?, BilledAmount=?, ItemCount=?, SpecialtyCode=?, PatientAge=?, DurationDays=?, ServiceDate=? WHERE ClaimId=?")
+                Set tRS = tStatement.%Execute(patientId, providerNpi, billedAmount, codeCount, specialtyCode, patientAge, durationDays, serviceDate, claimId)
+                If tRS.%ROWCOUNT = 0 {
+                    Do tStatement.%Prepare("INSERT INTO ClaimAudit.ClaimProjections (ClaimId, PatientKey, ProviderNPI, BilledAmount, ItemCount, SpecialtyCode, PatientAge, DurationDays, ServiceDate) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+                    Do tStatement.%Execute(claimId, patientId, providerNpi, billedAmount, codeCount, specialtyCode, patientAge, durationDays, serviceDate)
+                }
             } Catch {}
         }
         // Invalidate graph cache so the next claim audit sees this claim's edges.
@@ -490,10 +494,13 @@ ClassMethod WorkerLoop()
     While $Get(^ClaimAuditAI("WorkerRunning")) = 1 {
         Try {
             Set tRS = ##class(%SQL.Statement).%ExecDirect(,
-                "SELECT ID, ClaimResponseId FROM ClaimAudit_Data.Queue WHERE Status = 'pending' ORDER BY CreatedAt ASC")
+                "SELECT ID, ClaimResponseId, RetryCount, MaxRetries FROM ClaimAudit_Data.Queue WHERE Status = 'pending' ORDER BY CreatedAt ASC")
             If tRS.%Next() {
                 Set tQueueId = tRS.%Get("ID")
                 Set tCRId = tRS.%Get("ClaimResponseId")
+                Set tRetryCount = +tRS.%Get("RetryCount")
+                Set tMaxRetries = +tRS.%Get("MaxRetries")
+                If tMaxRetries < 1 Set tMaxRetries = 3
                 
                 Do ##class(%SQL.Statement).%ExecDirect(,
                     "UPDATE ClaimAudit_Data.Queue SET Status = 'processing' WHERE ID = ?", tQueueId)
@@ -507,9 +514,15 @@ ClassMethod WorkerLoop()
                         "UPDATE ClaimAudit_Data.Queue SET Status = 'completed', ProcessedAt = ? WHERE ID = ?",
                         tProcessedAt, tQueueId)
                 } Else {
-                    Do ##class(%SQL.Statement).%ExecDirect(,
-                        "UPDATE ClaimAudit_Data.Queue SET Status = 'failed', ProcessedAt = ?, ErrorDetails = ? WHERE ID = ?",
-                        tProcessedAt, tErrorMsg, tQueueId)
+                    Set tNewRetryCount = tRetryCount + 1
+                    If tNewRetryCount >= tMaxRetries {
+                        // Exhausted retries — move to dead letter queue
+                        Do ##class(ClaimAudit.Data.Queue).MoveToDeadLetter(tQueueId, tErrorMsg)
+                    } Else {
+                        Do ##class(%SQL.Statement).%ExecDirect(,
+                            "UPDATE ClaimAudit_Data.Queue SET Status = 'failed', ProcessedAt = ?, ErrorDetails = ?, RetryCount = ? WHERE ID = ?",
+                            tProcessedAt, tErrorMsg, tNewRetryCount, tQueueId)
+                    }
                 }
             }
         } Catch ex {
@@ -735,6 +748,9 @@ ClassMethod ExecuteAdjudication(pCRId As %String, ByRef pErrorMsg As %String) As
         }
         Set tCRJson.extension = tNewExtensions
 
+        Do tCRJson.%Set("resourceType", "ClaimResponse")
+        If '$IsObject(tCRJson.meta) Set tCRJson.meta = {}
+        Do tCRJson.meta.%Set("lastUpdated", $ZDATETIME($HOROLOG, 3, 1, 3))
         Set tPutRequest = ##class(HS.FHIRServer.API.Data.Request).%New()
         Set tPutRequest.RequestMethod = "PUT"
         Set tPutRequest.RequestPath = "/ClaimResponse/" _ pCRId
@@ -760,6 +776,9 @@ ClassMethod ExecuteAdjudication(pCRId As %String, ByRef pErrorMsg As %String) As
                     If $IsObject(tGetResp.Json) {
                         Set tTaskJson = tGetResp.Json
                         Do tTaskJson.%Set("status", "completed")
+                        Do tTaskJson.%Set("resourceType", "Task")
+                        If '$IsObject(tTaskJson.meta) Set tTaskJson.meta = {}
+                        Do tTaskJson.meta.%Set("lastUpdated", $ZDATETIME($HOROLOG, 3, 1, 3))
                         
                         Set tPutTask = ##class(HS.FHIRServer.API.Data.Request).%New()
                         Set tPutTask.RequestMethod = "PUT"
@@ -771,6 +790,31 @@ ClassMethod ExecuteAdjudication(pCRId As %String, ByRef pErrorMsg As %String) As
                     }
                 }
             } Catch {}
+        }
+
+        // Update stats cache for O(1) dashboard reads
+        If status = "HOLD" {
+            Set tSCache = $Get(^ClaimAuditAI("Stats"))
+            If score >= 0.86 {
+                Set ^ClaimAuditAI("Stats", "crit") = +$Get(^ClaimAuditAI("Stats", "crit")) + 1
+            } ElseIf score >= 0.50 {
+                Set ^ClaimAuditAI("Stats", "high") = +$Get(^ClaimAuditAI("Stats", "high")) + 1
+            } Else {
+                Set ^ClaimAuditAI("Stats", "med") = +$Get(^ClaimAuditAI("Stats", "med")) + 1
+            }
+            // Track tier flags from findings
+            If $IsObject(agentRes.findings) {
+                If $IsObject(agentRes.findings.tier1) && agentRes.findings.tier1.flagged {
+                    Set ^ClaimAuditAI("Stats", "tier1") = +$Get(^ClaimAuditAI("Stats", "tier1")) + 1
+                }
+                If $IsObject(agentRes.findings.tier2) && agentRes.findings.tier2.flagged {
+                    Set ^ClaimAuditAI("Stats", "tier2") = +$Get(^ClaimAuditAI("Stats", "tier2")) + 1
+                }
+                If $IsObject(agentRes.findings.tier3) && agentRes.findings.tier3.flagged {
+                    Set ^ClaimAuditAI("Stats", "tier3") = +$Get(^ClaimAuditAI("Stats", "tier3")) + 1
+                }
+            }
+            Set ^ClaimAuditAI("Stats") = 1
         }
     } Catch ex {
         Set tSC = ex.AsStatus()

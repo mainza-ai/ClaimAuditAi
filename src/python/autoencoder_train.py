@@ -29,24 +29,24 @@ _evaluation_lock = threading.Lock()
 # Network definition in PyTorch
 if torch:
     class ClaimAutoencoder(nn.Module):
-        def __init__(self, input_dim=5):
+        def __init__(self, input_dim=8):
             super(ClaimAutoencoder, self).__init__()
             # Encoder bottleneck compression
             self.encoder = nn.Sequential(
-                nn.Linear(input_dim, 16),
+                nn.Linear(input_dim, 24),
                 nn.ReLU(),
-                nn.Linear(16, 8),
+                nn.Linear(24, 12),
                 nn.ReLU(),
-                nn.Linear(8, 4), # Latent bottleneck
+                nn.Linear(12, 6), # Latent bottleneck
                 nn.ReLU()
             )
             # Decoder reconstruction
             self.decoder = nn.Sequential(
-                nn.Linear(4, 8),
+                nn.Linear(6, 12),
                 nn.ReLU(),
-                nn.Linear(8, 16),
+                nn.Linear(12, 24),
                 nn.ReLU(),
-                nn.Linear(16, input_dim) # Linear activation for real-valued reconstruction
+                nn.Linear(24, input_dim) # Linear activation for real-valued reconstruction
             )
 
         def forward(self, x):
@@ -58,17 +58,32 @@ else:
         pass
 
 def normalize_features(features, mean, std):
-    """Normalize continuous features using Z-score, and scale categorical SpecialtyCode by a fixed constant."""
+    """Normalize continuous features using Z-score. Categorical features use fixed scaling."""
     epsilon = 1e-8
     normalized = np.copy(features)
+    num_features = features.shape[1]
     
     # Scale continuous variables
-    for i in [0, 1, 3, 4]:
-        normalized[:, i] = (features[:, i] - mean[i]) / (std[i] + epsilon)
+    continuous_indices = [0, 1, 3, 4]
+    if num_features >= 8:
+        continuous_indices.append(7)
         
-    # SpecialtyCode is categorical. Scale to a stable [0, 1] range without Z-score distortion.
-    normalized[:, 2] = features[:, 2] / 100.0
-    
+    for i in continuous_indices:
+        if i < num_features and i < len(mean) and i < len(std):
+            normalized[:, i] = (features[:, i] - mean[i]) / (std[i] + epsilon)
+            
+    # SpecialtyCode is categorical — scale to stable [0, 1] range
+    if num_features > 2:
+        normalized[:, 2] = features[:, 2] / 100.0
+        
+    # code_count — scale by typical max of 10
+    if num_features > 5:
+        normalized[:, 5] = features[:, 5] / 10.0
+        
+    # service_month — already 1-12, scale to [0, 1]
+    if num_features > 6:
+        normalized[:, 6] = features[:, 6] / 12.0
+        
     return normalized
 
 def train_autoencoder() -> str:
@@ -81,17 +96,44 @@ def train_autoencoder() -> str:
         historical_claims = []
         if iris:
             stmt = iris.sql.prepare(
-                "SELECT BilledAmount, ItemCount, SpecialtyCode, PatientAge, DurationDays "
-                "FROM ClaimAudit.ClaimProjections"
+                "SELECT CP.BilledAmount, CP.ItemCount, CP.SpecialtyCode, CP.PatientAge, CP.DurationDays, "
+                "CP.ItemCount AS CodeCount, "
+                "CAST(SUBSTRING(CP.ServiceDate, 6, 2) AS INTEGER) AS ServiceMonth, "
+                "(SELECT COUNT(*) FROM ClaimAudit.ClaimProjections CP2 WHERE CP2.ProviderNPI = CP.ProviderNPI) AS ProviderBusyness "
+                "FROM ClaimAudit.ClaimProjections CP"
             )
             rs = stmt.execute()
             for row in rs:
+                r_billed = float(row[0])
+                r_items = float(row[1])
+                r_specialty = float(row[2])
+                r_age = float(row[3])
+                r_duration = float(row[4])
+                
+                try:
+                    r_code_count = float(row[5])
+                except Exception:
+                    r_code_count = r_items
+                    
+                try:
+                    r_service_month = float(max(1, min(12, int(row[6]) if row[6] else 6)))
+                except Exception:
+                    r_service_month = 6.0
+                    
+                try:
+                    r_provider_busyness = float(row[7])
+                except Exception:
+                    r_provider_busyness = 1.0
+                    
                 historical_claims.append([
-                    float(row[0]), # BilledAmount
-                    float(row[1]), # ItemCount
-                    float(row[2]), # SpecialtyCode
-                    float(row[3]), # PatientAge
-                    float(row[4])  # DurationDays
+                    r_billed,
+                    r_items,
+                    r_specialty,
+                    r_age,
+                    r_duration,
+                    r_code_count,
+                    r_service_month,
+                    r_provider_busyness,
                 ])
         
         # Require a minimum of 5 real claims to train a meaningful model.
@@ -144,7 +186,7 @@ def train_autoencoder() -> str:
         
         # Model & Training Staging
         torch.manual_seed(42)
-        model = ClaimAutoencoder(input_dim=5)
+        model = ClaimAutoencoder(input_dim=8)
         criterion = nn.MSELoss()
         optimizer = optim.Adam(model.parameters(), lr=0.01)
         
@@ -249,7 +291,7 @@ def _get_cached_model():
         percentile_threshold = float(stats["threshold"]) if "threshold" in stats else 0.02
         threshold = max(percentile_threshold, 0.02)
 
-        model = ClaimAutoencoder(input_dim=5)
+        model = ClaimAutoencoder(input_dim=8)
         model.load_state_dict(torch.load(MODEL_PATH, weights_only=True))
         model.eval()
 
@@ -265,7 +307,7 @@ def _invalidate_cache():
     with _evaluation_lock:
         _evaluation_cache.clear()
 
-def evaluate_claim_anomaly(billed_amount: float, item_count: float, specialty_code: float, patient_age: float, duration_days: float) -> dict:
+def evaluate_claim_anomaly(billed_amount: float, item_count: float, specialty_code: float, patient_age: float, duration_days: float, code_count: float = 1.0, service_month: float = 6.0, provider_busyness: float = 1.0) -> dict:
     """Score incoming intercepted claims and calculate PyTorch reconstruction error."""
     if not torch:
         return {"loss": 0.0, "threshold": 0.1, "flagged": False, "reason": "PyTorch not available."}
@@ -293,7 +335,7 @@ def evaluate_claim_anomaly(billed_amount: float, item_count: float, specialty_co
         stds = cache["stds"]
         threshold = cache["threshold"]
 
-        claim_features = np.array([[billed_amount, item_count, specialty_code, patient_age, duration_days]], dtype=np.float32)
+        claim_features = np.array([[billed_amount, item_count, specialty_code, patient_age, duration_days, code_count, service_month, provider_busyness]], dtype=np.float32)
         normalized = normalize_features(claim_features, means, stds)
         tensor_claim = torch.tensor(normalized, dtype=torch.float32)
 

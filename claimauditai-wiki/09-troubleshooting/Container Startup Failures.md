@@ -22,5 +22,10 @@ The Docker container crashes or hangs during `docker-compose up -d --build`, thr
    chmod -R 777 /Users/mck/Desktop/claimauditai
    ```
 
+3. **ZPM load PyTorch Dependency Conflict (Massive CUDA Downloads)**:
+   * **Symptom:** Docker build takes a very long time (stalling or downloading ~2GB of `nvidia-*` and `torch` packages) during the ZPM package load step (`zpm "load /home/irisowner/dev/"`).
+   * **Root Cause:** The InterSystems ZPM package loader automatically installs dependencies from the host-shared `requirements.txt` file. If `torch` is listed in `requirements.txt`, ZPM's pip installer will pull the default CUDA-enabled PyTorch wheel from PyPI, bypassing and overwriting the CPU-only optimized wheel (`torch>=2.1.0 --index-url https://download.pytorch.org/whl/cpu`) pre-installed in the Dockerfile.
+   * **Resolution:** Remove `torch` (e.g. `torch>=2.1.0`) from the repository's `requirements.txt`. The Dockerfile already installs the CPU-only PyTorch package explicitly. Removing it from `requirements.txt` stops ZPM from re-downloading CUDA wheels while keeping the pre-installed CPU version active.
+
 ## See Also
-[[Troubleshooting Overview]] · [[Installation Guide]] · [[Docker Configuration]]
+[[Troubleshooting Overview]] · [[Installation Guide]] · [[Docker Configuration]] · [[iris.script Indentation Pitfalls]]

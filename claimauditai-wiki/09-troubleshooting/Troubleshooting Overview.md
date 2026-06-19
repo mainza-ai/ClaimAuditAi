@@ -41,6 +41,8 @@ If your installation encounters errors, locate the symptom in the table below to
 | **Admin audit log returns empty** | No admin actions logged yet, or `^ClaimAuditAdminLog` global was cleared | Seed/clear/upload/retrain data to generate audit entries |
 | **User CRUD returns 409/400** | Duplicate username, missing fields, or attempted deletion of last remaining admin user | Check request payload; ensure at least one Admin role user exists |
 | **Retrain model fails** | Fewer than 5 claim projections in database, or autoencoder Python module unavailable | Seed/upload at least 5 claims before retraining |
+| **Alphanumeric HCPCS validation fails** | HCPCS codes parsed as variables (NameError) or compared to numeric bounds (TypeError) | [[Python Validation and ML Model Pitfalls]] |
+| **Autoencoder unit tests fail on dimension size** | Model shape updated to 8 inputs but test mock arrays remain 5 inputs, throwing IndexError | [[Python Validation and ML Model Pitfalls]] |
 
 ## Key Details
 - **Primary Diagnostic Command**: `docker logs --tail 100 claimaudit-iris`
@@ -48,4 +50,4 @@ If your installation encounters errors, locate the symptom in the table below to
 - **CSP Cache Flush**: Force cache flushes by running `kill ^%cspSession` in `%SYS`.
 
 ## See Also
-[[Container Startup Failures]] · [[FHIR Server 404]] · [[ServiceIdIdx Object Open Failure]] · [[InteractionsStrategy Not Firing]] · [[Blank UI Due to API Error Responses]] · [[ObjectScript SQL Single-Quote Consumption]] · [[Claim Actions Silently Fail]] · [[Rejected Claims Missing From Ledger]] · [[Dashboard Metrics Stale After Actions]] · [[Dashboard Daily Counts Always Zero]] · [[Theme Not Applied on Page Load]] · [[Admin Routes Return 401]] · [[LLM API Key Lost on Save]] · [[Autoencoder Trains on Random Noise]] · [[Bundle Claims Not Intercepted]] · [[Collusion Graph Performance Degradation]] · [[Seeding Fails with Expecting Value JSON Error]]
+[[Container Startup Failures]] · [[FHIR Server 404]] · [[ServiceIdIdx Object Open Failure]] · [[InteractionsStrategy Not Firing]] · [[Blank UI Due to API Error Responses]] · [[ObjectScript SQL Single-Quote Consumption]] · [[Claim Actions Silently Fail]] · [[Rejected Claims Missing From Ledger]] · [[Dashboard Metrics Stale After Actions]] · [[Dashboard Daily Counts Always Zero]] · [[Theme Not Applied on Page Load]] · [[Admin Routes Return 401]] · [[LLM API Key Lost on Save]] · [[Autoencoder Trains on Random Noise]] · [[Bundle Claims Not Intercepted]] · [[Collusion Graph Performance Degradation]] · [[Seeding Fails with Expecting Value JSON Error]] · [[Python Validation and ML Model Pitfalls]]

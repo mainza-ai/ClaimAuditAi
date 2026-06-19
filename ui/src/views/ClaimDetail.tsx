@@ -164,7 +164,7 @@ export function ClaimDetail() {
     return { label: 'Validated', color: 'var(--color-success)' };
   };
 
-  const canReaudit = activeRole === 'Auditor' || activeRole === 'Admin' || activeRole === 'Director' || activeRole === 'Specialist';
+  const canReaudit = PERMISSIONS.canReaudit(activeRole) || activeRole === 'Auditor' || activeRole === 'Director' || activeRole === 'Specialist';
 
   const isDecided = claim?.outcome === 'complete' || claim?.outcome === 'error';
   const userCanApprove = PERMISSIONS.canApprove(activeRole) && !isDecided;
