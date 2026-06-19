@@ -5,6 +5,8 @@ import networkx as nx
 
 try:
     import iris
+    if not hasattr(iris, "cls"):
+        iris = None
 except ImportError:
     iris = None
 

@@ -7,6 +7,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 # Check if running inside IRIS container (meaning iris module is available)
 try:
     import iris
+    if not hasattr(iris, "cls"):
+        iris = None
 except ImportError:
     iris = None
 

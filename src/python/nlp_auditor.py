@@ -7,6 +7,8 @@ from sentence_transformers import SentenceTransformer
 # Try to import iris (only available within Embedded Python context)
 try:
     import iris
+    if not hasattr(iris, "cls"):
+        iris = None
 except ImportError:
     iris = None
 
