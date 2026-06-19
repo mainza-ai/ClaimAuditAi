@@ -46,6 +46,11 @@ class TestLoadSettings:
 
 
 class TestGetClientAndModel:
+    @pytest.fixture(autouse=True)
+    def mock_load_env(self, monkeypatch):
+        monkeypatch.setattr(llm_router, "_load_env", lambda: None)
+        monkeypatch.setattr(llm_router, "_load_settings", lambda: {})
+
     def test_raises_on_unknown_provider(self, monkeypatch):
         monkeypatch.setenv("LLM_PROVIDER", "unknown_provider")
         with pytest.raises(ValueError, match="Unknown LLM_PROVIDER"):

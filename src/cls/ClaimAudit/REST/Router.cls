@@ -53,6 +53,8 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
     <Route Url="/system/users/:username" Method="DELETE" Call="DeleteUser"/>
     <Route Url="/system/backup" Method="GET" Call="BackupRepository"/>
     <Route Url="/system/backfill-tier-results" Method="POST" Call="BackfillTierResults"/>
+    <Route Url="/system/dead-letter-queue" Method="GET" Call="GetDeadLetterQueue"/>
+    <Route Url="/system/dead-letter-queue/:id/requeue" Method="POST" Call="RequeueDeadLetter"/>
     </Routes>
 }
 
@@ -98,19 +100,42 @@ ClassMethod Login() As %Status
             Write {"error": "unsupported_grant_type"}.%ToJSON()
             Quit
         }
-        If tUsername = "" || (tPassword = "") {
+        If (tUsername = "") || (tPassword = "") {
             Set %response.Status = 400
             Write {"error": "invalid_request"}.%ToJSON()
             Quit
         }
 
-        // Validate credentials against local credential store (INTEROP globals — CSP UnknownUser has no %SYS access)
-        Set tHash = $SYSTEM.Encryption.HMACSHA(256, tPassword, "ClaimAuditAI_Salt")
+        // Validate credentials against local credential store
+        // Uses PBKDF2-SHA256 via Embedded Python with legacy HMAC-SHA256 fallback
         Set tStoredHash = $Get(^ClaimAuditAI("Users", tUsername, "hash"))
-        If (tStoredHash = "") || (tHash '= tStoredHash) {
+        Set tAuthMatch = 0
+        Set tNeedsUpgrade = 0
+        If tStoredHash '= "" {
+            Do ##class(ClaimAudit.AI.Engine).ConfigurePythonPath()
+            Set tPyAuth = ##class(%SYS.Python).Import("auth_utils")
+            Set tPBKDF2Match = tPyAuth."verify_password"(tStoredHash, tPassword)
+            If tPBKDF2Match {
+                Set tAuthMatch = 1
+            } Else {
+                // Legacy HMAC-SHA256 fallback (static salt)
+                Set tHash = $SYSTEM.Encryption.HMACSHA(256, tPassword, "ClaimAuditAI_Salt")
+                If tHash = tStoredHash {
+                    Set tAuthMatch = 1
+                    Set tNeedsUpgrade = 1
+                }
+            }
+        }
+        If 'tAuthMatch {
             Set %response.Status = 401
             Write {"error": "invalid_grant", "error_description": "Invalid credentials"}.%ToJSON()
             Quit
+        }
+
+        // Auto-upgrade legacy HMAC hash to PBKDF2 on successful login
+        If tNeedsUpgrade {
+            Set tNewHash = tPyAuth."hash_password"(tPassword)
+            Set ^ClaimAuditAI("Users", tUsername, "hash") = tNewHash
         }
 
         Set tToken = ##class(ClaimAudit.REST.Auth).IssueSmartOnFHIRToken(tUsername, tClientId)
@@ -908,20 +933,12 @@ ClassMethod ApproveClaim(id As %String) As %Status
         Set tRationaleSummary = tBody.rationaleSummary
         Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/fhir/r4")
 
-        // 1. Fetch and update ClaimResponse
-        Set tRequest = ##class(HS.FHIRServer.API.Data.Request).%New()
-        Set tRequest.RequestMethod = "GET"
-        Set tRequest.RequestPath = "/ClaimResponse/" _ id
-        Set tRequest.Interaction = "read"
-        Set tResponse = ##class(HS.FHIRServer.API.Data.Response).%New()
-        Do tService.DispatchRequest(tRequest, .tResponse)
-
-        If '$IsObject(tResponse.Json) {
+        // 1. Fetch ClaimResponse
+        If '##class(ClaimAudit.FHIR.Utils).ReadResource(tService, "ClaimResponse", id, .tCRJson) {
             Set %response.Status = 404
             Write {"error": "ClaimResponse not found"}.%ToJSON()
             Quit
         }
-        Set tCRJson = tResponse.Json
 
         // Idempotency: skip if already approved
         If tCRJson.outcome = "complete" {
@@ -930,66 +947,28 @@ ClassMethod ApproveClaim(id As %String) As %Status
         }
         Set tCRJson.outcome = "complete"
 
-        // Add authorizer info as extensions
-        Set tExt = tCRJson.extension
-        If '$IsObject(tExt) Set tExt = []
-        Do tExt.%Push({"url": "https://claimauditai.com/fhir/extension/authorized-by", "valueString": (tAuthorizedBy)})
-        If tRationaleSummary '= "" {
-            Do tExt.%Push({"url": "https://claimauditai.com/fhir/extension/rationale", "valueString": (tRationaleSummary)})
-        }
-        Do tExt.%Push({"url": "https://claimauditai.com/fhir/extension/decision-timestamp", "valueDateTime": ($ZDATE($PIECE($ZTIMESTAMP,",",1),3)_"T"_$ZTIME($PIECE($ZTIMESTAMP,",",2),1)_"Z")})
-        Set tCRJson.extension = tExt
+        // Add authorizer extensions (deduplicates by URL)
+        Do ##class(ClaimAudit.FHIR.Utils).AddAuthorizerExtensions(tCRJson, tAuthorizedBy, tRationaleSummary)
 
-        Set tReqPut = ##class(HS.FHIRServer.API.Data.Request).%New()
-        Set tReqPut.RequestMethod = "PUT"
-        Set tReqPut.RequestPath = "/ClaimResponse/" _ id
-        Set tReqPut.Interaction = "update"
-        Set tReqPut.Json = tCRJson
-        Set tRespPut = ##class(HS.FHIRServer.API.Data.Response).%New()
-        Do tService.DispatchRequest(tReqPut, .tRespPut)
-
-        If $EXTRACT(tRespPut.Status, 1) '= "2" {
+        // 2. PUT ClaimResponse with proper resourceType + meta.lastUpdated
+        Set tOk = ##class(ClaimAudit.FHIR.Utils).UpdateResource(tService, tCRJson, "ClaimResponse")
+        If 'tOk {
             Set %response.Status = 400
-            Write {"error": ("Failed to update ClaimResponse: " _ tRespPut.Status)}.%ToJSON()
+            Write {"error": "Failed to update ClaimResponse"}.%ToJSON()
             Quit
         }
 
-        // Extract Claim reference to resolve associated task
-        If '$IsObject(tCRJson.request) {
-            Write {"status": "success", "authorizedBy": (tAuthorizedBy), "note": "ClaimResponse updated, no associated Claim reference for task resolution"}.%ToJSON()
-            Quit
+        // 3. Find and complete associated Task
+        Set tClaimId = ""
+        If $IsObject(tCRJson.request) {
+            Set tRequestRef = tCRJson.request.reference
+            Set tClaimId = $Piece(tRequestRef, "/", 2)
         }
-        Set tRequestRef = tCRJson.request.reference
-        Set tClaimId = $Piece(tRequestRef, "/", 2)
-
-        // 2. Fetch and complete Task
         If tClaimId '= "" {
-            Set tTRS = ##class(%SQL.Statement).%ExecDirect(,
-            "SELECT Key FROM HSFHIR_X0001_S.Task WHERE focus = ?", "Claim/" _ tClaimId)
-            If tTRS.%Next() {
-                Set tTaskKey = tTRS.%Get("Key")
-                Set tTaskId = $Piece(tTaskKey, "/", 2)
-
-                Set tReqT = ##class(HS.FHIRServer.API.Data.Request).%New()
-                Set tReqT.RequestMethod = "GET"
-                Set tReqT.RequestPath = "/Task/" _ tTaskId
-                Set tReqT.Interaction = "read"
-                Set tRespT = ##class(HS.FHIRServer.API.Data.Response).%New()
-                Do tService.DispatchRequest(tReqT, .tRespT)
-
-                If $IsObject(tRespT.Json) {
-                    Set tTaskJson = tRespT.Json
-                    Set tTaskJson.status = "completed"
-                    Set tTaskJson.owner = {"reference": ("Practitioner/auditor"), "display": (tAuthorizedBy)}
-
-                    Set tReqTPut = ##class(HS.FHIRServer.API.Data.Request).%New()
-                    Set tReqTPut.RequestMethod = "PUT"
-                    Set tReqTPut.RequestPath = "/Task/" _ tTaskId
-                    Set tReqTPut.Interaction = "update"
-                    Set tReqTPut.Json = tTaskJson
-                    Set tRespTPut = ##class(HS.FHIRServer.API.Data.Response).%New()
-                    Do tService.DispatchRequest(tReqTPut, .tRespTPut)
-                }
+            If ##class(ClaimAudit.FHIR.Utils).GetTaskByClaimId(tService, tClaimId, .tTaskJson, .tTaskId) {
+                Set tTaskJson.status = "completed"
+                Set tTaskJson.owner = {"reference": ("Practitioner/auditor"), "display": (tAuthorizedBy)}
+                Do ##class(ClaimAudit.FHIR.Utils).UpdateResource(tService, tTaskJson, "Task")
             }
         }
         Write {"status": "success", "authorizedBy": (tAuthorizedBy)}.%ToJSON()
@@ -1013,41 +992,20 @@ ClassMethod EscalateClaim(id As %String) As %Status
         Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/fhir/r4")
 
         // 1. Fetch ClaimResponse
-        Set tRequest = ##class(HS.FHIRServer.API.Data.Request).%New()
-        Set tRequest.RequestMethod = "GET"
-        Set tRequest.RequestPath = "/ClaimResponse/" _ id
-        Set tRequest.Interaction = "read"
-        Set tResponse = ##class(HS.FHIRServer.API.Data.Response).%New()
-        Do tService.DispatchRequest(tRequest, .tResponse)
-
-        If '$IsObject(tResponse.Json) {
+        If '##class(ClaimAudit.FHIR.Utils).ReadResource(tService, "ClaimResponse", id, .tCRJson) {
             Set %response.Status = 404
             Write {"error": "ClaimResponse not found"}.%ToJSON()
             Quit
         }
-        Set tCRJson = tResponse.Json
 
         // Add escalation extensions
-        Set tExt = tCRJson.extension
-        If '$IsObject(tExt) Set tExt = []
-        Do tExt.%Push({"url": "https://claimauditai.com/fhir/extension/authorized-by", "valueString": (tAuthorizedBy)})
-        If tRationaleSummary '= "" {
-            Do tExt.%Push({"url": "https://claimauditai.com/fhir/extension/rationale", "valueString": (tRationaleSummary)})
-        }
-        Do tExt.%Push({"url": "https://claimauditai.com/fhir/extension/decision-timestamp", "valueDateTime": ($ZDATE($PIECE($ZTIMESTAMP,",",1),3)_"T"_$ZTIME($PIECE($ZTIMESTAMP,",",2),1)_"Z")})
-        Set tCRJson.extension = tExt
+        Do ##class(ClaimAudit.FHIR.Utils).AddAuthorizerExtensions(tCRJson, tAuthorizedBy, tRationaleSummary)
 
-        Set tReqPut = ##class(HS.FHIRServer.API.Data.Request).%New()
-        Set tReqPut.RequestMethod = "PUT"
-        Set tReqPut.RequestPath = "/ClaimResponse/" _ id
-        Set tReqPut.Interaction = "update"
-        Set tReqPut.Json = tCRJson
-        Set tRespPut = ##class(HS.FHIRServer.API.Data.Response).%New()
-        Do tService.DispatchRequest(tReqPut, .tRespPut)
-
-        If $EXTRACT(tRespPut.Status, 1) '= "2" {
+        // 2. PUT ClaimResponse with proper resourceType + meta.lastUpdated
+        Set tOk = ##class(ClaimAudit.FHIR.Utils).UpdateResource(tService, tCRJson, "ClaimResponse")
+        If 'tOk {
             Set %response.Status = 400
-            Write {"error": ("Failed to update ClaimResponse: " _ tRespPut.Status)}.%ToJSON()
+            Write {"error": "Failed to update ClaimResponse"}.%ToJSON()
             Quit
         }
 
@@ -1057,52 +1015,24 @@ ClassMethod EscalateClaim(id As %String) As %Status
             Set tClaimId = $Piece(tRequestRef, "/", 2)
         }
 
-        // 2. Progress Task through workflow states — escalation always goes to Director with stat priority
+        // 3. Progress Task through workflow states: ready→requested→received
         Set tNextStatus = "requested"
         If tClaimId '= "" {
-            Set tTRS = ##class(%SQL.Statement).%ExecDirect(,
-            "SELECT Key, status FROM HSFHIR_X0001_S.Task WHERE focus = ?", "Claim/" _ tClaimId)
-            If tTRS.%Next() {
-                Set tTaskKey = tTRS.%Get("Key")
-                Set tTaskId = $Piece(tTaskKey, "/", 2)
-                Set tCurrentStatus = tTRS.%Get("status")
-
-                Set tReqT = ##class(HS.FHIRServer.API.Data.Request).%New()
-                Set tReqT.RequestMethod = "GET"
-                Set tReqT.RequestPath = "/Task/" _ tTaskId
-                Set tReqT.Interaction = "read"
-                Set tRespT = ##class(HS.FHIRServer.API.Data.Response).%New()
-                Do tService.DispatchRequest(tReqT, .tRespT)
-
-                If $IsObject(tRespT.Json) {
-                    Set tTaskJson = tRespT.Json
-
-                    // Escalation always sends to Director with stat priority
-                    // ready → requested → completed (approved) / cancelled (rejected)
-                    If tCurrentStatus = "requested" {
-                        Set tNextStatus = "requested"
-                    } Else {
-                        Set tNextStatus = "requested"
-                    }
-                    Set tTaskJson.priority = "stat"
-
-                    Set tTaskJson.status = tNextStatus
-                    Set tTaskJson.owner = {"reference": ("Practitioner/auditor"), "display": (tAuthorizedBy)}
-
-                    // Add workflow extension
-                    Set tTaskExt = tTaskJson.extension
-                    If '$IsObject(tTaskExt) Set tTaskExt = []
-                    Do tTaskExt.%Push({"url": "https://claimauditai.com/fhir/extension/workflow-stage", "valueString": (tNextStatus)})
-                    Set tTaskJson.extension = tTaskExt
-
-                    Set tReqTPut = ##class(HS.FHIRServer.API.Data.Request).%New()
-                    Set tReqTPut.RequestMethod = "PUT"
-                    Set tReqTPut.RequestPath = "/Task/" _ tTaskId
-                    Set tReqTPut.Interaction = "update"
-                    Set tReqTPut.Json = tTaskJson
-                    Set tRespTPut = ##class(HS.FHIRServer.API.Data.Response).%New()
-                    Do tService.DispatchRequest(tReqTPut, .tRespTPut)
+            If ##class(ClaimAudit.FHIR.Utils).GetTaskByClaimId(tService, tClaimId, .tTaskJson, .tTaskId) {
+                Set tCurrentStatus = tTaskJson.status
+                // State machine: ready → requested → received
+                If tCurrentStatus = "requested" {
+                    Set tNextStatus = "received"
+                } ElseIf tCurrentStatus = "received" {
+                    Set tNextStatus = "received"
+                } Else {
+                    Set tNextStatus = "requested"
                 }
+                Set tTaskJson.status = tNextStatus
+                Set tTaskJson.priority = "stat"
+                Set tTaskJson.owner = {"reference": ("Practitioner/auditor"), "display": (tAuthorizedBy)}
+                Do ##class(ClaimAudit.FHIR.Utils).AddExtension(tTaskJson, "https://claimauditai.com/fhir/extension/workflow-stage", tNextStatus)
+                Do ##class(ClaimAudit.FHIR.Utils).UpdateResource(tService, tTaskJson, "Task")
             }
         }
         Write {"status": "success", "authorizedBy": (tAuthorizedBy), "workflow_stage": (tNextStatus)}.%ToJSON()
@@ -1124,20 +1054,12 @@ ClassMethod RejectClaim(id As %String) As %Status
         Set tRationaleSummary = tBody.rationaleSummary
         Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/fhir/r4")
 
-        // 1. Fetch and update ClaimResponse
-        Set tRequest = ##class(HS.FHIRServer.API.Data.Request).%New()
-        Set tRequest.RequestMethod = "GET"
-        Set tRequest.RequestPath = "/ClaimResponse/" _ id
-        Set tRequest.Interaction = "read"
-        Set tResponse = ##class(HS.FHIRServer.API.Data.Response).%New()
-        Do tService.DispatchRequest(tRequest, .tResponse)
-
-        If '$IsObject(tResponse.Json) {
+        // 1. Fetch ClaimResponse
+        If '##class(ClaimAudit.FHIR.Utils).ReadResource(tService, "ClaimResponse", id, .tCRJson) {
             Set %response.Status = 404
             Write {"error": "ClaimResponse not found"}.%ToJSON()
             Quit
         }
-        Set tCRJson = tResponse.Json
 
         // Idempotency: skip if already rejected
         If tCRJson.outcome = "error" {
@@ -1147,64 +1069,28 @@ ClassMethod RejectClaim(id As %String) As %Status
         Set tCRJson.outcome = "error"
         Set tCRJson.status = "cancelled"
 
-        // Add rejection extensions
-        Set tExt = tCRJson.extension
-        If '$IsObject(tExt) Set tExt = []
-        Do tExt.%Push({"url": "https://claimauditai.com/fhir/extension/authorized-by", "valueString": (tAuthorizedBy)})
-        If tRationaleSummary '= "" {
-            Do tExt.%Push({"url": "https://claimauditai.com/fhir/extension/rationale", "valueString": (tRationaleSummary)})
-        }
-        Do tExt.%Push({"url": "https://claimauditai.com/fhir/extension/decision-timestamp", "valueDateTime": ($ZDATE($PIECE($ZTIMESTAMP,",",1),3)_"T"_$ZTIME($PIECE($ZTIMESTAMP,",",2),1)_"Z")})
-        Set tCRJson.extension = tExt
+        // Add rejection extensions (deduplicates by URL)
+        Do ##class(ClaimAudit.FHIR.Utils).AddAuthorizerExtensions(tCRJson, tAuthorizedBy, tRationaleSummary)
 
-        Set tReqPut = ##class(HS.FHIRServer.API.Data.Request).%New()
-        Set tReqPut.RequestMethod = "PUT"
-        Set tReqPut.RequestPath = "/ClaimResponse/" _ id
-        Set tReqPut.Interaction = "update"
-        Set tReqPut.Json = tCRJson
-        Set tRespPut = ##class(HS.FHIRServer.API.Data.Response).%New()
-        Do tService.DispatchRequest(tReqPut, .tRespPut)
-
-        If $EXTRACT(tRespPut.Status, 1) '= "2" {
+        // 2. PUT ClaimResponse with proper resourceType + meta.lastUpdated
+        Set tOk = ##class(ClaimAudit.FHIR.Utils).UpdateResource(tService, tCRJson, "ClaimResponse")
+        If 'tOk {
             Set %response.Status = 400
-            Write {"error": ("Failed to update ClaimResponse: " _ tRespPut.Status)}.%ToJSON()
+            Write {"error": "Failed to update ClaimResponse"}.%ToJSON()
             Quit
         }
 
+        // 3. Cancel linked Task
         Set tClaimId = ""
         If $IsObject(tCRJson.request) {
             Set tRequestRef = tCRJson.request.reference
             Set tClaimId = $Piece(tRequestRef, "/", 2)
         }
-
-        // 2. Cancel linked Task
         If tClaimId '= "" {
-            Set tTRS = ##class(%SQL.Statement).%ExecDirect(,
-            "SELECT Key FROM HSFHIR_X0001_S.Task WHERE focus = ?", "Claim/" _ tClaimId)
-            If tTRS.%Next() {
-                Set tTaskKey = tTRS.%Get("Key")
-                Set tTaskId = $Piece(tTaskKey, "/", 2)
-
-                Set tReqT = ##class(HS.FHIRServer.API.Data.Request).%New()
-                Set tReqT.RequestMethod = "GET"
-                Set tReqT.RequestPath = "/Task/" _ tTaskId
-                Set tReqT.Interaction = "read"
-                Set tRespT = ##class(HS.FHIRServer.API.Data.Response).%New()
-                Do tService.DispatchRequest(tReqT, .tRespT)
-
-                If $IsObject(tRespT.Json) {
-                    Set tTaskJson = tRespT.Json
-                    Set tTaskJson.status = "cancelled"
-                    Set tTaskJson.owner = {"reference": ("Practitioner/auditor"), "display": (tAuthorizedBy)}
-
-                    Set tReqTPut = ##class(HS.FHIRServer.API.Data.Request).%New()
-                    Set tReqTPut.RequestMethod = "PUT"
-                    Set tReqTPut.RequestPath = "/Task/" _ tTaskId
-                    Set tReqTPut.Interaction = "update"
-                    Set tReqTPut.Json = tTaskJson
-                    Set tRespTPut = ##class(HS.FHIRServer.API.Data.Response).%New()
-                    Do tService.DispatchRequest(tReqTPut, .tRespTPut)
-                }
+            If ##class(ClaimAudit.FHIR.Utils).GetTaskByClaimId(tService, tClaimId, .tTaskJson, .tTaskId) {
+                Set tTaskJson.status = "cancelled"
+                Set tTaskJson.owner = {"reference": ("Practitioner/auditor"), "display": (tAuthorizedBy)}
+                Do ##class(ClaimAudit.FHIR.Utils).UpdateResource(tService, tTaskJson, "Task")
             }
         }
         Write {"status": "success", "authorizedBy": (tAuthorizedBy)}.%ToJSON()
@@ -1225,17 +1111,10 @@ ClassMethod ReauditClaim(id As %String) As %Status
         Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/fhir/r4")
 
         // Read ClaimResponse
-        Set tReq = ##class(HS.FHIRServer.API.Data.Request).%New()
-        Set tReq.RequestMethod = "GET"
-        Set tReq.RequestPath = "/ClaimResponse/" _ id
-        Set tReq.Interaction = "read"
-        Set tResp = ##class(HS.FHIRServer.API.Data.Response).%New()
-        Do tService.DispatchRequest(tReq, .tResp)
-        If '$IsObject(tResp.Json) {
+        If '##class(ClaimAudit.FHIR.Utils).ReadResource(tService, "ClaimResponse", id, .tCRJson) {
             Write {"error": "Claim not found"}.%ToJSON()
             Quit
         }
-        Set tCRJson = tResp.Json
 
         // Extract claim details for Engine
         Set tPatientId = $Piece(tCRJson.patient.reference, "/", 2)
@@ -1369,7 +1248,7 @@ ClassMethod ReauditClaim(id As %String) As %Status
         If $IsObject(tCRJson.extension) {
             Set tExtIter = tCRJson.extension.%GetIterator()
             While tExtIter.%GetNext(.tK, .tExt) {
-                If (tExt.url = "https://claimauditai.com/fhir/extension/tier-results") ||
+                If (tExt.url = "https://claimauditai.com/fhir/extension/tier-results") !
                    (tExt.url = "https://claimauditai.com/fhir/extension/risk-score") {
                     Continue
                 }
@@ -1403,14 +1282,8 @@ ClassMethod ReauditClaim(id As %String) As %Status
         } Catch {}
         If tDisposition '= "" Set tCRJson.disposition = tDisposition
 
-        // PUT updated ClaimResponse
-        Set tPutReq = ##class(HS.FHIRServer.API.Data.Request).%New()
-        Set tPutReq.RequestMethod = "PUT"
-        Set tPutReq.RequestPath = "/ClaimResponse/" _ id
-        Set tPutReq.Interaction = "update"
-        Set tPutReq.Json = tCRJson
-        Set tPutResp = ##class(HS.FHIRServer.API.Data.Response).%New()
-        Do tService.DispatchRequest(tPutReq, .tPutResp)
+        // PUT updated ClaimResponse with proper resourceType + meta.lastUpdated
+        Do ##class(ClaimAudit.FHIR.Utils).UpdateResource(tService, tCRJson, "ClaimResponse")
 
         Write {
             "reaudited": true,
@@ -1432,19 +1305,12 @@ ClassMethod GenerateDetailedReport(id As %String) As %Status
     Set tSC = $$$OK
     Try {
         Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/fhir/r4")
-        Set tRequest = ##class(HS.FHIRServer.API.Data.Request).%New()
-        Set tRequest.RequestMethod = "GET"
-        Set tRequest.RequestPath = "/ClaimResponse/" _ id
-        Set tRequest.Interaction = "read"
-        Set tResponse = ##class(HS.FHIRServer.API.Data.Response).%New()
-        Do tService.DispatchRequest(tRequest, .tResponse)
 
-        If '$IsObject(tResponse.Json) {
+        If '##class(ClaimAudit.FHIR.Utils).ReadResource(tService, "ClaimResponse", id, .tCRJson) {
             Set %response.Status = 404
             Write {"error": "ClaimResponse not found"}.%ToJSON()
             Quit
         }
-        Set tCRJson = tResponse.Json
         Set tDisposition = tCRJson.disposition
 
         // If report is already complete, return it
@@ -1582,13 +1448,7 @@ ClassMethod GenerateDetailedReport(id As %String) As %Status
             }
             Set tCRJson.extension = tNewExtensions
 
-            Set tUpdateReq = ##class(HS.FHIRServer.API.Data.Request).%New()
-            Set tUpdateReq.RequestMethod = "PUT"
-            Set tUpdateReq.RequestPath = "/ClaimResponse/" _ id
-            Set tUpdateReq.Interaction = "update"
-            Set tUpdateReq.Json = tCRJson
-            Set tUpdateResp = ##class(HS.FHIRServer.API.Data.Response).%New()
-            Do tService.DispatchRequest(tUpdateReq, .tUpdateResp)
+            Do ##class(ClaimAudit.FHIR.Utils).UpdateResource(tService, tCRJson, "ClaimResponse")
         }
 
         Write {"status": "complete", "disposition": (tDisposition)}.%ToJSON()
@@ -1642,30 +1502,28 @@ ClassMethod GetStats() As %Status
             Set tValueHeld = +tValueRS.%Get("totalValue")
         }
 
-        // Risk distribution from actual risk scores (consistent with GetHeldClaims)
-        // Read the risk-score extension from each held ClaimResponse and classify
-        Set tCrit = 0
-        Set tHigh = 0
-        Set tMed = 0
-        Set tTier1Count = 0
-        Set tTier2Count = 0
-        Set tTier3Count = 0
-        Set tHeldRS = ##class(%SQL.Statement).%ExecDirect(,
-        "SELECT Key FROM HSFHIR_X0001_S.ClaimResponse WHERE outcome = ?", "queued")
-        Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/fhir/r4")
-        While tHeldRS.%Next() {
-            Set tCRKey = tHeldRS.%Get("Key")
-            Set tCRId = $Piece(tCRKey, "/", 2)
-            Try {
-                Set tReq = ##class(HS.FHIRServer.API.Data.Request).%New()
-                Set tReq.RequestMethod = "GET"
-                Set tReq.RequestPath = "/ClaimResponse/" _ tCRId
-                Set tReq.Interaction = "read"
-                Set tResp = ##class(HS.FHIRServer.API.Data.Response).%New()
-                Do tService.DispatchRequest(tReq, .tResp)
-                If $IsObject(tResp.Json) {
-                    If $IsObject(tResp.Json.extension) {
-                        Set tExtIter = tResp.Json.extension.%GetIterator()
+        // Risk distribution from stats cache (written during adjudication in Engine.cls)
+        // Falls back to N+1 FHIR reads if cache is empty (e.g., after clear)
+        Set tCrit = +$Get(^ClaimAuditAI("Stats", "crit"))
+        Set tHigh = +$Get(^ClaimAuditAI("Stats", "high"))
+        Set tMed = +$Get(^ClaimAuditAI("Stats", "med"))
+        Set tTier1Count = +$Get(^ClaimAuditAI("Stats", "tier1"))
+        Set tTier2Count = +$Get(^ClaimAuditAI("Stats", "tier2"))
+        Set tTier3Count = +$Get(^ClaimAuditAI("Stats", "tier3"))
+
+        If '$Get(^ClaimAuditAI("Stats")) {
+            // Cache miss — fall back to N+1 FHIR reads
+            Set tCrit = 0 Set tHigh = 0 Set tMed = 0
+            Set tTier1Count = 0 Set tTier2Count = 0 Set tTier3Count = 0
+            Set tHeldRS = ##class(%SQL.Statement).%ExecDirect(,
+            "SELECT Key FROM HSFHIR_X0001_S.ClaimResponse WHERE outcome = ?", "queued")
+            Set tService = ##class(HS.FHIRServer.Service).EnsureInstance("/fhir/r4")
+            While tHeldRS.%Next() {
+                Set tCRKey = tHeldRS.%Get("Key")
+                Set tCRId = $Piece(tCRKey, "/", 2)
+                If ##class(ClaimAudit.FHIR.Utils).ReadResource(tService, "ClaimResponse", tCRId, .tCRJson) {
+                    If $IsObject(tCRJson.extension) {
+                        Set tExtIter = tCRJson.extension.%GetIterator()
                         While tExtIter.%GetNext(.tK, .tExt) {
                             If tExt.url = "https://claimauditai.com/fhir/extension/risk-score" {
                                 Set tScore = +tExt.valueDecimal
@@ -1681,9 +1539,7 @@ ClassMethod GetStats() As %Status
                                             Set tTierObj = tTierJSON.%Get(tIdx)
                                             If $IsObject(tTierObj) {
                                                 Set tTierNum = +tTierObj.tier
-                                                Set tFlagged = 0
-                                                If $IsObject(tTierObj.flags) && (tTierObj.flags.%Size() > 0) Set tFlagged = 1
-                                                
+                                                Set tFlagged = $IsObject(tTierObj.flags) && (tTierObj.flags.%Size() > 0)
                                                 If tFlagged {
                                                     If tTierNum = 1 Set tTier1Count = tTier1Count + 1
                                                     If tTierNum = 2 Set tTier2Count = tTier2Count + 1
@@ -1697,7 +1553,7 @@ ClassMethod GetStats() As %Status
                         }
                     }
                 }
-            } Catch {}
+            }
         }
 
         Set tRiskDist = []
@@ -1928,7 +1784,8 @@ ClassMethod LoadSampleData() As %Status
         Set ^ClaimAuditAI("Seeding") = 1
         // Ensure database tables and indices exist
         Do ##class(ClaimAudit.AI.Engine).Setup(1)
-        // 1. Wipe existing tables for a clean state
+        // 1. Wipe existing tables for a clean state (wrapped in TSTART/TCOMMIT for atomicity)
+        TSTART
         Do ##class(%SQL.Statement).%ExecDirect(, "DELETE FROM HSFHIR_X0001_S.ClaimResponse")
         Do ##class(%SQL.Statement).%ExecDirect(, "DELETE FROM HSFHIR_X0001_S.Claim")
         Do ##class(%SQL.Statement).%ExecDirect(, "DELETE FROM HSFHIR_X0001_S.Patient")
@@ -2069,10 +1926,12 @@ ClassMethod LoadSampleData() As %Status
         }
 
         Kill ^ClaimAuditAI("Seeding")
+        TCOMMIT
         Set tMsg = "Successfully ingested " _ tCount _ " FHIR Claims and parsed 8 Patient profiles."
         Write {"status": "success", "message": (tMsg)}.%ToJSON()
     } Catch ex {
         Kill ^ClaimAuditAI("Seeding")
+        TROLLBACK
         Set tSC = ex.AsStatus()
         Write {"error": (ex.DisplayString())}.%ToJSON()
     }
@@ -2319,6 +2178,12 @@ ClassMethod ClearAllData() As %Status
         Do ##class(%SQL.Statement).%ExecDirect(, "DELETE FROM ClaimAudit.ProviderProjections")
         Do ##class(%SQL.Statement).%ExecDirect(, "DELETE FROM ClaimAudit.ClaimProjections")
 
+        // Clear stats cache so dashboard shows accurate counts after re-seed
+        Kill ^ClaimAuditAI("Stats")
+
+        // Clear audit queue and dead letter queue
+        Do ##class(ClaimAudit.Data.Queue).Clear()
+
         // Invalidate Python graph cache so the UI doesn't show stale nodes from deleted data
         Try {
             Do ##class(ClaimAudit.AI.Engine).ConfigurePythonPath()
@@ -2329,9 +2194,55 @@ ClassMethod ClearAllData() As %Status
         // Clear persistent graph globals (^ClaimAuditGraph) to prevent orphaned growth
         Try { Do ##class(ClaimAudit.Data.GraphStore).ClearAll() } Catch {}
 
-        Do ..AdminLog("clear", "All FHIR data cleared — 10 tables deleted.")
+        Do ..AdminLog("clear", "All FHIR data cleared — 10 tables deleted, queue and stats reset.")
 
         Write {"success": true, "message": "All FHIR test data cleared."}.%ToJSON()
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+        Write {"error": (ex.DisplayString())}.%ToJSON()
+    }
+    Quit tSC
+}
+
+/// List dead letter queue items
+ClassMethod GetDeadLetterQueue() As %Status
+{
+    If '##class(ClaimAudit.REST.Auth).RequireAuth("Admin") Quit $$$OK
+    Set tSC = $$$OK
+    Try {
+        Set tRS = ##class(%SQL.Statement).%ExecDirect(,
+            "SELECT ID, ClaimResponseId, CreatedAt, ErrorDetails, RetryCount FROM ClaimAudit_Data.Queue WHERE Status = 'dead-letter' ORDER BY CreatedAt DESC")
+        Set tArr = ##class(%DynamicArray).%New()
+        While tRS.%Next() {
+            Do tArr.%Push({
+                "id": (tRS.%Get("ID")),
+                "claimResponseId": (tRS.%Get("ClaimResponseId")),
+                "createdAt": (tRS.%Get("CreatedAt")),
+                "error": (tRS.%Get("ErrorDetails")),
+                "retryCount": (+tRS.%Get("RetryCount"))
+            })
+        }
+        Write {"data": (tArr), "total": (tArr.%Size())}.%ToJSON()
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+        Write {"error": (ex.DisplayString())}.%ToJSON()
+    }
+    Quit tSC
+}
+
+/// Requeue a dead-letter item for reprocessing
+ClassMethod RequeueDeadLetter(id As %String) As %Status
+{
+    If '##class(ClaimAudit.REST.Auth).RequireAuth("Admin") Quit $$$OK
+    Set tSC = $$$OK
+    Try {
+        Set tSC = ##class(ClaimAudit.Data.Queue).RequeueFromDeadLetter(id)
+        If $$$ISERR(tSC) {
+            Set %response.Status = 400
+            Write {"error": ($system.Status.GetErrorText(tSC))}.%ToJSON()
+            Quit
+        }
+        Write {"status": "success", "id": (id)}.%ToJSON()
     } Catch ex {
         Set tSC = ex.AsStatus()
         Write {"error": (ex.DisplayString())}.%ToJSON()
@@ -2671,7 +2582,9 @@ ClassMethod CreateUser() As %Status
             Quit
         }
 
-        Set ^ClaimAuditAI("Users", tUsername, "hash") = $SYSTEM.Encryption.HMACSHA(256, tPassword, "ClaimAuditAI_Salt")
+        Do ##class(ClaimAudit.AI.Engine).ConfigurePythonPath()
+        Set tPyAuth = ##class(%SYS.Python).Import("auth_utils")
+        Set ^ClaimAuditAI("Users", tUsername, "hash") = tPyAuth."hash_password"(tPassword)
         Set ^ClaimAuditAI("Users", tUsername, "fullName") = tFullName
         If tFullName = "" Set ^ClaimAuditAI("Users", tUsername, "fullName") = tUsername
         If $IsObject(tRoles) {
@@ -2724,7 +2637,9 @@ ClassMethod UpdateUser(username As %String) As %Status
         Set tBody = ##class(%DynamicObject).%FromJSON(tBodyStr)
 
         If tBody.password '= "" {
-            Set ^ClaimAuditAI("Users", username, "hash") = $SYSTEM.Encryption.HMACSHA(256, tBody.password, "ClaimAuditAI_Salt")
+            Do ##class(ClaimAudit.AI.Engine).ConfigurePythonPath()
+            Set tPyAuth = ##class(%SYS.Python).Import("auth_utils")
+            Set ^ClaimAuditAI("Users", username, "hash") = tPyAuth."hash_password"(tBody.password)
         }
         If tBody.fullName '= "" {
             Set ^ClaimAuditAI("Users", username, "fullName") = tBody.fullName

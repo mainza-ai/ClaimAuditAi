@@ -71,5 +71,17 @@ Query ListDeadLetter() As %SQLQuery
     ORDER BY CreatedAt DESC
 }
 
+/// Clear all queue items (pending, processing, and dead-letter).
+ClassMethod Clear() As %Status
+{
+    Set tSC = $$$OK
+    Try {
+        Do ..%DeleteExtent()
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+    }
+    Quit tSC
+}
+
 }
 
