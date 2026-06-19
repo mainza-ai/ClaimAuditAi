@@ -1,9 +1,19 @@
 import sys
 import os
+import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import agent_orchestrator
+import llm_router
+
+@pytest.fixture(autouse=True)
+def mock_settings_and_env(monkeypatch):
+    def mock_generate(*args, **kwargs):
+        raise RuntimeError("Mocked offline LLM")
+    monkeypatch.setattr(llm_router, "_load_env", lambda: None)
+    monkeypatch.setattr(llm_router, "_load_settings", lambda: {})
+    monkeypatch.setattr(llm_router, "generate", mock_generate)
 
 
 class TestSanitize:

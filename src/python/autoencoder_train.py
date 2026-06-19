@@ -294,7 +294,8 @@ def _get_cached_model():
         percentile_threshold = float(stats["threshold"]) if "threshold" in stats else 0.02
         threshold = max(percentile_threshold, 0.02)
 
-        model = ClaimAutoencoder(input_dim=8)
+        dim = len(means) if "means" in stats else 8
+        model = ClaimAutoencoder(input_dim=dim)
         model.load_state_dict(torch.load(MODEL_PATH, weights_only=True))
         model.eval()
 
@@ -338,7 +339,14 @@ def evaluate_claim_anomaly(billed_amount: float, item_count: float, specialty_co
         stds = cache["stds"]
         threshold = cache["threshold"]
 
+        dim = len(means)
         claim_features = np.array([[billed_amount, item_count, specialty_code, patient_age, duration_days, code_count, service_month, provider_busyness]], dtype=np.float32)
+        if claim_features.shape[1] > dim:
+            claim_features = claim_features[:, :dim]
+        elif claim_features.shape[1] < dim:
+            padding = np.zeros((1, dim - claim_features.shape[1]), dtype=np.float32)
+            claim_features = np.hstack((claim_features, padding))
+            
         normalized = normalize_features(claim_features, means, stds)
         tensor_claim = torch.tensor(normalized, dtype=torch.float32)
 

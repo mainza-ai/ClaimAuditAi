@@ -9,7 +9,13 @@ import llm_router
 
 @pytest.fixture(autouse=True)
 def mock_settings_and_env(monkeypatch, request):
-    if request.cls and request.cls.__name__ != "TestLoadSettings":
+    if request.cls and request.cls.__name__ not in ("TestLoadSettings", "TestGetClientAndModel"):
+        def mock_create_client(provider, settings):
+            raise ValueError("Mocked offline client")
+        monkeypatch.setattr(llm_router, "_load_env", lambda: None)
+        monkeypatch.setattr(llm_router, "_load_settings", lambda: {})
+        monkeypatch.setattr(llm_router, "_create_client", mock_create_client)
+    elif request.cls and request.cls.__name__ == "TestGetClientAndModel":
         monkeypatch.setattr(llm_router, "_load_env", lambda: None)
         monkeypatch.setattr(llm_router, "_load_settings", lambda: {})
 
