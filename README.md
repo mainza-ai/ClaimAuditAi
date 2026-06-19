@@ -47,6 +47,8 @@ Learn more about the business motivation and technical architecture of ClaimAudi
 - **Direct Stats FHIR Extension Extraction:** Dashboard statistics are calculated by parsing the structured `tier-results` FHIR extension directly from `ClaimResponse` resources instead of relying on brittle disposition text substrings.
 - **Comprehensive Patient & Provider Cards:** Exposes provider names, addresses, and patient details retrieved from SQL projections and raw FHIR resources on the auditor review pages.
 - **Model Context Protocol (MCP) Terminology Server:** Exposes standard FastMCP-compliant tools for CPT and ICD-10 medical code lookups and diagnosis-procedure validation.
+- **Explainable AI (XAI) Resource Citations:** Flagged results trace back dynamically to specific source FHIR resource IDs (e.g., `Patient/claimaudit-pat`, `DocumentReference/claimaudit-docref1`, or `Claim/claimaudit-claim1`), providing auditable trace evidence for human reviewers.
+- **FHIR SQL Builder Projections:** Maps complex, nested FHIR JSON resource models into flat, relational SQL tables (e.g., `FHIRSQL.Claim` and `FHIRSQL.ClaimResponse`) under the `FHIRSQL` schema, using pre-configured mappings (`fhirsql/projections.json`) and a dedicated ObjectScript helper (`ClaimAudit.FHIR.SQLBuilderHelper`).
 
 ---
 
@@ -124,6 +126,17 @@ To support real-time clinical code resolution and validation, ClaimAuditAI expos
 The MCP server is implemented in [mcp_server.py](src/python/mcp_server.py) and delegates to [dx_procedure_validator.py](src/python/dx_procedure_validator.py), which maintains 13 ICD-10 chapter → CPT range validation rules (e.g., `F` prefix → psychiatric codes 90791–90899) and flags unsupported code combinations as potential upcoding.
 
 The MCP server runs inside the `claimaudit-iris` Docker container, allowing seamless tool discovery and integration.
+
+### 5. FHIR SQL Builder Projections
+To enable high-performance relational queries across complex, nested FHIR JSON resource models, ClaimAuditAI integrates with the native InterSystems FHIR SQL Builder:
+- **Projection Schema**: Maps resources to flat tables like `FHIRSQL.Claim` and `FHIRSQL.ClaimResponse` under the `FHIRSQL` schema.
+- **`projections.json`**: Pre-configured mapping definitions in [projections.json](fhirsql/projections.json) can be imported directly into the Management Portal to instantiate projections.
+- **SQL Helper Class**: [SQLBuilderHelper.cls](src/cls/ClaimAudit/FHIR/SQLBuilderHelper.cls) exposes registered methods to check projection table existence (`CheckProjectedTablesExist()`), retrieve claims (`QuerySQLBuilderClaim()`), and compute statistical indices (`GetProjectionStats()`).
+
+### 6. Explainable AI (XAI) Citations
+For auditing accountability, the ReAct agent graph and three-tier engines generate explicit trace citations for all pended findings:
+- **Citations Array**: Every response payload gathers target resource identifiers (`Patient/<id>`, `DocumentReference/<id>`, `Claim/<id>`) in a top-level `"citations"` array.
+- **Traceability**: If Tier 1 flags a CPT code because it lacks semantic notes alignment, the citation traces back to the specific `DocumentReference` containing the progress notes. If Tier 3 flags a collusion ring, it cites all the linked steering `Claim` resources. These citations are attached as custom FHIR extensions to the pended `ClaimResponse` resource, allowing auditors to inspect raw evidentiary source records.
 
 ---
 
