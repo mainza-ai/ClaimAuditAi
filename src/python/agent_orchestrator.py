@@ -187,10 +187,7 @@ CRITICAL: Do NOT use any emojis or characters outside the Basic Multilingual Pla
         import asyncio
         import agent_graph
         try:
-            logger.info("Starting Pydantic Graph FSM execution loop.")
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            result = loop.run_until_complete(
+            result = asyncio.run(
                 agent_graph.execute_graph_audit(
                     patient_id=patient_id,
                     provider_npi=provider_npi,
@@ -206,7 +203,6 @@ CRITICAL: Do NOT use any emojis or characters outside the Basic Multilingual Pla
                     claim_id=claim_id
                 )
             )
-            loop.close()
             return result
         except Exception as e:
             logger.error(f"Pydantic Graph FSM failed: {str(e)}. Running deterministic fallback.")

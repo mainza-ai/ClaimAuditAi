@@ -106,6 +106,8 @@ Method AuditSingleClaim(pClaimJson As %DynamicObject, pIndex As %String = "singl
 /// Intercept requests AFTER they have been processed by the storage engine
 Method OnAfterRequest(pFHIRService As HS.FHIRServer.API.Service, pFHIRRequest As HS.FHIRServer.API.Data.Request, pFHIRResponse As HS.FHIRServer.API.Data.Response, pTimeout As %Integer)
 {
+    Set ^ClaimAuditDebugOnAfterRequest($ZTS, "user") = $Username
+    Set ^ClaimAuditDebugOnAfterRequest($ZTS, "roles") = $Roles
     // Execute standard post-processing
     Do ##super(pFHIRService, pFHIRRequest, pFHIRResponse)
     

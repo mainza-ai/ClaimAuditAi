@@ -497,31 +497,59 @@ ClassMethod WorkerLoop()
                 "SELECT ID, ClaimResponseId, RetryCount, MaxRetries FROM ClaimAudit_Data.Queue WHERE Status = 'pending' ORDER BY CreatedAt ASC")
             If tRS.%Next() {
                 Set tQueueId = tRS.%Get("ID")
-                Set tCRId = tRS.%Get("ClaimResponseId")
-                Set tRetryCount = +tRS.%Get("RetryCount")
-                Set tMaxRetries = +tRS.%Get("MaxRetries")
-                If tMaxRetries < 1 Set tMaxRetries = 3
                 
-                Do ##class(%SQL.Statement).%ExecDirect(,
-                    "UPDATE ClaimAudit_Data.Queue SET Status = 'processing' WHERE ID = ?", tQueueId)
-                    
-                Set tErrorMsg = ""
-                Set tSC = ..ExecuteAdjudication(tCRId, .tErrorMsg)
-                
-                Set tProcessedAt = $Translate($ZDateTime($ZTIMESTAMP, 3, 1), " ", "T") _ "Z"
-                If $$$ISOK(tSC) {
-                    Do ##class(%SQL.Statement).%ExecDirect(,
-                        "UPDATE ClaimAudit_Data.Queue SET Status = 'completed', ProcessedAt = ? WHERE ID = ?",
-                        tProcessedAt, tQueueId)
-                } Else {
-                    Set tNewRetryCount = tRetryCount + 1
-                    If tNewRetryCount >= tMaxRetries {
-                        // Exhausted retries — move to dead letter queue
-                        Do ##class(ClaimAudit.Data.Queue).MoveToDeadLetter(tQueueId, tErrorMsg)
+                // Lock the specific queue item to prevent double-worker processing
+                Lock +^ClaimAuditAI("QueueProcessLock", tQueueId):2
+                If $Test {
+                    // Double check status inside lock
+                    Set tCheck = ##class(ClaimAudit.Data.Queue).%OpenId(tQueueId)
+                    If $IsObject(tCheck) && (tCheck.Status = "pending") {
+                        Set tCRId = tRS.%Get("ClaimResponseId")
+                        Set tRetryCount = +tRS.%Get("RetryCount")
+                        Set tMaxRetries = +tRS.%Get("MaxRetries")
+                        If tMaxRetries < 1 Set tMaxRetries = 3
+                        
+                        TSTART
+                        Set tCheck.Status = "processing"
+                        Set tSC = tCheck.%Save()
+                        If $$$ISOK(tSC) {
+                            TCOMMIT
+                            Lock -^ClaimAuditAI("QueueProcessLock", tQueueId)
+                            
+                            Set tErrorMsg = ""
+                            Set tSCAdjudicate = ..ExecuteAdjudication(tCRId, .tErrorMsg)
+                            
+                            Set tProcessedAt = $Translate($ZDateTime($ZTIMESTAMP, 3, 1), " ", "T") _ "Z"
+                            TSTART
+                            Set tQueueObj = ##class(ClaimAudit.Data.Queue).%OpenId(tQueueId)
+                            If $IsObject(tQueueObj) {
+                                If $$$ISOK(tSCAdjudicate) {
+                                    Set tQueueObj.Status = "completed"
+                                    Set tQueueObj.ProcessedAt = tProcessedAt
+                                    Do tQueueObj.%Save()
+                                } Else {
+                                    Set tNewRetryCount = tRetryCount + 1
+                                    If tNewRetryCount >= tMaxRetries {
+                                        Set tQueueObj.Status = "dead-letter"
+                                        Set tQueueObj.ErrorDetails = tErrorMsg
+                                        Set tQueueObj.ProcessedAt = tProcessedAt
+                                        Do tQueueObj.%Save()
+                                    } Else {
+                                        Set tQueueObj.Status = "failed"
+                                        Set tQueueObj.ProcessedAt = tProcessedAt
+                                        Set tQueueObj.ErrorDetails = tErrorMsg
+                                        Set tQueueObj.RetryCount = tNewRetryCount
+                                        Do tQueueObj.%Save()
+                                    }
+                                }
+                            }
+                            TCOMMIT
+                        } Else {
+                            TROLLBACK
+                            Lock -^ClaimAuditAI("QueueProcessLock", tQueueId)
+                        }
                     } Else {
-                        Do ##class(%SQL.Statement).%ExecDirect(,
-                            "UPDATE ClaimAudit_Data.Queue SET Status = 'failed', ProcessedAt = ?, ErrorDetails = ?, RetryCount = ? WHERE ID = ?",
-                            tProcessedAt, tErrorMsg, tNewRetryCount, tQueueId)
+                        Lock -^ClaimAuditAI("QueueProcessLock", tQueueId)
                     }
                 }
             }

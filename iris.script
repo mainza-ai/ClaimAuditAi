@@ -95,23 +95,7 @@
 
     zn "INTEROP"
 
-    // Store credential hashes + roles in INTEROP globals — CSP runs as UnknownUser without %SYS access
-    Set tSalt = "ClaimAuditAI_Salt"
-    Set ^ClaimAuditAI("Users","admin","hash") = $SYSTEM.Encryption.HMACSHA(256, "ClaimAuditAdmin2026!", tSalt)
-    Set ^ClaimAuditAI("Users","admin","fullName") = "ClaimAuditAI Admin"
-    Set ^ClaimAuditAI("Users","admin","roles","Admin") = ""
-    Set ^ClaimAuditAI("Users","auditor","hash") = $SYSTEM.Encryption.HMACSHA(256, "AuditReview2026!", tSalt)
-    Set ^ClaimAuditAI("Users","auditor","fullName") = "ClaimAuditAI Auditor"
-    Set ^ClaimAuditAI("Users","auditor","roles","Auditor") = ""
-    Set ^ClaimAuditAI("Users","viewer","hash") = $SYSTEM.Encryption.HMACSHA(256, "ViewDash2026!", tSalt)
-    Set ^ClaimAuditAI("Users","viewer","fullName") = "ClaimAuditAI Viewer"
-    Set ^ClaimAuditAI("Users","viewer","roles","Viewer") = ""
-    Set ^ClaimAuditAI("Users","specialist","hash") = $SYSTEM.Encryption.HMACSHA(256, "ReviewSpec2026!", tSalt)
-    Set ^ClaimAuditAI("Users","specialist","fullName") = "ClaimAuditAI Specialist"
-    Set ^ClaimAuditAI("Users","specialist","roles","Specialist") = ""
-    Set ^ClaimAuditAI("Users","director","hash") = $SYSTEM.Encryption.HMACSHA(256, "DirectorAudit2026!", tSalt)
-    Set ^ClaimAuditAI("Users","director","fullName") = "ClaimAuditAI Director"
-    Set ^ClaimAuditAI("Users","director","roles","Director") = ""
+    // Default users will be initialized with secure PBKDF2 hashes after classes are compiled below.
 
     // Create /_vscode web app to support VS Code extension testing
     zpm "install vscode-per-namespace-settings"
@@ -139,9 +123,28 @@ do $SYSTEM.OBJ.LoadDir("/home/irisowner/dev/src/cls", "ckr", , 1)
 do ##class(ClaimAudit.Debug).GrantRolesToUnknownUser()
 do ##class(ClaimAudit.AI.Engine).Setup()
 
+// Configure Python path and import auth_utils to hash default user passwords via PBKDF2
+do ##class(ClaimAudit.AI.Engine).ConfigurePythonPath()
+Set tPy = ##class(%SYS.Python).Import("auth_utils")
+Set ^ClaimAuditAI("Users","admin","hash") = tPy."hash_password"("ClaimAuditAdmin2026!")
+Set ^ClaimAuditAI("Users","admin","fullName") = "ClaimAuditAI Admin"
+Set ^ClaimAuditAI("Users","admin","roles","Admin") = ""
+Set ^ClaimAuditAI("Users","auditor","hash") = tPy."hash_password"("AuditReview2026!")
+Set ^ClaimAuditAI("Users","auditor","fullName") = "ClaimAuditAI Auditor"
+Set ^ClaimAuditAI("Users","auditor","roles","Auditor") = ""
+Set ^ClaimAuditAI("Users","viewer","hash") = tPy."hash_password"("ViewDash2026!")
+Set ^ClaimAuditAI("Users","viewer","fullName") = "ClaimAuditAI Viewer"
+Set ^ClaimAuditAI("Users","viewer","roles","Viewer") = ""
+Set ^ClaimAuditAI("Users","specialist","hash") = tPy."hash_password"("ReviewSpec2026!")
+Set ^ClaimAuditAI("Users","specialist","fullName") = "ClaimAuditAI Specialist"
+Set ^ClaimAuditAI("Users","specialist","roles","Specialist") = ""
+Set ^ClaimAuditAI("Users","director","hash") = tPy."hash_password"("DirectorAudit2026!")
+Set ^ClaimAuditAI("Users","director","fullName") = "ClaimAuditAI Director"
+Set ^ClaimAuditAI("Users","director","roles","Director") = ""
+
 // Register the REST Web Application
 zn "%SYS"
-set name="/api", p("DispatchClass")="ClaimAudit.REST.Router", p("NameSpace")="INTEROP", p("AutheEnabled")=96, p("Recurse")=1, p("MatchRoles")=":%DB_INTEROP-CODE:%DB_INTEROP-DATA:%Admin_Secure"
+set name="/api", p("DispatchClass")="ClaimAudit.REST.Router", p("NameSpace")="INTEROP", p("AutheEnabled")=96, p("Recurse")=1, p("MatchRoles")=":%DB_INTEROP-CODE:%DB_INTEROP-DATA:%Admin_Secure:%DB_INTEROPX0001R:%DB_INTEROPX0001V"
 if '##class(Security.Applications).Exists(name) {
     do ##class(Security.Applications).Create(name, .p)
     write "/api web app created", !

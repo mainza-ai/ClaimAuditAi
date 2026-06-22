@@ -17,8 +17,11 @@ _cache_lock = __import__('threading').Lock()
 _request_timestamps = []
 _request_lock = __import__('threading').Lock()
 
+from collections import OrderedDict
+
 # Thread-safe LLM response cache
-_response_cache = {}
+MAX_CACHE_SIZE = 500
+_response_cache = OrderedDict()
 _response_cache_lock = __import__('threading').Lock()
 
 RETRY_COUNT = 3
@@ -206,6 +209,7 @@ def chat(system_prompt: str, messages_json: str, max_tokens: int = 1024, timeout
                 cached_data = _response_cache[cache_key]
                 if time.time() - cached_data["timestamp"] < cache_ttl:
                     logger.info("LLM cache hit.")
+                    _response_cache.move_to_end(cache_key)
                     return cached_data["response"]
                 else:
                     del _response_cache[cache_key]
@@ -293,6 +297,8 @@ def chat(system_prompt: str, messages_json: str, max_tokens: int = 1024, timeout
                         "response": content,
                         "timestamp": time.time()
                     }
+                    if len(_response_cache) > MAX_CACHE_SIZE:
+                        _response_cache.popitem(last=False)
                 return content
             except Exception as e:
                 last_error = e

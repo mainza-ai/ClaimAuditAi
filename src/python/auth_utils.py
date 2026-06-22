@@ -75,7 +75,7 @@ def verify_password(stored, password):
             key = hashlib.pbkdf2_hmac(
                 "sha256", pwd_bytes, stored_salt, iterations, dklen=HASH_LENGTH
             )
-            return key == stored_hash
+            return _hmac.compare_digest(key, stored_hash)
         except Exception:
             return False
 

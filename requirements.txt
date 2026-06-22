@@ -3,10 +3,10 @@ sentence-transformers==2.7.0
 openai==2.41.0
 numpy==1.26.4
 scipy==1.17.1
-httpx>=0.28.1
+httpx==0.28.1
 pytest==8.0.0
 pytest-cov==5.0.0
-mcp>=1.27.2
+mcp==1.27.2
 pydantic-graph==1.107.0
 
 

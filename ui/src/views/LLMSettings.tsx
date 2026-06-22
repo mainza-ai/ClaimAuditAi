@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../api/client';
 import { Save, RefreshCw, CheckCircle, AlertTriangle } from 'lucide-react';
+import { useRoleStore } from '../store/roleStore';
+import { PERMISSIONS } from '../utils/permissions';
 
 type Provider = 'nvidia' | 'ollama' | 'openai' | 'openrouter';
 
@@ -19,6 +21,7 @@ interface LLMSettingsData {
 }
 
 export function LLMSettings() {
+  const { activeRole } = useRoleStore();
   const qc = useQueryClient();
 
   const {
@@ -28,6 +31,7 @@ export function LLMSettings() {
   } = useQuery<LLMSettingsData>({
     queryKey: ['llm-settings'],
     queryFn: () => apiClient.get('/settings/llm').then((r) => r.data),
+    enabled: PERMISSIONS.canManageData(activeRole),
   });
 
   const [provider, setProvider] = useState<Provider>('nvidia');
@@ -46,6 +50,18 @@ export function LLMSettings() {
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
   const [ollamaStatus, setOllamaStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle');
   const [dirty, setDirty] = useState(false);
+
+  if (!PERMISSIONS.canManageData(activeRole)) {
+    return (
+      <div style={{ padding: 40, textAlign: 'center' }}>
+        <AlertTriangle size={32} style={{ color: 'var(--color-warning)', marginBottom: 16 }} />
+        <h2 style={{ color: 'var(--text-primary)', margin: 0 }}>Access Restricted</h2>
+        <p style={{ color: 'var(--text-secondary)', marginTop: 8 }}>
+          LLM settings require Tech Owner / Admin role.
+        </p>
+      </div>
+    );
+  }
 
   useEffect(() => {
     if (settings) {

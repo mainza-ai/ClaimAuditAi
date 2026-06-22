@@ -160,14 +160,57 @@ ClassMethod Login() As %Status
 /// SMART on FHIR token introspection — public (no auth required)
 ClassMethod Introspect() As %Status
 {
+    Set tAuthHeader = %request.GetCgiEnv("HTTP_AUTHORIZATION")
+    If tAuthHeader = "" Set tAuthHeader = %request.GetCgiEnv("Authorization")
+    
+    Set tAuthOK = 0
+    If $Extract(tAuthHeader, 1, 7) = "Bearer " {
+        Set tToken = $Extract(tAuthHeader, 8, *)
+        Set tResult = ##class(ClaimAudit.REST.Auth).ValidateSMARTToken(tToken)
+        If tResult.active {
+            Set tAuthOK = 1
+        }
+    } ElseIf $Extract(tAuthHeader, 1, 6) = "Basic " {
+        Set tEncoded = $Extract(tAuthHeader, 7, *)
+        Set tDecoded = $System.Encryption.Base64Decode(tEncoded)
+        Set tUser = $Piece(tDecoded, ":", 1)
+        Set tPassword = $Piece(tDecoded, ":", 2, *)
+        If (tUser '= "") && (tPassword '= "") {
+            Set tStoredHash = $Get(^ClaimAuditAI("Users", tUser, "hash"))
+            If tStoredHash '= "" {
+                Do ##class(ClaimAudit.AI.Engine).ConfigurePythonPath()
+                Set tPyAuth = ##class(%SYS.Python).Import("auth_utils")
+                Set tAuthOK = tPyAuth."verify_password"(tStoredHash, tPassword)
+            }
+        }
+    }
+    
+    If 'tAuthOK {
+        Set %response.Status = 401
+        Write {"active": false, "error": "Unauthorized"}.%ToJSON()
+        Quit $$$OK
+    }
+
     Set tSC = $$$OK
     Try {
         Set tRaw = %request.Content
         Set tBodyStr = ""
-        While 'tRaw.AtEnd {
-            Set tBodyStr = tBodyStr _ tRaw.Read(32000)
+        If $IsObject(tRaw) {
+            While 'tRaw.AtEnd {
+                Set tBodyStr = tBodyStr _ tRaw.Read(32000)
+            }
+        }
+        If tBodyStr = "" {
+            Set %response.Status = 400
+            Write {"active": false, "error": "empty_body"}.%ToJSON()
+            Quit
         }
         Set tBodyJson = ##class(%DynamicObject).%FromJSON(tBodyStr)
+        If '$IsObject(tBodyJson) {
+            Set %response.Status = 400
+            Write {"active": false, "error": "invalid_json"}.%ToJSON()
+            Quit
+        }
         Set tToken = tBodyJson.token
         If tToken = "" {
             Set %response.Status = 400
@@ -178,7 +221,7 @@ ClassMethod Introspect() As %Status
         Write tResult.%ToJSON()
     } Catch ex {
         Set tSC = ex.AsStatus()
-        Write {"active": false}.%ToJSON()
+        Write {"active": false, "error": (ex.DisplayString())}.%ToJSON()
     }
     Quit tSC
 }
@@ -200,7 +243,7 @@ ClassMethod GetHeldClaims() As %Status
         // Single O(1) query with JOIN — matching the proven CSV export pattern
         // Build SQL as single concatenated string (no line continuations)
         Set tRS = ##class(%SQL.Statement).%ExecDirect(,
-        "SELECT CR.Key, CR.patient, CR.request, CR._lastUpdated, CR.disposition, CR.created, CR.outcome, "_
+        "SELECT CR.Key, CR.patient, CR.request, CR._lastUpdated AS lastUpdated, CR.disposition, CR.created, CR.outcome, "_
         "PP.Name AS patientName "_
         "FROM HSFHIR_X0001_S.ClaimResponse CR "_
         "LEFT JOIN ClaimAudit.PatientProjections PP ON SUBSTRING(CR.patient, 9) = PP.Key "_
@@ -211,7 +254,7 @@ ClassMethod GetHeldClaims() As %Status
         Set tCountRS = ##class(%SQL.Statement).%ExecDirect(,
         "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.ClaimResponse WHERE outcome = ?", "queued")
         Do tCountRS.%Next()
-        Set tTotal = +tCountRS.%Get("cnt")
+        Set tTotal = +tCountRS.cnt
 
         Set tArr = []
         Set tIdx = 0
@@ -220,18 +263,18 @@ ClassMethod GetHeldClaims() As %Status
             If tIdx <= tOffset Continue
             If tArr.%Size() >= tLimit Quit
 
-            Set tCRKey = tRS.%Get("Key")
+            Set tCRKey = tRS.Key
             Set tClaimResponseId = $Piece(tCRKey, "/", 2)
-            Set tPatientRef = tRS.%Get("patient")
+            Set tPatientRef = tRS.patient
             Set tPatientId = $Piece(tPatientRef, "/", 2)
-            Set tRequestRef = tRS.%Get("request")
+            Set tRequestRef = tRS.request
             Set tClaimId = $Piece(tRequestRef, "/", 2)
-            Set tLastUpdated = tRS.%Get("_lastUpdated")
-            Set tDisposition = tRS.%Get("disposition")
+            Set tLastUpdated = tRS.lastUpdated
+            Set tDisposition = tRS.disposition
 
-            Set tOutcome = tRS.%Get("outcome")
+            Set tOutcome = tRS.outcome
 
-            Set tPatientName = tRS.%Get("patientName")
+            Set tPatientName = tRS.patientName
             If tPatientName = "" Set tPatientName = "Unknown Patient"
 
             // Derive provider from Claim reference — default if not found
@@ -241,7 +284,7 @@ ClassMethod GetHeldClaims() As %Status
                     Set tProvRS = ##class(%SQL.Statement).%ExecDirect(,
                     "SELECT provider FROM HSFHIR_X0001_S.Claim WHERE Key = ?", "Claim/" _ tClaimId)
                     If tProvRS.%Next() {
-                        Set tProvRef = tProvRS.%Get("provider")
+                        Set tProvRef = tProvRS.provider
                         Set tProviderId = $Piece(tProvRef, "/", 2)
                         If tProviderId = "" Set tProviderId = "claimaudit-prov"
                     }
@@ -255,7 +298,7 @@ ClassMethod GetHeldClaims() As %Status
                     Set tProvNameRS = ##class(%SQL.Statement).%ExecDirect(,
                     "SELECT Name FROM ClaimAudit.ProviderProjections WHERE NPI = ?", tProviderId)
                     If tProvNameRS.%Next() {
-                        Set tProviderName = tProvNameRS.%Get("Name")
+                        Set tProviderName = tProvNameRS.Name
                     }
                 } Catch {}
             }
@@ -267,7 +310,7 @@ ClassMethod GetHeldClaims() As %Status
                     Set tEscRS = ##class(%SQL.Statement).%ExecDirect(,
                     "SELECT COUNT(*) AS cnt FROM HSFHIR_X0001_S.Task WHERE focus = ? AND priority = ?",
                     tRequestRef, "stat")
-                    If tEscRS.%Next(), (+tEscRS.%Get("cnt") > 0) {
+                    If tEscRS.%Next(), (+tEscRS.cnt > 0) {
                         Set tEscalated = 1
                     }
                 } Catch {}
@@ -278,7 +321,7 @@ ClassMethod GetHeldClaims() As %Status
             Set tIcdCode = "Unknown"
             Set tBilledAmount = 0.0
             
-            Set tCreatedVal = tRS.%Get("created")
+            Set tCreatedVal = tRS.created
             Set tSubmittedAt = tLastUpdated
             If tCreatedVal '= "" Set tSubmittedAt = tCreatedVal
 
@@ -393,7 +436,7 @@ ClassMethod GetCollusionGraph() As %Status
 /// Returns current LLM provider configuration (redacts actual API key values)
 ClassMethod GetLLMSettings() As %Status
 {
-    If '##class(ClaimAudit.REST.Auth).RequireAuth() Quit $$$OK
+    If '##class(ClaimAudit.REST.Auth).RequireAuth("Admin") Quit $$$OK
     Set tSC = $$$OK
     Try {
         Set tSettingsPath = "/home/irisowner/dev/.llm_settings.json"
@@ -1781,17 +1824,19 @@ ClassMethod LoadSampleData() As %Status
     New $Namespace
     Set $Namespace = "INTEROP"
     Try {
+        Set ^ClaimAuditDebugUser($ZTS, "user") = $Username
+        Set ^ClaimAuditDebugUser($ZTS, "roles") = $Roles
         Set ^ClaimAuditAI("Seeding") = 1
         // Ensure database tables and indices exist
         Do ##class(ClaimAudit.AI.Engine).Setup(1)
-        // 1. Wipe existing tables for a clean state (wrapped in TSTART/TCOMMIT for atomicity)
+        // 1. Wipe existing tables for a clean state
+        Try {
+            Set strategy = ##class(HS.FHIRServer.API.InteractionsStrategy).GetStrategyForEndpoint("/fhir/r4")
+            Set options("deleteDataOnly") = 1
+            Do strategy.Delete(.options)
+        } Catch {}
+
         TSTART
-        Do ##class(%SQL.Statement).%ExecDirect(, "DELETE FROM HSFHIR_X0001_S.ClaimResponse")
-        Do ##class(%SQL.Statement).%ExecDirect(, "DELETE FROM HSFHIR_X0001_S.Claim")
-        Do ##class(%SQL.Statement).%ExecDirect(, "DELETE FROM HSFHIR_X0001_S.Patient")
-        Do ##class(%SQL.Statement).%ExecDirect(, "DELETE FROM HSFHIR_X0001_S.DocumentReference")
-        Do ##class(%SQL.Statement).%ExecDirect(, "DELETE FROM HSFHIR_X0001_S.Task")
-        Do ##class(%SQL.Statement).%ExecDirect(, "DELETE FROM HSFHIR_X0001_S.CommunicationRequest")
         Do ##class(%SQL.Statement).%ExecDirect(, "DELETE FROM ClaimAudit.ClinicalNotes")
         Do ##class(%SQL.Statement).%ExecDirect(, "DELETE FROM ClaimAudit.PatientProjections")
         Do ##class(%SQL.Statement).%ExecDirect(, "DELETE FROM ClaimAudit.ProviderProjections")
@@ -2164,15 +2209,15 @@ ClassMethod AdminTest() As %Status
 /// Clear all FHIR test data (ClaimResponse, Task, CommunicationRequest)
 ClassMethod ClearAllData() As %Status
 {
-    If '##class(ClaimAudit.REST.Auth).RequireAuth("Admin") Quit $$$OK
+    If $Get(%request) '= "" {
+        If '##class(ClaimAudit.REST.Auth).RequireAuth("Admin") Quit $$$OK
+    }
     Set tSC = $$$OK
     Try {
-        Do ##class(%SQL.Statement).%ExecDirect(, "DELETE FROM HSFHIR_X0001_S.ClaimResponse")
-        Do ##class(%SQL.Statement).%ExecDirect(, "DELETE FROM HSFHIR_X0001_S.Task")
-        Do ##class(%SQL.Statement).%ExecDirect(, "DELETE FROM HSFHIR_X0001_S.CommunicationRequest")
-        Do ##class(%SQL.Statement).%ExecDirect(, "DELETE FROM HSFHIR_X0001_S.DocumentReference")
-        Do ##class(%SQL.Statement).%ExecDirect(, "DELETE FROM HSFHIR_X0001_S.Claim")
-        Do ##class(%SQL.Statement).%ExecDirect(, "DELETE FROM HSFHIR_X0001_S.Patient")
+        Set strategy = ##class(HS.FHIRServer.API.InteractionsStrategy).GetStrategyForEndpoint("/fhir/r4")
+        Set options("deleteDataOnly") = 1
+        Do strategy.Delete(.options)
+
         Do ##class(%SQL.Statement).%ExecDirect(, "DELETE FROM ClaimAudit.ClinicalNotes")
         Do ##class(%SQL.Statement).%ExecDirect(, "DELETE FROM ClaimAudit.PatientProjections")
         Do ##class(%SQL.Statement).%ExecDirect(, "DELETE FROM ClaimAudit.ProviderProjections")
@@ -2280,16 +2325,16 @@ ClassMethod GetDataStatus() As %Status
         Set tLastSeed = $Get(^ClaimAuditAI("LastSeededAt"), "")
 
         Write {
-            "claimResponses": (tCR.%Get("cnt")),
-            "tasks": (tTask.%Get("cnt")),
-            "claims": (tClaim.%Get("cnt")),
-            "patients": (tPat.%Get("cnt")),
-            "documentReferences": (tDocRef.%Get("cnt")),
-            "communicationRequests": (tComm.%Get("cnt")),
-            "projectionClaims": (tProjCR.%Get("cnt")),
-            "projectionPatients": (tProjPat.%Get("cnt")),
-            "projectionProviders": (tProjProv.%Get("cnt")),
-            "clinicalNotes": (tCN.%Get("cnt")),
+            "claimResponses": (tCR.cnt),
+            "tasks": (tTask.cnt),
+            "claims": (tClaim.cnt),
+            "patients": (tPat.cnt),
+            "documentReferences": (tDocRef.cnt),
+            "communicationRequests": (tComm.cnt),
+            "projectionClaims": (tProjCR.cnt),
+            "projectionPatients": (tProjPat.cnt),
+            "projectionProviders": (tProjProv.cnt),
+            "clinicalNotes": (tCN.cnt),
             "lastSeededAt": (tLastSeed)
         }.%ToJSON()
     } Catch ex {

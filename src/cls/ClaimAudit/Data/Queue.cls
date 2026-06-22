@@ -20,23 +20,46 @@ Index StatusIndex On Status;
 
 ClassMethod Enqueue(pClaimResponseId As %String) As %Status
 {
-    Set tExists = ..ClaimResponseIndexExists(pClaimResponseId)
-    If tExists {
-        Set tId = ..ClaimResponseIndexOpen(pClaimResponseId)
-        If $IsObject(tId) {
-            Set tId.Status = "pending"
-            Set tId.CreatedAt = $Translate($ZDateTime($ZTIMESTAMP, 3, 1), " ", "T") _ "Z"
-            Set tId.ProcessedAt = ""
-            Set tId.ErrorDetails = ""
-            Set tId.RetryCount = 0
-            Quit tId.%Save()
+    Set tSC = $$$OK
+    TSTART
+    Try {
+        Lock +^ClaimAuditAI("QueueLock", pClaimResponseId):10
+        If '$Test {
+            Throw ##class(%Exception.General).%New("LockTimeout", "Could not obtain lock to enqueue claim " _ pClaimResponseId)
         }
+        
+        Set tExists = ..ClaimResponseIndexExists(pClaimResponseId)
+        If tExists {
+            Set tId = ..ClaimResponseIndexOpen(pClaimResponseId)
+            If $IsObject(tId) {
+                Set tId.Status = "pending"
+                Set tId.CreatedAt = $Translate($ZDateTime($ZTIMESTAMP, 3, 1), " ", "T") _ "Z"
+                Set tId.ProcessedAt = ""
+                Set tId.ErrorDetails = ""
+                Set tId.RetryCount = 0
+                Set tSC = tId.%Save()
+            }
+        } Else {
+            Set tQueue = ..%New()
+            Set tQueue.ClaimResponseId = pClaimResponseId
+            Set tQueue.Status = "pending"
+            Set tQueue.CreatedAt = $Translate($ZDateTime($ZTIMESTAMP, 3, 1), " ", "T") _ "Z"
+            Set tSC = tQueue.%Save()
+        }
+        
+        Lock -^ClaimAuditAI("QueueLock", pClaimResponseId)
+        
+        If $$$ISOK(tSC) {
+            TCOMMIT
+        } Else {
+            TROLLBACK
+        }
+    } Catch ex {
+        Lock -^ClaimAuditAI("QueueLock", pClaimResponseId)
+        TROLLBACK
+        Set tSC = ex.AsStatus()
     }
-    Set tQueue = ..%New()
-    Set tQueue.ClaimResponseId = pClaimResponseId
-    Set tQueue.Status = "pending"
-    Set tQueue.CreatedAt = $Translate($ZDateTime($ZTIMESTAMP, 3, 1), " ", "T") _ "Z"
-    Quit tQueue.%Save()
+    Quit tSC
 }
 
 /// Move a failed queue item to dead letter state after exhausting retries
