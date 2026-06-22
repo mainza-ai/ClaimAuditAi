@@ -38,7 +38,7 @@ Because generating detailed LLM summaries synchronously can take 10-25 seconds a
 - **State-based Nodes**: Strictly typed FSM execution nodes with `StepContext[AuditState, None, str]` bindings.
 - **Score Synthesis**: Tier 1 (NLP) +0.35, Tier 2 (Autoencoder) +0.35, Tier 3 (Graph) +0.30, capped at 1.0. Score stored as FHIR ClaimResponse extension.
 - **Threshold Limit**: Combined threat score $\ge 0.35$ triggers a hold status.
-- **Language Models**: Provider-agnostic routing via `llm_router.py` — supports `nvidia`, `ollama`, `openai`, and `openrouter` backends. Uses `openai==2.41.0` library with `httpx>=0.28.1`. RETRY_COUNT=3 with exponential backoff; rate-limit check inside retry loop.
+- **Language Models**: Provider-agnostic routing via `llm_router.py` — supports `nvidia`, `ollama`, `openai`, and `openrouter` backends. Uses `openai==2.41.0` library with `httpx==0.28.1`. RETRY_COUNT=3 with exponential backoff; rate-limit check inside retry loop.
 
 ## Tier Orchestration & Circuit Breaker
 
@@ -56,6 +56,15 @@ A **circuit breaker** protects the system from repeated failures:
 - `CIRCUIT_THRESHOLD = 3` — opens after 3 consecutive failures in a tier
 - `CIRCUIT_RESET_SECONDS = 60` — cooldown before attempting that tier again
 - While open, the tier returns a safe fallback result without calling the analysis engine
+
+## Worker Loop Concurrency Safety
+
+The background `WorkerLoop()` in `Engine.cls` (which polls the queue and runs `ExecuteAdjudication()`) uses database-level concurrency guards:
+
+- **Atomic Transaction Wrappers**: Each queue item's processing lifecycle is wrapped in `TSTART`/`TCOMMIT`. If `ExecuteAdjudication()` fails, `TROLLBACK` reverts status changes.
+- **Process-Level Locks**: A node lock `^ClaimAuditAI("QueueProcessLock", tQueueId)` prevents multiple background workers from processing the same queue item concurrently. Lock acquisition has a 5-second timeout — if it fails, the worker skips that item and moves to the next.
+- **Dead Letter Escalation**: When `RetryCount` reaches `MaxRetries` (default 3), the item is automatically moved to `dead-letter` status instead of remaining in a retry loop. Dead-letter items can be requeued via `POST /system/dead-letter-queue/:id/requeue`.
+- **Stats Cache**: After successful adjudication, the worker writes aggregated statistics to `^ClaimAuditAI("Stats")` for O(1) dashboard reads, eliminating the N+1 FHIR GET pattern.
 
 ## Chat Streaming Architecture
 

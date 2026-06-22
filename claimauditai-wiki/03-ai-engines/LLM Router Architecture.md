@@ -67,11 +67,14 @@ Timestamps from the last 60 seconds are tracked in `_request_timestamps`. If the
 
 ## Response Caching
 
-Non-tool LLM responses (adjudication reports, summaries) are cached in an in-memory dictionary keyed by the full prompt parameters:
+Non-tool LLM responses (adjudication reports, summaries) are cached in a bounded in-memory `OrderedDict` LRU cache keyed by the full prompt parameters:
 
 | Setting | Default | Source |
 |---------|---------|--------|
 | `cacheTTL` | `86400` (24h) | `.llm_settings.json` |
+| `MAX_CACHE_SIZE` | `500` | Hard-coded in `llm_router.py` |
+
+The cache uses a **least-recently-used (LRU) eviction policy**: when the cache exceeds 500 entries, the oldest entry is removed (`popitem(last=False)`). On cache hit, the entry is moved to the end (`move_to_end()`) to preserve recency ordering. This prevents unbounded memory growth under sustained production load.
 
 The cache is invalidated by:
 - `invalidate_llm_cache()` — clears cached responses only

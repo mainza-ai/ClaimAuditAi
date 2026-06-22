@@ -31,16 +31,17 @@ The build process is automated using the `iris.script` manifest, which executes 
 
 ### Credential Hash Storage
 
-During the build phase, `iris.script` creates five users in the `%SYS` namespace (`admin`, `auditor`, `specialist`, `director`, `viewer`) then switches to `INTEROP` and stores HMAC-SHA256 credential hashes + roles in local globals:
+During the build phase, `iris.script` creates five users in the `%SYS` namespace (`admin`, `auditor`, `specialist`, `director`, `viewer`) then switches to `INTEROP` and seeds legacy HMAC-SHA256 credential hashes + roles in local globals:
 
 ```objectscript
 zn "INTEROP"
-Set tSalt = "ClaimAuditAI_Salt"
-Set ^ClaimAuditAI("Users","admin","hash") = $SYSTEM.Encryption.HMACSHA(256, "ClaimAuditAdmin2026!", tSalt)
+Set ^ClaimAuditAI("Users","admin","hash") = $System.Encryption.HMACSHA256("ClaimAuditAdmin2026!")
 Set ^ClaimAuditAI("Users","admin","fullName") = "ClaimAuditAI Admin"
 Set ^ClaimAuditAI("Users","admin","roles","Admin") = ""
 ; ... same for auditor, specialist, director, viewer
 ```
+
+On first login, the `Router.cls:Login()` method detects the HMAC prefix and **automatically upgrades** the stored hash to PBKDF2-SHA256 (100,000 iterations, random salt) via `auth_utils.py`. All subsequent authentications use PBKDF2 verification with timing-safe comparison.
 
 This is critical: the CSP Gateway dispatches REST requests as `UnknownUser` — a user without `%SYS` database access. Storing credentials in INTEROP globals allows the `Login()` method to validate passwords without namespace switching or `%SYS` permissions. See [[Security Users Validate Crash]] for the full architecture.
 

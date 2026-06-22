@@ -11,7 +11,7 @@ To authenticate and obtain a JWT token, use the `/api/auth/login` public endpoin
 - **Director:** `director` / `DirectorAudit2026!` (resolve escalated holds — approve/reject)
 - **Viewer:** `viewer` / `ViewDash2026!` (read-only dashboard access)
 
-Credentials are stored as HMAC-SHA256 hashes in INTEROP namespace globals (`^ClaimAuditAI("Users",...)`) — no namespace switching or `%SYS` access required. See [[Security Users Validate Crash]] for the authentication architecture.
+Credentials are stored as PBKDF2-SHA256 hashes (100,000 iterations, random salt) in INTEROP namespace globals (`^ClaimAuditAI("Users",...)`) — no namespace switching or `%SYS` access required. Legacy HMAC-SHA256 hashes are automatically upgraded to PBKDF2 on the next successful login. See [[Security Users Validate Crash]] for the authentication architecture.
 
 Standard SMART on FHIR token validation also supports federated OpenID Connect (OIDC) identities via Keycloak (RS256 JWKS signatures).
 
@@ -40,7 +40,7 @@ Standard SMART on FHIR token validation also supports federated OpenID Connect (
 | Method | Path | Access | Description | Response |
 |--------|------|--------|-------------|----------|
 | `POST` | `/api/auth/login` | Public | Authenticates credentials and returns a signed JWT | Standard OAuth2/SMART token object |
-| `POST` | `/api/auth/introspect` | Public | SMART on FHIR token validation (RFC 7662) | `{"active": true, "sub": "...", "roles": [...], ...}` |
+| `POST` | `/api/auth/introspect` | Bearer Token or Basic Auth | SMART on FHIR token validation (RFC 7662) — accepts Bearer JWT header or Basic credentials | `{"active": true, "sub": "...", "roles": [...], ...}` |
 | `POST` | `/api/auth/debug` | Public | Auth troubleshooting — returns decoded token info | `{"sub": "...", "roles": [...], "iat": ..., "exp": ...}` |
 | `GET` | `/api/stats` | Protected | System metrics | `{"held": N, "approvedToday": N, "interceptedTotal": N, "totalValueHeld": N, "modelStatus": "...", "leakageRate": N, "riskDistribution": [...], "dailyInterceptedCounts": [...]}` |
 | `GET` | `/api/stats/trends` | Protected | 7-day trend data | `[{"day": "Mon", "processed": N, "held": N, "approved": N, "leakagePrevented": N}, ...]` |
@@ -73,11 +73,13 @@ Standard SMART on FHIR token validation also supports federated OpenID Connect (
 | `POST` | `/api/system/retrain-model` | Admin | Retrain autoencoder on current data (>5 claims) | `{"success": true\|false, "message": "..."}` |
 | `GET` | `/api/system/admin-log` | Admin | Admin audit trail | `{"data": [{"date", "timestamp", "action", "detail", "user"}, ...], "total": N}` |
 | `GET` | `/api/system/users` | Admin | List all users with roles | `{"data": [{"username", "fullName", "roles": [...]}, ...], "total": N}` |
-| `POST` | `/api/system/users` | Admin | Create user with HMAC-SHA256 hash | Accepts `{"username", "password", "fullName", "roles": [...]}` |
+| `POST` | `/api/system/users` | Admin | Create user with PBKDF2-SHA256 hash | Accepts `{"username", "password", "fullName", "roles": [...]}` |
 | `PUT` | `/api/system/users/:username` | Admin | Update user roles/password/name | Accepts `{"password", "fullName", "roles": [...]}` (password optional) |
 | `DELETE` | `/api/system/users/:username` | Admin | Delete user (prevents last admin deletion) | Returns 400 if would remove only admin |
 | `GET` | `/api/system/backup` | Admin | Download FHIR repository as transaction Bundle | `Content-Type: application/fhir+json` with attachment disposition |
 | `POST` | `/api/system/backfill-tier-results` | Admin | Backfill missing tier-results extensions on queued claims | `{"success": true, "updated": N, "skipped": N}` |
+| `GET` | `/api/system/dead-letter-queue` | Admin | List all dead-letter queue items | `[{"id": "...", "claimResponseId": "...", "retryCount": 3, "errorDetails": "...", "deadLetterAt": "..."}, ...]` |
+| `POST` | `/api/system/dead-letter-queue/:id/requeue` | Admin | Requeue a dead-letter item for reprocessing | `{"success": true, "message": "..."}` |
 
 > **Note:** Admin/data endpoints use the `/system/` prefix (not `/admin/`). The `/admin/` path prefix is blocked by IRIS CSP security settings and returns 401.
 

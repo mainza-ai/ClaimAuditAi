@@ -46,10 +46,14 @@ Background adjudication queue for asynchronous claim processing.
 | Property | Type | Max Length | Description |
 |----------|------|:----------:|-------------|
 | `ClaimResponseId` | `%String` | — | FHIR ClaimResponse resource ID (unique index) |
-| `Status` | `%String` | — | Queue status: `"pending"`, `"processing"`, `"completed"`, `"failed"` |
+| `Status` | `%String` | — | Queue status: `"pending"`, `"processing"`, `"completed"`, `"failed"`, `"dead-letter"` |
 | `CreatedAt` | `%String` | — | ISO 8601 timestamp of enqueue |
 | `ProcessedAt` | `%String` | — | ISO 8601 timestamp of processing completion |
 | `ErrorDetails` | `%String` | 16,000 | Error message if processing failed |
+| `RetryCount` | `%Integer` | — | Number of processing attempts so far |
+| `MaxRetries` | `%Integer` | — | Maximum retry attempts before dead-letter (default 3) |
+| `DeadLetterAt` | `%String` | — | ISO 8601 timestamp when moved to dead-letter queue |
+| `IsDeadLetter` | `%Boolean` | — | Flag indicating item is in the dead-letter queue |
 
 ### SQL Table
 
@@ -59,11 +63,14 @@ ClaimAudit_Data.Queue (ClaimResponseId, Status, CreatedAt, ProcessedAt, ErrorDet
 
 Indexed on `ClaimResponseId` (unique) and `Status` for efficient queue iteration.
 
-### Method
+### Methods
 
 | Method | Description |
 |--------|-------------|
-| `Enqueue(claimResponseId)` | Creates a new pending queue entry, or resets an existing entry to `"pending"` if already present |
+| `Enqueue(claimResponseId)` | Creates a new pending queue entry, or resets an existing entry to `"pending"`. Wrapped in `TSTART/TCOMMIT` with a node-level lock (`^ClaimAuditAI("QueueLock", claimResponseId)`, 10s timeout) to prevent concurrent enqueues |
+| `MoveToDeadLetter(id)` | Moves a failed item to dead-letter status (`IsDeadLetter=1`, `DeadLetterAt=now`) |
+| `RequeueFromDeadLetter(id)` | Resets a dead-letter item back to `"pending"` with `RetryCount=0` for reprocessing |
+| `Clear()` | Kills all queue globals and resets state |
 
 ### Lifecycle
 
@@ -72,18 +79,25 @@ Claim submitted
     │
     ▼
 Enqueue(ClaimResponseId)
+(TSTART + Lock + Insert/Update + Unlock + TCOMMIT)
     │
     ▼
-┌─────────────────────────────────────┐
-│ WorkerLoop() (background job)       │
-│                                     │
-│   Poll Queue WHERE Status=pending   │
-│   → ExecuteAdjudication()          │
-│   → Update Status=completed/failed  │
-└─────────────────────────────────────┘
+┌───────────────────────────────────────┐
+│ WorkerLoop() (background job)         │
+│   TSTART                              │
+│   Lock ^ClaimAuditAI("QueueProcessLock") │
+│   Poll Queue WHERE Status=pending     │
+│   → ExecuteAdjudication()             │
+│   → Success  → Status=completed       │
+│   → Failure  → RetryCount++           │
+│                › RetryCount≥MaxRetries →│
+│                  MoveToDeadLetter()   │
+│   TCOMMIT / TROLLBACK                 │
+│   Unlock                              │
+└───────────────────────────────────────┘
 ```
 
-The background worker is spawned by `Engine.cls` and loops indefinitely, processing queued claims sequentially.
+The background worker is spawned by `Engine.cls` and loops indefinitely, processing queued claims sequentially. Each cycle uses `TSTART/TCOMMIT` atomicity and a process-level lock to prevent concurrent workers from processing the same queue item. See [[Orchestration - AI Hub]] for the WorkerLoop architecture.
 
 ---
 
@@ -154,9 +168,10 @@ Diagnostic utility class for development and environment setup.
 
 | Method | Description |
 |--------|-------------|
-| `GrantRolesToUnknownUser()` | Grants `%DB_INTEROP-CODE`, `%DB_INTEROP-DATA`, and `%All` roles to the `UnknownUser` account in `%SYS`, then returns to the `INTEROP` namespace |
+| `GrantRolesToUnknownUser()` | Grants fine-grained roles (`%DB_INTEROP-CODE`, `%DB_INTEROP-DATA`, `%HS_DB_INTEROP`, `%DB_INTEROPX0001R`, `%DB_INTEROPX0001V`, `%HS_ServiceRole`, `%HS_Administrator`) and schema-level SQL privileges (SELECT, INSERT, UPDATE, DELETE on `HSFHIR_X0001_S`, `HSFHIR_X0001_R`, `HSFHIR_X0001_V`, `ClaimAudit` schemas) to the `UnknownUser` account |
+| `ToggleDebugLogging()` | Enables/disables per-request debug globals (`^ClaimAuditDebugUser`, `^ClaimAuditDebugOnAfterRequest`) for diagnosing FHIR interception issues |
 
-This utility exists to simplify initial container setup when running without a full Keycloak/IHF OAuth2 provider configured. It should not be used in production deployments.
+The `%All` superuser role has been revoked from `UnknownUser`. Only the minimal roles and SQL privileges needed for CSP Gateway REST dispatch are granted. This utility exists to simplify initial container setup when running without a full Keycloak/IHF OAuth2 provider configured. It should not be used in production deployments.
 
 ---
 

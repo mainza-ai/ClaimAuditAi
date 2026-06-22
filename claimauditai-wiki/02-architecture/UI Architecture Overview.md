@@ -141,7 +141,7 @@ The UI enforces role-based access at the component level via `utils/permissions.
 | `canDecide` | Specialist+ | DecisionModal (approve/escalate/reject) |
 | `canReaudit` | Admin | Reaudit button |
 | `canManageUsers` | Admin | UserManagement |
-| `canManageSettings` | Admin | LLMSettings |
+| `canManageSettings` | Admin | LLMSettings (non-Admin users see "Access Restricted" placeholder view instead of the configuration form) |
 | `canViewGraph` | Viewer+ | GraphView |
 
 ## Development

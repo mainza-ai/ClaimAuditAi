@@ -37,13 +37,15 @@ Learn more about the business motivation and technical architecture of ClaimAudi
 
 
 - **Real-Time FHIR Interception:** Claims are audited, pended, and held at the database/middleware layer before persistence, fully supporting both single Claims and batch/transaction Bundles.
-- **Asynchronous Background Processing Queue:** Defer slow AI pipelines (such as LLM generation and vector lookups) to an asynchronous database queue (`ClaimAudit.Data.Queue`). Returns a fast `202 Accepted` to clients in milliseconds, while a background worker process runs the full FSM.
+- **Asynchronous Background Processing Queue:** Defer slow AI pipelines (such as LLM generation and vector lookups) to an asynchronous database queue (`ClaimAudit.Data.Queue`) with atomic `TSTART/TCOMMIT` wrappers and node-level locks to prevent concurrent processing. Returns a fast `202 Accepted` to clients in milliseconds, while a background worker process runs the full FSM. Failed items are automatically moved to a **dead letter queue** after exhausting retries (default: 3), with a dedicated API for inspection and requeueing.
 - **Three-Tier AI Engine:** Runs HNSW clinical note NLP vector search, PyTorch reconstruction loss anomaly profiling, and NetworkX collusion cycle graph analysis sequentially under strict timeout and circuit-breaker safeguards. The circuit breaker (default: 3 failures → 60s cooldown) halts tier execution to prevent cascading failures, with per-tier timeouts of 180s / 120s / 120s.
 - **Atomic Transaction Integrity:** Native FHIR transaction Bundles create hold `ClaimResponse` records, review `Task` resources, and provider `CommunicationRequest` notifications atomically.
-- **Federated Security & Role Hierarchy:** Authenticates via SMART on FHIR HS256 JWT tokens, validated against HMAC credential hashes stored in INTEROP globals — no `%SYS` namespace access required. Supports Keycloak RS256 JWKS for federated OIDC. Numeric role hierarchy (Viewer→Auditor→Specialist→Director→Admin) gates all protected endpoints.
+- **Federated Security & Role Hierarchy:** Authenticates via SMART on FHIR HS256 JWT tokens, validated against PBKDF2-SHA256 credential hashes (100,000 iterations, random salt) stored in INTEROP globals — no `%SYS` namespace access required. Legacy HMAC-SHA256 hashes are automatically upgraded to PBKDF2 on the next successful login. Supports Keycloak RS256 JWKS for federated OIDC. Numeric role hierarchy (Viewer→Auditor→Specialist→Director→Admin) gates all protected endpoints.
+- **Bounded LLM Response Cache:** Non-tool LLM responses are cached in a bounded `OrderedDict` LRU cache (max 500 entries) with configurable TTL (default 24h), preventing unbounded memory growth under sustained production load.
 - **Persistent Chat History:** Persists LLM assistant auditor conversation histories natively in IRIS via `ClaimAudit.Data.ChatHistory`, using escaped delimited SQL identifiers to avoid reserved keyword conflicts. The chat assistant uses **SSE streaming** — `llm_router.chat_stream()` yields token chunks from OpenAI-compatible providers, buffered by the ObjectScript endpoint into 80-character SSE `data:` lines for real-time UI display.
 - **Tamper-Proof Audit Ledger:** High-precision subscript records (`^ClaimAuditLedger`) provide a reliable, date-indexed audit trail of override decisions, capturing human override rationales chronologically.
 - **Interactive Localized Collusion Graphs:** Visualizes patient-provider relationship networks using Cytoscape.js via `ClaimAudit.Data.GraphStore`, which persists the provider-patient network in `^ClaimAuditGraph` globals and auto-detects address collisions. Queries are localized to 2-hop ego-networks via fast SQL selections to ensure high performance and scalability.
+- **Stats Cache with O(1) Dashboard Reads:** Aggregated statistics are written to `^ClaimAuditAI("Stats")` during adjudication, eliminating the N+1 FHIR GET pattern for real-time dashboard metrics.
 - **Direct Stats FHIR Extension Extraction:** Dashboard statistics are calculated by parsing the structured `tier-results` FHIR extension directly from `ClaimResponse` resources instead of relying on brittle disposition text substrings.
 - **Comprehensive Patient & Provider Cards:** Exposes provider names, addresses, and patient details retrieved from SQL projections and raw FHIR resources on the auditor review pages.
 - **Model Context Protocol (MCP) Terminology Server:** Exposes standard FastMCP-compliant tools for CPT and ICD-10 medical code lookups and diagnosis-procedure validation.
@@ -112,10 +114,12 @@ AI evaluation runs within the database memory space using Embedded Python, runni
 
 ### 3. Asynchronous Adjudication Queue & Worker
 To prevent slow AI pipelines (such as cloud LLM calls and complex vector similarity checks) from blocking real-time transactional HTTP ingestion threads:
-1. **Deferral**: When a claim is intercepted, it is immediately assigned a unique reference ID, saved with a `queued` status, and added to the [ClaimAudit.Data.Queue](src/cls/ClaimAudit/Data/Queue.cls) table.
+1. **Deferral**: When a claim is intercepted, it is immediately assigned a unique reference ID, saved with a `queued` status, and added to the [ClaimAudit.Data.Queue](src/cls/ClaimAudit/Data/Queue.cls) table. Enqueue operations use atomic `TSTART/TCOMMIT` wrappers with node-level locks (`^ClaimAuditAI("QueueLock")`) to prevent concurrent inserts.
 2. **Immediate HTTP Response**: The gateway returns a fast `202 Accepted` response to the client within milliseconds.
-3. **Background Worker**: An asynchronous background job running inside the IRIS container (`StartWorker()` in [Engine.cls](src/cls/ClaimAudit/AI/Engine.cls)) polls the queue, executes the full Pydantic Graph FSM, generates the adjudication report, and updates the `ClaimResponse` resource status.
-4. **On-Demand (JIT) Report Generation & Re-Adjudication**: Detailed LLM summaries are compiled on-demand (JIT) when an auditor views the claim detail, and re-audits can be manually triggered to execute asynchronously through the queue.
+3. **Background Worker**: An asynchronous background job running inside the IRIS container (`StartWorker()` in [Engine.cls](src/cls/ClaimAudit/AI/Engine.cls)) polls the queue, executes the full Pydantic Graph FSM, generates the adjudication report, and updates the `ClaimResponse` resource status. Each cycle uses `TSTART/TCOMMIT` atomicity and a process-level lock (`^ClaimAuditAI("QueueProcessLock")`) to prevent concurrent processing of the same item.
+4. **Dead Letter Queue**: When a queue item exhausts its retries (default: 3), it is automatically moved to `dead-letter` status. A dedicated API (`GET /system/dead-letter-queue`, `POST /system/dead-letter-queue/:id/requeue`) allows operators to inspect and reprocess failed items.
+5. **Stats Cache**: After successful adjudication, the worker writes aggregated statistics to `^ClaimAuditAI("Stats")` for O(1) dashboard reads, eliminating the N+1 FHIR GET pattern.
+6. **On-Demand (JIT) Report Generation & Re-Adjudication**: Detailed LLM summaries are compiled on-demand (JIT) when an auditor views the claim detail, and re-audits can be manually triggered to execute asynchronously through the queue.
 
 ### 4. Medical Terminology MCP Server
 To support real-time clinical code resolution and validation, ClaimAuditAI exposes a Model Context Protocol (MCP) server built with Python's FastMCP framework. This server runs alongside the main application and provides key JSON-RPC tools for medical terminology validation:
@@ -150,14 +154,14 @@ The system enforces strict role-based access control (RBAC) across both API and 
   <img src="assets/images/screenshots/11.png" alt="User and Role Administration" width="50%">
 </p>
 
-- **SMART on FHIR Authentication:** HS256 JWT tokens are issued against HMAC-SHA256 credential hashes stored in INTEROP-namespace globals (`^ClaimAuditAI("Users",...)`) — avoiding `%SYS` namespace access for CSP gateway requests. Tokens validated with `$SYSTEM.Encryption.HMACSHA(256, ...)` signature verification. Supports Keycloak RS256 JWKS for federated OIDC.
+- **SMART on FHIR Authentication:** HS256 JWT tokens are issued against PBKDF2-SHA256 credential hashes (100,000 iterations, random salt) stored in INTEROP-namespace globals (`^ClaimAuditAI("Users",...)`) — avoiding `%SYS` namespace access for CSP gateway requests. Legacy HMAC-SHA256 hashes are automatically upgraded to PBKDF2 on the next successful login. Tokens validated with `$SYSTEM.Encryption.HMACSHA(256, ...)` signature verification. Supports Keycloak RS256 JWKS for federated OIDC.
 - **Key Caching & Hardening:** JWKS certificates cached locally for 1 hour. `JWT_SECRET` is expected in production mode. If missing, the system logs a security warning to the `^ClaimAuditSecurityError` global and falls back to a persistent GUID to ensure system accessibility during reviewer evaluations.
 - **Role Hierarchy Gatekeeper:** The [Auth.cls](src/cls/ClaimAudit/REST/Auth.cls) middleware extracts roles from the JWT token and enforces a numeric hierarchy (Viewer=1, Auditor=2, Specialist=3, Director=4, Admin=5) on all protected endpoints. Roles read from INTEROP globals — no `$Roles` dependency on IRIS process identity.
   - **Auditor:** Reviews held claims, escalates anomalies.
   - **Specialist:** Conducts collusion graph analysis, manages second-stage overrides.
   - **Director:** Resolves escalated pended holds (Approve/Reject), authors ledger override summaries.
   - **Tech Owner / Admin:** Full settings administration, model retraining, and system purges.
-- **Least-Privilege IRIS Hardening:** Web applications (`/api` and `/fhir/r4`) run under tightened MatchRoles parameters (`:%DB_INTEROP-CODE:%DB_INTEROP-DATA:%Admin_Secure`) instead of matching `%All` permissions.
+- **Least-Privilege IRIS Hardening:** Web applications (`/api` and `/fhir/r4`) run under tightened MatchRoles parameters (`:%DB_INTEROP-CODE:%DB_INTEROP-DATA:%Admin_Secure:%DB_INTEROPX0001R:%DB_INTEROPX0001V`) instead of matching `%All` permissions. The `UnknownUser` account has been stripped of the `%All` superuser role and granted only fine-grained SQL schema privileges on `HSFHIR_X0001_S`, `HSFHIR_X0001_R`, `HSFHIR_X0001_V`, and `ClaimAudit` schemas.
 
 ---
 
@@ -222,7 +226,7 @@ All protected endpoints require an `Authorization: Bearer <token>` header. Route
 | Method | Path | Access | Purpose |
 |:---|:---|:---|:---|
 | `POST` | `/api/auth/login` | Public | Authenticates credentials and returns a signed JWT |
-| `POST` | `/api/auth/introspect` | Public | SMART on FHIR token validation (RFC 7662) |
+| `POST` | `/api/auth/introspect` | Bearer or Basic Auth | SMART on FHIR token validation (RFC 7662) |
 | `GET` | `/api/auth/debug` | Public | Decoded token info for debugging |
 
 **Stats & Metrics**
@@ -283,6 +287,8 @@ All protected endpoints require an `Authorization: Bearer <token>` header. Route
 | `POST` | `/api/system/users` | Admin | Create user |
 | `PUT` | `/api/system/users/:username` | Admin | Update user (roles, password, full name) |
 | `DELETE`| `/api/system/users/:username` | Admin | Delete user (prevents removing last admin) |
+| `GET` | `/api/system/dead-letter-queue` | Admin | List all dead-letter queue items |
+| `POST` | `/api/system/dead-letter-queue/:id/requeue` | Admin | Requeue a dead-letter item for reprocessing |
 | `GET` | `/api/admin-test` | Admin | Simple admin route reachability test |
 
 ---
@@ -292,7 +298,7 @@ All protected endpoints require an `Authorization: Bearer <token>` header. Route
 Comprehensive verification suites validate both client and server layers.
 
 ### 1. Python Unit Tests (`pytest`)
-Contains 101 test cases verifying NLP calculations, PyTorch training/inference anomaly outputs with validation/drift safeguards, NetworkX network cycles, agent/tool state machine transitions, and Model Context Protocol (MCP) server endpoints:
+Contains 108 test cases verifying NLP calculations, PyTorch training/inference anomaly outputs with validation/drift safeguards, NetworkX network cycles, agent/tool state machine transitions, Model Context Protocol (MCP) server endpoints, PBKDF2/legacy password hash verification and upgrade triggers, and tier orchestrator parallel execution/timeout/circuit breaker states:
 ```bash
 # Inside the container (or local environment with virtualenv)
 pytest src/python/tests/ -v
